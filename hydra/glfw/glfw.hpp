@@ -1,9 +1,9 @@
 //
-// file : instance_extension.hpp
-// in : file:///home/tim/projects/hydra/hydra/init/instance_extension.hpp
+// file : glfw.hpp
+// in : file:///home/tim/projects/hydra/hydra/glfw/glfw.hpp
 //
 // created by : Timothée Feuillet
-// date: Mon Apr 25 2016 22:39:18 GMT+0200 (CEST)
+// date: Wed Apr 27 2016 17:27:01 GMT+0200 (CEST)
 //
 //
 // Copyright (c) 2016 Timothée Feuillet
@@ -27,41 +27,21 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
-#define __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#ifndef __N_23433187981268130206_308313449_GLFW_HPP__
+#define __N_23433187981268130206_308313449_GLFW_HPP__
 
-#include <string>
-#include <vulkan/vulkan.h>
+#include "glfw_extension.hpp"
 
 namespace neam
 {
   namespace hydra
   {
-    class vk_extension
+    namespace glfw
     {
-      public: // advanced
-        /// \brief Construct the small extension wrapper from a vulkan structure
-        vk_extension(const VkExtensionProperties &_properties) : properties(_properties) {}
-
-      public:
-        /// \brief Return the name of the extension
-        std::string get_name() const
-        {
-          return properties.extensionName;
-        }
-
-        /// \brief Return the version (revision) of the extension
-        uint32_t get_revision() const
-        {
-          return properties.specVersion;
-        }
-
-      private:
-        VkExtensionProperties properties;
-
-    };
+      
+    } // namespace glfw
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#endif // __N_23433187981268130206_308313449_GLFW_HPP__
 

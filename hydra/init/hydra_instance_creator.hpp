@@ -37,8 +37,8 @@
 
 #include <vulkan/vulkan.h>
 
-#include "instance_layer.hpp"
-#include "instance_extension.hpp"
+#include "layer.hpp"
+#include "extension.hpp"
 #include "feature_requester_interface.hpp"
 #include "hydra_vulkan_instance.hpp"
 
@@ -53,7 +53,7 @@ namespace neam
     {
       public: // static interface
         /// \brief Get the list of instance layers
-        static std::vector<vk_instance_layer> get_instance_layers()
+        static std::vector<vk_layer> get_instance_layers()
         {
           std::vector<VkLayerProperties> vk_layer_list;
           VkResult res;
@@ -69,17 +69,17 @@ namespace neam
           }
           while (res == VK_INCOMPLETE);
 
-          std::vector<vk_instance_layer> result_list;
+          std::vector<vk_layer> result_list;
           result_list.reserve(vk_layer_list.size());
 
           for (const auto &it : vk_layer_list)
-            result_list.push_back(vk_instance_layer(it));
+            result_list.push_back(vk_layer(it));
 
           return result_list;
         }
 
         /// \brief Retrieve the instance extensions
-        static std::vector<vk_instance_extension> get_instance_extensions()
+        static std::vector<vk_extension> get_instance_extensions()
         {
           std::vector<VkExtensionProperties> vk_ext_list;
           VkResult res;
@@ -95,11 +95,11 @@ namespace neam
           }
           while (res == VK_INCOMPLETE);
 
-          std::vector<vk_instance_extension> result_list;
+          std::vector<vk_extension> result_list;
           result_list.reserve(vk_ext_list.size());
 
           for (const auto &it : vk_ext_list)
-            result_list.push_back(vk_instance_extension(it));
+            result_list.push_back(vk_extension(it));
 
           return result_list;
         }
@@ -184,12 +184,12 @@ namespace neam
 
         /// \brief Let a requester ask for a list of extension and layers
         /// A requester \e should have the following method:
-        ///   void request_instace_features(hydra_instance_creator &)
+        ///   void request_instace_layers_extensions(hydra_instance_creator &)
         /// \see feature_requester_interface
         template<typename RequesterT>
         void require(RequesterT requester)
         {
-          requester.request_instace_features(*this);
+          requester.request_instace_layers_extensions(*this);
         }
 
         /// \brief Like require<>, but let you work with an abstract type
@@ -198,8 +198,14 @@ namespace neam
           require<feature_requester_interface &>(*requester);
         }
 
+        /// \brief Like require<>, but let you work with an abstract type
+        void require(feature_requester_interface &requester)
+        {
+          require<feature_requester_interface &>(requester);
+        }
+
         /// \brief Create the hydra/vulkan instance
-        hydra_vulkan_instance create_instance()
+        hydra_vulkan_instance create_instance() const
         {
           VkApplicationInfo app_info = {};
           app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -245,10 +251,10 @@ namespace neam
         {
           // construct the std::map<> from the results of the different lists
           auto layers = get_instance_layers();
-          for (const vk_instance_layer &it : layers)
+          for (const vk_layer &it : layers)
             instance_layer_list.emplace(it.get_name(), it);
           auto extensions = get_instance_extensions();
-          for (const vk_instance_extension &it : extensions)
+          for (const vk_extension &it : extensions)
             instance_extension_list.emplace(it.get_name(), it);
         }
 
@@ -262,8 +268,8 @@ namespace neam
         std::set<std::string> instance_layers;
         std::set<std::string> instance_extensions;
 
-        std::map<std::string, vk_instance_layer> instance_layer_list;
-        std::map<std::string, vk_instance_extension> instance_extension_list;
+        std::map<std::string, vk_layer> instance_layer_list;
+        std::map<std::string, vk_extension> instance_extension_list;
     };
   } // namespace hydra
 } // namespace neam

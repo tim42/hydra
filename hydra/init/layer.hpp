@@ -36,41 +36,18 @@
 #include <vulkan/vulkan.h>
 
 #include "../hydra_exception.hpp"
+#include "extension.hpp"
 
 namespace neam
 {
   namespace hydra
   {
-    /// \brief Describe a vulkan instance layer (this is just a C++ wrapper around it)
-    class vk_instance_layer
+    /// \brief Describe a vulkan layer (this is just a C++ wrapper around it)
+    class vk_layer
     {
-      private:
-        /// \brief Describe an extension of a validation layer
-        class extension
-        {
-          private:
-            extension(const VkExtensionProperties & _property) : property(_property) {}
-
-          public:
-            /// \brief Return the name of the extensions
-            std::string get_name() const
-            {
-              return property.extensionName;
-            }
-
-            /// \brief Return the version of the extension
-            uint32_t get_revision() const
-            {
-              return property.specVersion;
-            }
-
-          private:
-            const VkExtensionProperties &property;
-            friend class vk_instance_layer;
-        };
-
-      private:
-        vk_instance_layer(const VkLayerProperties &_properties) : properties(_properties)
+      public: // advanced
+        /// \brief Constructor for an instance layer
+        vk_layer(const VkLayerProperties &_properties) : properties(_properties)
         {
           VkResult res;
           uint32_t instance_extension_count;
@@ -85,6 +62,26 @@ namespace neam
             extensions.resize(instance_extension_count);
             res = check::on_vulkan_error::n_throw_exception(
               vkEnumerateInstanceExtensionProperties(properties.layerName, &instance_extension_count, extensions.data()));
+          }
+          while (res == VK_INCOMPLETE);
+        }
+
+        /// \brief Constructor for a device layer
+        vk_layer(const VkLayerProperties &_properties, VkPhysicalDevice gpu) : properties(_properties)
+        {
+          VkResult res;
+          uint32_t instance_extension_count;
+          do
+          {
+            res = check::on_vulkan_error::n_throw_exception(
+              vkEnumerateDeviceExtensionProperties(gpu, properties.layerName, &instance_extension_count, nullptr));
+
+            if (instance_extension_count == 0)
+              break;
+
+            extensions.resize(instance_extension_count);
+            res = check::on_vulkan_error::n_throw_exception(
+              vkEnumerateDeviceExtensionProperties(gpu, properties.layerName, &instance_extension_count, extensions.data()));
           }
           while (res == VK_INCOMPLETE);
         }
@@ -121,9 +118,9 @@ namespace neam
         }
 
         /// \brief Get an extension
-        extension operator[] (size_t index) const
+        vk_extension operator[] (size_t index) const
         {
-          return extension(extensions[index]);
+          return vk_extension(extensions[index]);
         }
 
       private:
@@ -131,6 +128,7 @@ namespace neam
         std::vector<VkExtensionProperties> extensions;
 
         friend class hydra_instance_creator;
+        friend class vk_device;
     };
   } // namespace hydra
 } // namespace neam

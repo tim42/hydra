@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 2.8)
 set(SAMPLE_NAME "${PROJ_NAME}-test-dev")
 
 include_directories(SYSTEM ${GLM_INCLUDE_DIR})
-include_directories(SYSTEM ${GLFW_INCLUDE_DIRS})
+include_directories(SYSTEM ${GLFW_INCLUDE_DIR})
 include_directories(SYSTEM ${LODEPNG_INCLUDE_DIR})
 include_directories(../../)
 add_definitions(${PROJ_FLAGS})

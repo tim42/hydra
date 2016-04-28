@@ -35,14 +35,18 @@ namespace neam
   namespace hydra
   {
     class hydra_instance_creator;
+    class hydra_device_creator;
+    class hydra_vulkan_instance;
 
+    /// \brief This is the base interface for device and instance requesters.
+    /// You don't have to use it, except if you want to store and use requesters
     class feature_requester_interface
     {
       public:
         virtual ~feature_requester_interface() {}
 
-        virtual void request_instace_features(hydra_instance_creator &) = 0;
-        virtual void request_device_features() = 0;
+        virtual void request_instace_layers_extensions(hydra_instance_creator &) = 0;
+        virtual void request_device_layers_extensions(const hydra_vulkan_instance &, hydra_device_creator &) = 0;
     };
   } // namespace hydra
 } // namespace neam
