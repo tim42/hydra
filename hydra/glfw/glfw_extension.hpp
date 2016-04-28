@@ -30,6 +30,7 @@
 #ifndef __N_21511285133006622983_3175326442_GLFW_EXTENSION_HPP__
 #define __N_21511285133006622983_3175326442_GLFW_EXTENSION_HPP__
 
+#include <GLFW/glfw3.h>
 #include "glfw_feature_requester.hpp"
 #include "glfw_window.hpp"
 
@@ -56,7 +57,7 @@ namespace neam
           ///       please use the create_window_skip() method that will skip this part
           /// \see class window
           template<typename... WindowConstructorParameters>
-          window create_window(neam::hydra::hydra_vulkan_instance &instance, WindowConstructorParameters... params)
+          window create_window(neam::hydra::vk::instance &instance, WindowConstructorParameters... params)
           {
             window win(std::forward<WindowConstructorParameters>(params)...);
             _create_surface(win, instance);
@@ -68,35 +69,48 @@ namespace neam
           ///       has a queue that supports presenting.
           /// \see class window
           template<typename... WindowConstructorParameters>
-          window create_window_skip(neam::hydra::hydra_vulkan_instance &instance, WindowConstructorParameters... params)
+          window create_window_skip(neam::hydra::vk::instance &instance, WindowConstructorParameters... params)
           {
             window win(std::forward<WindowConstructorParameters>(params)...);
             _create_surface(win, instance, false);
             return win;
           }
 
+          /// \brief When requesting a queue that support presenting, also request that this
+          ///        queue supports graphic operations
+          /// The default is to request a queue with both presenting and graphic capabilities
+          void request_graphic_queue(bool should_support_graphic_ops = true)
+          {
+            if (should_support_graphic_ops)
+              requester.queue_flags = VK_QUEUE_GRAPHICS_BIT;
+            else
+              requester.queue_flags = (VkQueueFlagBits)0;
+          }
+
         public: // advanced
           /// \brief Create a surface for a given window
           /// A surface is needed in order to draw something in the window/screen/...
-          void _create_surface(window &win, neam::hydra::hydra_vulkan_instance &instance, bool ask_for_queue = true)
+          void _create_surface(window &win, neam::hydra::vk::instance &instance, bool ask_for_queue = true)
           {
             VkSurfaceKHR surface;
             neam::hydra::check::on_vulkan_error::n_throw_exception(glfwCreateWindowSurface(instance._get_vulkan_instance(), win._get_glfw_handle(), nullptr, &surface));
-            win._set_vk_surface(surface);
+            win._set_surface(vk::surface(instance, surface));
             if (ask_for_queue)
-              requester.surfaces.push_back(surface);
+              requester.windows.emplace_back(&win);
           }
 
         public: // neam::hydra::init_interface
           void on_register() override { glfwInit(); }
 
           void pre_instance_creation() override {}
-          void post_instance_creation(neam::hydra::hydra_vulkan_instance &) override {}
+          void post_instance_creation(neam::hydra::vk::instance &) override {}
 
-          void pre_device_creation(neam::hydra::hydra_vulkan_instance &) override {}
-          void post_device_creation(neam::hydra::hydra_vulkan_device &) override
+          void pre_device_creation(neam::hydra::vk::instance &) override {}
+          void post_device_creation(neam::hydra::vk::device &dev) override
           {
-            requester.surfaces.clear();
+            for (window *w : requester.windows)
+              w->_get_surface().set_physical_device(dev.get_physical_device());
+            requester.windows.clear();
           }
 
           neam::hydra::feature_requester_interface &get_feature_requester() override { return requester; }

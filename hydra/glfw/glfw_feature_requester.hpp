@@ -37,6 +37,8 @@
 #include "../init/hydra_device_creator.hpp"
 #include "../hydra_exception.hpp"
 
+#include "glfw_window.hpp"
+
 namespace neam
 {
   namespace hydra
@@ -65,26 +67,29 @@ namespace neam
               hic.require_extension(required_extensions[i]);
           }
 
-          virtual void request_device_layers_extensions(const hydra_vulkan_instance &, hydra_device_creator &hdc) override
+          virtual void request_device_layers_extensions(const vk::instance &, hydra_device_creator &hdc) override
           {
-            if (surfaces.size())
+            if (windows.size())
             {
-              for (VkSurfaceKHR s : surfaces)
+              for (window *w : windows)
               {
                 // We need one queue that support presenting, but we only have to request this if the user
                 // asked for a window creation
-                hdc.require_queue_capacity((VkQueueFlagBits)0, [s](size_t qindex, const neam::hydra::vk_device & gpu) -> bool
+                temp_queue_familly_id_t tid = hdc.require_queue_capacity(queue_flags, [w](size_t qindex, const neam::hydra::vk::physical_device &gpu) -> bool
                 {
                   VkBool32 r = false;
-                  vkGetPhysicalDeviceSurfaceSupportKHR(gpu._get_vulkan_physical_device(), qindex, s, &r);
+                  vkGetPhysicalDeviceSurfaceSupportKHR(gpu._get_vulkan_physical_device(), qindex, w->_get_surface()._get_vulkan_surface(), &r);
                   return r;
-                }, 1, true);
+                }, true);
+
+                w->_set_win_queue(tid);
               }
             }
           }
 
         public: // advanced
-          std::list<VkSurfaceKHR> surfaces;
+          std::list<window *> windows;
+          VkQueueFlagBits queue_flags = VK_QUEUE_GRAPHICS_BIT;
       };
     } // namespace glfw
   } // namespace hydra

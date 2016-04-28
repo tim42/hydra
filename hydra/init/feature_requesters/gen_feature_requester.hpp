@@ -49,13 +49,12 @@ namespace neam
         struct queue_caps
         {
           VkQueueFlagBits flags;
-          std::function<bool(size_t, const vk_device &)> checker;
-          size_t count;
+          std::function<bool(size_t, const vk::physical_device &)> checker;
           bool can_be_shared;
         };
       public:
         /// \brief Allow the user to request some GPU features
-        device_features gpu_features;
+        vk::device_features gpu_features;
 
         /// \brief If different of 0, it will be used to request a specific vulkan API
         /// The macro VK_MAKE_VERSION() may help you
@@ -107,28 +106,34 @@ namespace neam
 
         /// \brief Require a device with some queue capacities (like graphic, compute, transfer, ...)
         /// \see hydra_device_creator::require_queue_capacity()
-        void require_queue_capacity(VkQueueFlagBits flags, size_t queue_count, bool can_be_shared)
+        /// \return a pointer to a temporary queue familly id, that will be set to a correct value
+        ///         when the device will be created
+        temp_queue_familly_id_t *require_queue_capacity(VkQueueFlagBits flags, bool can_be_shared)
         {
           queue_capabilities.push_back(queue_caps
           {
             flags,
-            [] (size_t, const vk_device &) -> bool {return true;},
-            queue_count,
+            [] (size_t, const vk::physical_device &) -> bool {return true;},
             can_be_shared
           });
+
+          temporary_ids.push_back(0);
+          return &temporary_ids.back();
         }
 
         /// \brief Require a device with some queue capacities (like graphic, compute, transfer, ...)
         /// \see hydra_device_creator::require_queue_capacity()
-        void require_queue_capacity(VkQueueFlagBits flags, const std::function<bool(size_t, const vk_device &)> &queue_checker, size_t queue_count, bool can_be_shared)
+        temp_queue_familly_id_t *require_queue_capacity(VkQueueFlagBits flags, const std::function<bool(size_t, const vk::physical_device &)> &queue_checker, bool can_be_shared)
         {
           queue_capabilities.push_back(queue_caps
           {
             flags,
             queue_checker,
-            queue_count,
             can_be_shared
           });
+
+          temporary_ids.push_back(0);
+          return &temporary_ids.back();
         }
 
         /// \brief Reset the state of the requester
@@ -141,6 +146,7 @@ namespace neam
           device_extensions.clear();
           device_layers.clear();
           queue_capabilities.clear();
+          temporary_ids.clear();
         }
 
       public: // feature_requester_interface
@@ -154,7 +160,7 @@ namespace neam
             hic.set_vulkan_api_version(vulkan_api_version);
         }
 
-        void request_device_layers_extensions(const neam::hydra::hydra_vulkan_instance &, neam::hydra::hydra_device_creator &hdc) override
+        void request_device_layers_extensions(const neam::hydra::vk::instance &, neam::hydra::hydra_device_creator &hdc) override
         {
           hdc.require_features(gpu_features);
           for (const std::string &it : device_extensions)
@@ -162,8 +168,9 @@ namespace neam
           for (const std::string &it : device_layers)
             hdc.require_layer(it);
 
+          size_t i = 0;
           for (const queue_caps &qc : queue_capabilities)
-            hdc.require_queue_capacity(qc.flags, qc.checker, qc.count, qc.can_be_shared);
+            temporary_ids[i++] = hdc.require_queue_capacity(qc.flags, qc.checker, qc.can_be_shared);
         }
 
       private:
@@ -172,6 +179,7 @@ namespace neam
         std::list<std::string> instance_extensions;
         std::list<std::string> instance_layers;
         std::list<queue_caps> queue_capabilities;
+        std::vector<temp_queue_familly_id_t> temporary_ids;
     };
   } // namespace hydra
 } // namespace neam

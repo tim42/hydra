@@ -1,9 +1,9 @@
 //
-// file : instance_extension.hpp
-// in : file:///home/tim/projects/hydra/hydra/init/instance_extension.hpp
+// file : vulkan.hpp
+// in : file:///home/tim/projects/hydra/hydra/vulkan/vulkan.hpp
 //
 // created by : Timothée Feuillet
-// date: Mon Apr 25 2016 22:39:18 GMT+0200 (CEST)
+// date: Thu Apr 28 2016 14:43:44 GMT+0200 (CEST)
 //
 //
 // Copyright (c) 2016 Timothée Feuillet
@@ -27,11 +27,18 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
-#define __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+// This folder contains some vulkan wrappers (command pool, command buffer, ...)
 
-#include <string>
-#include <vulkan/vulkan.h>
+
+#ifndef __N_11194131652893914663_22232226_VULKAN_HPP__
+#define __N_11194131652893914663_22232226_VULKAN_HPP__
+
+#include "instance.hpp"
+#include "device.hpp"
+#include "command_pool.hpp"
+#include "command_buffer.hpp"
+#include "surface.hpp"
+#include "swapchain.hpp"
 
 namespace neam
 {
@@ -39,32 +46,10 @@ namespace neam
   {
     namespace vk
     {
-      class extension
-      {
-        public: // advanced
-          /// \brief Construct the small extension wrapper from a vulkan structure
-          extension(const VkExtensionProperties &_properties) : properties(_properties) {}
-
-        public:
-          /// \brief Return the name of the extension
-          std::string get_name() const
-          {
-            return properties.extensionName;
-          }
-
-          /// \brief Return the version (revision) of the extension
-          uint32_t get_revision() const
-          {
-            return properties.specVersion;
-          }
-
-        private:
-          VkExtensionProperties properties;
-
-      };
+      
     } // namespace vk
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#endif // __N_11194131652893914663_22232226_VULKAN_HPP__
 

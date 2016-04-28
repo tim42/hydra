@@ -84,21 +84,21 @@ namespace neam
         }
 
         /// \brief Create a vulkan instance with the default parameters
-        hydra_vulkan_instance create_instance(std::string application_name, size_t application_version = 1)
+        vk::instance create_instance(std::string application_name, size_t application_version = 1)
         {
-          hydra_vulkan_instance instance = request_instance_creator(application_name, application_version).create_instance();
+          vk::instance instance = request_instance_creator(application_name, application_version).create_instance();
           new_instance_created(instance);
           return instance;
         }
 
         /// \brief Create a vulkan logical device with the default parameters
-        hydra_vulkan_device create_device(hydra_vulkan_instance &instance)
+        vk::device create_device(vk::instance &instance)
         {
           hydra_device_creator hdc = request_device_creator(instance);
           auto compatible_gpu_list = hdc.filter_devices();
           check::on_vulkan_error::n_assert(compatible_gpu_list.size() > 0, "could not find a GPU compatible with the requirements of the application");
 
-          hydra_vulkan_device device = hdc.create_device(compatible_gpu_list[0]);
+          vk::device device = hdc.create_device(compatible_gpu_list[0]);
           new_device_created(device);
           return device;
         }
@@ -123,7 +123,7 @@ namespace neam
         /// \brief Notify the initializer extensions that a new instance has been
         /// created. This step may be mandatory, depending on the initialization extensions
         /// enabled.
-        void new_instance_created(hydra_vulkan_instance &instance)
+        void new_instance_created(vk::instance &instance)
         {
           for (init_interface *ii : initializers)
             ii->post_instance_creation(instance);
@@ -132,7 +132,7 @@ namespace neam
         /// \brief Request a device creator.
         /// This method will run the initialization extensions on the device creator
         /// before returning it.
-        hydra_device_creator request_device_creator(hydra_vulkan_instance &instance)
+        hydra_device_creator request_device_creator(vk::instance &instance)
         {
           for (init_interface *ii : initializers)
             ii->pre_device_creation(instance);
@@ -148,7 +148,7 @@ namespace neam
         /// \brief Notify the initializer extensions that a new logical device has been
         /// created. This step may be mandatory, depending on the initialization extensions
         /// enabled.
-        void new_device_created(hydra_vulkan_device &device)
+        void new_device_created(vk::device &device)
         {
           for (init_interface *ii : initializers)
             ii->post_device_creation(device);

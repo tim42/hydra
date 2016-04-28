@@ -39,10 +39,12 @@
 
 #include <vulkan/vulkan.h>
 
-#include "device_features.hpp"
-#include "hydra_vulkan_instance.hpp"
-#include "hydra_vulkan_device.hpp"
+#include "../vulkan/device_features.hpp"
+#include "../vulkan/instance.hpp"
+#include "../vulkan/device.hpp"
 #include "feature_requester_interface.hpp"
+
+#include "../hydra_types.hpp"
 
 namespace neam
 {
@@ -50,24 +52,24 @@ namespace neam
   {
     /// \brief A helper to create vulkan logical devices.
     /// You should get and instance of this class via the method
-    /// hydra_vulkan_instance::get_device_creator()
+    /// vk::instance::get_device_creator()
     class hydra_device_creator
     {
       private:
         struct queue_caps
         {
           VkQueueFlagBits flags;
-          std::function<bool(size_t, const vk_device &)> checker;
-          size_t count;
+          std::function<bool(size_t, const vk::physical_device &)> checker;
+          temp_queue_familly_id_t id;
         };
 
       public: // advanced
-        hydra_device_creator(const hydra_vulkan_instance &_instance) : instance(_instance) {}
+        hydra_device_creator(const vk::instance &_instance) : instance(_instance) {}
 
       public:
         /// \brief Check if a device is compatible with the requirements of the
         /// aplication
-        bool check_device(const vk_device &gpu) const
+        bool check_device(const vk::physical_device &gpu) const
         {
           // check features
           if (requested_features.check_against(gpu.get_features()) == false)
@@ -85,7 +87,7 @@ namespace neam
           for (const std::string &layer_name : device_layers)
           {
             bool ok = false;
-            for (const vk_layer &it : gpu.get_layers())
+            for (const vk::layer &it : gpu.get_layers())
             {
               if (it.get_name() == layer_name)
               {
@@ -101,7 +103,7 @@ namespace neam
           for (const std::string &extension_name : device_extensions)
           {
             bool ok = false;
-            for (const vk_extension &it : gpu.get_extension())
+            for (const vk::extension &it : gpu.get_extension())
             {
               if (it.get_name() == extension_name)
               {
@@ -121,63 +123,37 @@ namespace neam
           // shared queues
           for (const queue_caps &it : shared_queue_caps)
           {
-            size_t remaining = it.count;
+            bool found = false;
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
-              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu))
+              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu)
+                  && qfp.queueCount > queue_consumption[i])
               {
-                // found a correct queue family
-                const size_t max = qfp.queueCount;
-                if (max >= remaining)
-                {
-                  if (queue_consumption[i] < remaining)
-                    queue_consumption[i] = remaining;
-                  remaining = 0;
-                }
-                else
-                {
-                  const size_t diff = remaining - max;
-                  if (queue_consumption[i] < remaining)
-                    queue_consumption[i] = max;
-                  remaining = diff;
-                }
-              }
-              if (remaining == 0)
+                ++queue_consumption[i];
+                found = true;
                 break;
+              }
             }
-            if (remaining != 0)
+            if (!found)
               return false;
           }
           // non-shared queues
           for (const queue_caps &it : unique_queue_caps)
           {
-            size_t remaining = it.count;
+            bool found = false;
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
-              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu))
+              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu)
+                  && qfp.queueCount > queue_consumption[i])
               {
-                // found a compatible queue family
-                if (queue_consumption[i] < qfp.queueCount)
-                {
-                  const size_t max = qfp.queueCount - queue_consumption[i];
-                  if (max >= remaining)
-                  {
-                    queue_consumption[i] += remaining;
-                    remaining = 0;
-                  }
-                  else
-                  {
-                    queue_consumption[i] += max;
-                    remaining -= max;
-                  }
-                }
-              }
-              if (remaining == 0)
+                ++queue_consumption[i];
+                found = true;
                 break;
+              }
             }
-            if (remaining != 0)
+            if (!found)
               return false;
           }
 
@@ -188,14 +164,14 @@ namespace neam
         /// \brief Return the list of devices that are compatible with the
         /// requirements of the application
         /// \note the result is a vector of device sorted from discrete/dedicated to integrated to others
-        std::vector<vk_device> filter_devices() const
+        std::vector<vk::physical_device> filter_devices() const
         {
-          std::vector<vk_device> result;
+          std::vector<vk::physical_device> result;
           result.reserve(instance.get_device_count());
 
           for (size_t i = 0; i < instance.get_device_count(); ++i)
           {
-            const vk_device &gpu = instance.get_device(i);
+            const vk::physical_device &gpu = instance.get_device(i);
             if (check_device(gpu) == true)
               result.push_back(gpu);
           }
@@ -211,7 +187,7 @@ namespace neam
           });
 
           // sort the result vector
-          std::sort(result.begin(), result.end(), [&prios](const vk_device &gpu1, const vk_device &gpu2) -> bool
+          std::sort(result.begin(), result.end(), [&prios](const vk::physical_device &gpu1, const vk::physical_device &gpu2) -> bool
           {
             return prios[gpu1.get_type()] > prios[gpu2.get_type()];
           });
@@ -220,7 +196,7 @@ namespace neam
         }
 
         /// \brief Require some features (like tesselation or geometry shaders, sparse binding, ...)
-        void require_features(const device_features &features)
+        void require_features(const vk::device_features &features)
         {
           requested_features |= features;
         }
@@ -241,7 +217,6 @@ namespace neam
 
         /// \brief Require a device with some queue capacities (like graphic, compute, transfer, ...)
         /// \param flags The flags the queue must have
-        /// \param queue_count The number of queue you require (minimum is 1)
         /// \param can_be_shared Indicate whether or not you allow the queue to be shared with another component
         ///                      (coud be usefull if you require a queue with compute caps and and another queue with graphic caps
         ///                       and there's a queue with both capabilities).
@@ -250,26 +225,29 @@ namespace neam
         ///
         /// The solver is pretty dumb. So if you request a lot of non-shared queues it will probably not find the ideal
         /// solution
-        void require_queue_capacity(VkQueueFlagBits flags, size_t queue_count, bool can_be_shared)
+        temp_queue_familly_id_t require_queue_capacity(VkQueueFlagBits flags, bool can_be_shared)
         {
-          require_queue_capacity(flags, [](size_t, const vk_device &) {return true;}, queue_count, can_be_shared);
+          return require_queue_capacity(flags, [](size_t, const vk::physical_device &) {return true;}, can_be_shared);
         }
 
         /// \brief Require a device with some queue capacities (like graphic, compute, transfer, ...)
         /// \param flags The flags the queue must have
         /// \param queue_checker An additional condition to accept the queue family (first parameter is the queue family index, second the gpu)
-        /// \param queue_count The number of queue you require (minimum is 1)
         /// \param can_be_shared Indicate whether or not you allow the queue to be shared with another component
         ///                      (coud be usefull if you require a queue with compute caps and and another queue with graphic caps
         ///                       and there's a queue with both capabilities).
         /// The solver is pretty dumb. So if you request a lot of non-shared queues it will probably not find the ideal
         /// solution
-        void require_queue_capacity(VkQueueFlagBits flags, const std::function<bool(size_t, const vk_device &)> &queue_checker, size_t queue_count, bool can_be_shared)
+        temp_queue_familly_id_t require_queue_capacity(VkQueueFlagBits flags, const std::function<bool(size_t, const vk::physical_device &)> &queue_checker, bool can_be_shared)
         {
+          temp_queue_familly_id_t id = unique_queue_caps.size() + shared_queue_caps.size(); // this is a unique ID
+
           if (can_be_shared)
-            shared_queue_caps.push_back(queue_caps{flags, queue_checker, queue_count});
+            shared_queue_caps.push_back(queue_caps{flags, queue_checker, id});
           else
-            unique_queue_caps.push_back(queue_caps{flags, queue_checker, queue_count});
+            unique_queue_caps.push_back(queue_caps{flags, queue_checker, id});
+
+          return id;
         }
 
         /// \brief Require an extension for the instance
@@ -325,7 +303,7 @@ namespace neam
         }
 
         /// \brief Create the device wrapper
-        hydra_vulkan_device create_device(vk_device &gpu) const
+        vk::device create_device(vk::physical_device &gpu) const
         {
           // please use a device from filter_devices
           check::on_vulkan_error::n_assert(check_device(gpu) == true, "the selected device does not fulfill the requirements of the application");
@@ -335,62 +313,37 @@ namespace neam
           for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             queue_consumption.push_back(0);
 
+          // this maps the temporary familly id to a [queue familly index ; #queue ]
+          std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> id_to_fq;
+
           // shared queues
           for (const queue_caps &it : shared_queue_caps)
           {
-            size_t remaining = it.count;
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
-              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu))
+              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu)
+                  && qfp.queueCount > queue_consumption[i])
               {
-                // found a correct queue family
-                const size_t max = qfp.queueCount;
-                if (max >= remaining)
-                {
-                  if (queue_consumption[i] < remaining)
-                    queue_consumption[i] = remaining;
-                  remaining = 0;
-                }
-                else
-                {
-                  const size_t diff = remaining - max;
-                  if (queue_consumption[i] < remaining)
-                    queue_consumption[i] = max;
-                  remaining = diff;
-                }
-              }
-              if (remaining == 0)
+                id_to_fq[it.id] = std::make_pair(i, queue_consumption[i]);
+                ++queue_consumption[i];
                 break;
+              }
             }
           }
           // non-shared queues
           for (const queue_caps &it : unique_queue_caps)
           {
-            size_t remaining = it.count;
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
-              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu))
+              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu)
+                  && qfp.queueCount > queue_consumption[i])
               {
-                // found a compatible queue family
-                if (queue_consumption[i] < qfp.queueCount)
-                {
-                  const size_t max = qfp.queueCount - queue_consumption[i];
-                  if (max >= remaining)
-                  {
-                    queue_consumption[i] += remaining;
-                    remaining = 0;
-                  }
-                  else
-                  {
-                    queue_consumption[i] += max;
-                    remaining -= max;
-                  }
-                }
-              }
-              if (remaining == 0)
+                id_to_fq[it.id] = std::make_pair(i, queue_consumption[i]);
+                ++queue_consumption[i];
                 break;
+              }
             }
           }
 
@@ -449,11 +402,11 @@ namespace neam
           VkDevice device;
           check::on_vulkan_error::n_throw_exception(vkCreateDevice(gpu._get_vulkan_physical_device(), &device_info, nullptr, &device));
 
-          return hydra_vulkan_device(device);
+          return vk::device(device, gpu, id_to_fq);
         }
 
       private:
-        const hydra_vulkan_instance &instance;
+        const vk::instance &instance;
 
         std::set<std::string> device_layers;
         std::set<std::string> device_extensions;
@@ -462,13 +415,13 @@ namespace neam
         std::vector<queue_caps> shared_queue_caps;
         std::vector<queue_caps> unique_queue_caps;
 
-        device_features requested_features;
+        vk::device_features requested_features;
     };
 
 
 
     // implementation of the method from hydra_vulkan_instance
-    hydra_device_creator hydra_vulkan_instance::get_device_creator() const
+    hydra_device_creator vk::instance::get_device_creator() const
     {
       return hydra_device_creator(*this);
     }

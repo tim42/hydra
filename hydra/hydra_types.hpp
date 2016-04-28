@@ -1,9 +1,9 @@
 //
-// file : instance_extension.hpp
-// in : file:///home/tim/projects/hydra/hydra/init/instance_extension.hpp
+// file : hydra_types.hpp
+// in : file:///home/tim/projects/hydra/hydra/hydra_types.hpp
 //
 // created by : Timothée Feuillet
-// date: Mon Apr 25 2016 22:39:18 GMT+0200 (CEST)
+// date: Thu Apr 28 2016 16:07:34 GMT+0200 (CEST)
 //
 //
 // Copyright (c) 2016 Timothée Feuillet
@@ -27,44 +27,20 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
-#define __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#ifndef __N_2988198851275212374_722318918_HYDRA_TYPES_HPP__
+#define __N_2988198851275212374_722318918_HYDRA_TYPES_HPP__
 
-#include <string>
-#include <vulkan/vulkan.h>
+#include <cstddef>
 
 namespace neam
 {
   namespace hydra
   {
-    namespace vk
-    {
-      class extension
-      {
-        public: // advanced
-          /// \brief Construct the small extension wrapper from a vulkan structure
-          extension(const VkExtensionProperties &_properties) : properties(_properties) {}
-
-        public:
-          /// \brief Return the name of the extension
-          std::string get_name() const
-          {
-            return properties.extensionName;
-          }
-
-          /// \brief Return the version (revision) of the extension
-          uint32_t get_revision() const
-          {
-            return properties.specVersion;
-          }
-
-        private:
-          VkExtensionProperties properties;
-
-      };
-    } // namespace vk
+    /// \brief A temporary ID for queues that you request. This can be exchanged
+    /// by the vk::device class into a small queue familly object
+    using temp_queue_familly_id_t = size_t;
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#endif // __N_2988198851275212374_722318918_HYDRA_TYPES_HPP__
 

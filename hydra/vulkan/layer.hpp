@@ -42,94 +42,97 @@ namespace neam
 {
   namespace hydra
   {
-    /// \brief Describe a vulkan layer (this is just a C++ wrapper around it)
-    class vk_layer
+    namespace vk
     {
-      public: // advanced
-        /// \brief Constructor for an instance layer
-        vk_layer(const VkLayerProperties &_properties) : properties(_properties)
-        {
-          VkResult res;
-          uint32_t instance_extension_count;
-          do
+      /// \brief Describe a vulkan layer (this is just a C++ wrapper around it)
+      class layer
+      {
+        public: // advanced
+          /// \brief Constructor for an instance layer
+          layer(const VkLayerProperties &_properties) : properties(_properties)
           {
-            res = check::on_vulkan_error::n_throw_exception(
-              vkEnumerateInstanceExtensionProperties(properties.layerName, &instance_extension_count, nullptr));
+            VkResult res;
+            uint32_t instance_extension_count;
+            do
+            {
+              res = check::on_vulkan_error::n_throw_exception(
+                vkEnumerateInstanceExtensionProperties(properties.layerName, &instance_extension_count, nullptr));
 
-            if (instance_extension_count == 0)
-              break;
+              if (instance_extension_count == 0)
+                break;
 
-            extensions.resize(instance_extension_count);
-            res = check::on_vulkan_error::n_throw_exception(
-              vkEnumerateInstanceExtensionProperties(properties.layerName, &instance_extension_count, extensions.data()));
+              extensions.resize(instance_extension_count);
+              res = check::on_vulkan_error::n_throw_exception(
+                vkEnumerateInstanceExtensionProperties(properties.layerName, &instance_extension_count, extensions.data()));
+            }
+            while (res == VK_INCOMPLETE);
           }
-          while (res == VK_INCOMPLETE);
-        }
 
-        /// \brief Constructor for a device layer
-        vk_layer(const VkLayerProperties &_properties, VkPhysicalDevice gpu) : properties(_properties)
-        {
-          VkResult res;
-          uint32_t instance_extension_count;
-          do
+          /// \brief Constructor for a device layer
+          layer(const VkLayerProperties &_properties, VkPhysicalDevice gpu) : properties(_properties)
           {
-            res = check::on_vulkan_error::n_throw_exception(
-              vkEnumerateDeviceExtensionProperties(gpu, properties.layerName, &instance_extension_count, nullptr));
+            VkResult res;
+            uint32_t instance_extension_count;
+            do
+            {
+              res = check::on_vulkan_error::n_throw_exception(
+                vkEnumerateDeviceExtensionProperties(gpu, properties.layerName, &instance_extension_count, nullptr));
 
-            if (instance_extension_count == 0)
-              break;
+              if (instance_extension_count == 0)
+                break;
 
-            extensions.resize(instance_extension_count);
-            res = check::on_vulkan_error::n_throw_exception(
-              vkEnumerateDeviceExtensionProperties(gpu, properties.layerName, &instance_extension_count, extensions.data()));
+              extensions.resize(instance_extension_count);
+              res = check::on_vulkan_error::n_throw_exception(
+                vkEnumerateDeviceExtensionProperties(gpu, properties.layerName, &instance_extension_count, extensions.data()));
+            }
+            while (res == VK_INCOMPLETE);
           }
-          while (res == VK_INCOMPLETE);
-        }
 
-      public:
-        /// \brief Return the layer name
-        std::string get_name() const
-        {
-          return properties.layerName;
-        }
+        public:
+          /// \brief Return the layer name
+          std::string get_name() const
+          {
+            return properties.layerName;
+          }
 
-        /// \brief Return the layer description (if any)
-        std::string get_description() const
-        {
-          return properties.description;
-        }
+          /// \brief Return the layer description (if any)
+          std::string get_description() const
+          {
+            return properties.description;
+          }
 
-        /// \brief Return the version of the layer
-        uint32_t get_revision() const
-        {
-          return properties.specVersion;
-        }
+          /// \brief Return the version of the layer
+          uint32_t get_revision() const
+          {
+            return properties.specVersion;
+          }
 
-        /// \brief Return the version of the vulkan API used by the layer
-        uint32_t get_vulkan_version() const
-        {
-          return properties.implementationVersion;
-        }
+          /// \brief Return the version of the vulkan API used by the layer
+          uint32_t get_vulkan_version() const
+          {
+            return properties.implementationVersion;
+          }
 
-        /// \brief Return the number of extension this layer has
-        size_t get_extension_count() const
-        {
-          return extensions.size();
-        }
+          /// \brief Return the number of extension this layer has
+          size_t get_extension_count() const
+          {
+            return extensions.size();
+          }
 
-        /// \brief Get an extension
-        vk_extension operator[] (size_t index) const
-        {
-          return vk_extension(extensions[index]);
-        }
+          /// \brief Get an extension
+          extension operator[] (size_t index) const
+          {
+            return extension(extensions[index]);
+          }
 
-      private:
-        VkLayerProperties properties;
-        std::vector<VkExtensionProperties> extensions;
+        private:
+          VkLayerProperties properties;
+          std::vector<VkExtensionProperties> extensions;
 
-        friend class hydra_instance_creator;
-        friend class vk_device;
-    };
+          friend class hydra_instance_creator;
+          friend class physical_device;
+      };
+    } // namespace vk
   } // namespace hydra
 } // namespace neam
 

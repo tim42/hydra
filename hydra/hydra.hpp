@@ -40,6 +40,8 @@
 #include "init/bootstrap.hpp"
 #include "init/feature_requesters/gen_feature_requester.hpp"
 
+#include "vulkan/vulkan.hpp"
+
 #include <glm/glm.hpp>
 
 // include main components

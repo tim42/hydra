@@ -1,9 +1,9 @@
 //
-// file : instance_extension.hpp
-// in : file:///home/tim/projects/hydra/hydra/init/instance_extension.hpp
+// file : swapchain.hpp
+// in : file:///home/tim/projects/hydra/hydra/vulkan/swapchain.hpp
 //
 // created by : Timothée Feuillet
-// date: Mon Apr 25 2016 22:39:18 GMT+0200 (CEST)
+// date: Thu Apr 28 2016 23:23:34 GMT+0200 (CEST)
 //
 //
 // Copyright (c) 2016 Timothée Feuillet
@@ -27,11 +27,12 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
-#define __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#ifndef __N_2428110920100477524_239810610_SWAPCHAIN_HPP__
+#define __N_2428110920100477524_239810610_SWAPCHAIN_HPP__
 
-#include <string>
 #include <vulkan/vulkan.h>
+
+#include "device.hpp"
 
 namespace neam
 {
@@ -39,32 +40,44 @@ namespace neam
   {
     namespace vk
     {
-      class extension
+      /// \brief Wrap the swapchain vulkan extension
+      /// (could be compared to a GL double buffer)
+      class swapchain
       {
         public: // advanced
-          /// \brief Construct the small extension wrapper from a vulkan structure
-          extension(const VkExtensionProperties &_properties) : properties(_properties) {}
-
-        public:
-          /// \brief Return the name of the extension
-          std::string get_name() const
+          /// \brief Construct a swapchain from a vulkan swapchain object
+          swapchain(device &_dev, VkSwapchainKHR _vk_swapchain)
+            : dev(_dev), vk_swapchain(_vk_swapchain)
           {
-            return properties.extensionName;
           }
 
-          /// \brief Return the version (revision) of the extension
-          uint32_t get_revision() const
+        public:
+          /// \brief Move constructor
+          swapchain(swapchain &&o)
+            : dev(o.dev), vk_swapchain(o.vk_swapchain)
           {
-            return properties.specVersion;
+            o.vk_swapchain = nullptr;
+          }
+
+          ~swapchain()
+          {
+            if (vk_swapchain)
+              vkDestroySwapchainKHR(dev._get_vulkan_device(), vk_swapchain, nullptr);
+          }
+
+        public: // advanced
+          VkSwapchainKHR _get_vk_swapchain()
+          {
+            return vk_swapchain;
           }
 
         private:
-          VkExtensionProperties properties;
-
+          device &dev;
+          VkSwapchainKHR vk_swapchain;
       };
     } // namespace vk
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#endif // __N_2428110920100477524_239810610_SWAPCHAIN_HPP__
 

@@ -1,9 +1,9 @@
 //
-// file : instance_extension.hpp
-// in : file:///home/tim/projects/hydra/hydra/init/instance_extension.hpp
+// file : queue_desc.hpp
+// in : file:///home/tim/projects/hydra/hydra/vulkan/queue_desc.hpp
 //
 // created by : Timothée Feuillet
-// date: Mon Apr 25 2016 22:39:18 GMT+0200 (CEST)
+// date: Thu Apr 28 2016 16:10:45 GMT+0200 (CEST)
 //
 //
 // Copyright (c) 2016 Timothée Feuillet
@@ -27,11 +27,10 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
-#define __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#ifndef __N_3064046323163029733_126501074_QUEUE_DESC_HPP__
+#define __N_3064046323163029733_126501074_QUEUE_DESC_HPP__
 
-#include <string>
-#include <vulkan/vulkan.h>
+#include <cstddef>
 
 namespace neam
 {
@@ -39,32 +38,35 @@ namespace neam
   {
     namespace vk
     {
-      class extension
+      /// \brief Describe a queue inside a queue familly
+      class queue_desc
       {
         public: // advanced
-          /// \brief Construct the small extension wrapper from a vulkan structure
-          extension(const VkExtensionProperties &_properties) : properties(_properties) {}
+          queue_desc(size_t _queue_familly_index, size_t _queue_index)
+            : queue_familly_index(_queue_familly_index), queue_index(_queue_index)
+          {
+          }
+
+          /// \brief Return the familly index of the queue
+          size_t get_queue_familly_index() const
+          {
+            return queue_familly_index;
+          }
+
+          /// \brief Return the index of the queue inside the queue familly
+          size_t get_queue_index() const
+          {
+            return queue_index;
+          }
 
         public:
-          /// \brief Return the name of the extension
-          std::string get_name() const
-          {
-            return properties.extensionName;
-          }
-
-          /// \brief Return the version (revision) of the extension
-          uint32_t get_revision() const
-          {
-            return properties.specVersion;
-          }
-
         private:
-          VkExtensionProperties properties;
-
+          size_t queue_familly_index;
+          size_t queue_index;
       };
     } // namespace vk
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#endif // __N_3064046323163029733_126501074_QUEUE_DESC_HPP__
 

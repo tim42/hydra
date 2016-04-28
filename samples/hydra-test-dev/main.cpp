@@ -11,7 +11,8 @@
 
 #include <vulkan/vulkan.h>
 
-#include <unistd.h>
+#include <unistd.h> // TODO: remove
+
 int main(int, char **)
 {
   // I want all these debug information to be printed:
@@ -21,19 +22,24 @@ int main(int, char **)
   neam::hydra::gen_feature_requester gfr;
 
   // some requirements of the program
-  gfr.require_queue_capacity(VK_QUEUE_GRAPHICS_BIT, 1, true);
+  glfw_ext.request_graphic_queue(true); // the queue
+  gfr.require_device_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
+  // initialize vulkan/hydra
   neam::hydra::bootstrap hydra_init;
   hydra_init.register_init_extension(glfw_ext);
   hydra_init.register_feature_requester(gfr);
-  neam::hydra::hydra_vulkan_instance instance = hydra_init.create_instance("hydra-test-dev");
+  neam::hydra::vk::instance instance = hydra_init.create_instance("hydra-test-dev");
 
   neam::hydra::glfw::window win = glfw_ext.create_window(instance, glm::uvec2(500, 500), "hydra-test-dev");
 
-  neam::hydra::hydra_vulkan_device device = hydra_init.create_device(instance);
+  neam::hydra::vk::device device = hydra_init.create_device(instance);
 
+  // run something
   neam::cr::out.log() << "device created !" << std::endl;
 
+  neam::hydra::vk::command_pool cmd_pool = device.create_command_pool(win._get_win_queue());
+  neam::hydra::vk::command_buffer cmd = cmd_pool.create_command_buffer();
 
   sleep(25);
 

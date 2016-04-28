@@ -36,6 +36,8 @@
 #include <glm/glm.hpp>
 
 #include "../hydra_exception.hpp"
+#include "../hydra_types.hpp"
+#include "../vulkan/surface.hpp"
 
 namespace neam
 {
@@ -222,16 +224,37 @@ namespace neam
             return win;
           }
 
-          /// \brief Return the vulkan surface of the window
-          VkSurfaceKHR _get_vk_surface()
+          /// \brief Return the id of the queue that support presenting
+          temp_queue_familly_id_t _get_win_queue()
           {
-            return surface;
+            return pres_id;
           }
 
-          /// \brief Set the vulkan surface of the window
-          void _set_vk_surface(VkSurfaceKHR _surface)
+          /// \brief Set the id of the queue that support presenting
+          void _set_win_queue(temp_queue_familly_id_t _pres_id)
           {
-            surface = _surface;
+            pres_id = _pres_id;
+          }
+
+          /// \brief Check if the window has a surface
+          bool _have_surface() const
+          {
+            return surface != nullptr;
+          }
+
+          /// \brief Return the surface of the window
+          /// \see _have_surface()
+          vk::surface &_get_surface()
+          {
+            return *surface;
+          }
+
+          /// \brief Set the surface of the window
+          void _set_surface(vk::surface &&_surface)
+          {
+            if (surface)
+              delete surface;
+            surface = new vk::surface(std::move(_surface));
           }
 
           /// \brief Set the hydra icon (bonus function)
@@ -283,7 +306,8 @@ namespace neam
 
         private:
           GLFWwindow *win;
-          VkSurfaceKHR surface;
+          neam::hydra::vk::surface *surface = nullptr;
+          temp_queue_familly_id_t pres_id;
       };
     } // namespace glfw
   } // namespace hydra

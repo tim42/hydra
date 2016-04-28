@@ -34,8 +34,11 @@ namespace neam
 {
   namespace hydra
   {
-    class hydra_vulkan_instance;
-    class hydra_vulkan_device;
+    namespace vk
+    {
+      class instance;
+      class device;
+    } // namespace vk
     class feature_requester_interface;
 
     /// \brief The interface that any extension class that want to participate to the
@@ -59,12 +62,12 @@ namespace neam
         virtual void pre_instance_creation() = 0;
 
         /// \brief Called just after the creation of a new instance
-        virtual void post_instance_creation(hydra_vulkan_instance &new_instance) = 0;
+        virtual void post_instance_creation(vk::instance &new_instance) = 0;
 
         /// \brief Called just before the creation of a new device
-        virtual void pre_device_creation(hydra_vulkan_instance &instance) = 0;
+        virtual void pre_device_creation(vk::instance &instance) = 0;
         /// \brief Called just after the creation of a new device
-        virtual void post_device_creation(hydra_vulkan_device &new_device) = 0;
+        virtual void post_device_creation(vk::device &new_device) = 0;
 
         /// \brief Return the "feature requester" of the extension
         virtual feature_requester_interface &get_feature_requester() = 0;
