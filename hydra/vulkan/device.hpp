@@ -36,10 +36,9 @@
 
 #include <vulkan/vulkan.h>
 
+#include "physical_device.hpp"
 #include "../hydra_exception.hpp"
 #include "../hydra_types.hpp"
-
-#include "queue_desc.hpp"
 
 namespace neam
 {
@@ -55,8 +54,8 @@ namespace neam
         public: // advanced
           /// \brief You shouldn't have to call this directly, but instead you should
           /// ask the hydra_device_creator class a new device
-          device(VkDevice _gpu, const physical_device &_phys_dev, std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> _id_to_familly_queue)
-          : gpu(_gpu), phys_dev(_phys_dev), id_to_familly_queue(_id_to_familly_queue)
+          device(VkDevice _vk_device, const physical_device &_phys_dev, std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> _id_to_familly_queue)
+          : vk_device(_vk_device), phys_dev(_phys_dev), id_to_familly_queue(_id_to_familly_queue)
           {
             _load_functions();
           }
@@ -64,24 +63,16 @@ namespace neam
         public:
           /// \brief Move constructor
           device(device &&o)
-            : gpu(o.gpu), phys_dev(o.phys_dev), id_to_familly_queue(o.id_to_familly_queue)
+            : vk_device(o.vk_device), phys_dev(o.phys_dev), id_to_familly_queue(o.id_to_familly_queue)
           {
             memcpy(&_st_offset, &o._st_offset, (size_t)(&_end_offset) - (size_t)(&_st_offset));
           }
 
           ~device()
           {
-            if (gpu)
-              vkDestroyDevice(gpu, nullptr);
+            if (vk_device)
+              vkDestroyDevice(vk_device, nullptr);
           }
-
-          /// \brief Create a command pool
-          /// Implemented in command_pool.hpp
-          command_pool create_command_pool(temp_queue_familly_id_t queue_id, VkCommandPoolCreateFlags flags = 0);
-
-          /// \brief Create a command pool
-          /// Implemented in command_pool.hpp
-          command_pool create_command_pool(const queue_desc &qd, VkCommandPoolCreateFlags flags = 0);
 
           /// \brief Return the physical device from which the device has been created
           const physical_device &get_physical_device() const
@@ -93,34 +84,34 @@ namespace neam
           /// \brief Return the address of a procedure. No check is performed.
           inline PFN_vkVoidFunction _get_proc_addr_unsafe(const std::string &name)
           {
-            return vkGetDeviceProcAddr(gpu, name.c_str());
+            return vkGetDeviceProcAddr(vk_device, name.c_str());
           }
           /// \brief Return the address of a procedure. No check is performed.
           inline PFN_vkVoidFunction _get_proc_addr(const std::string &name)
           {
-            PFN_vkVoidFunction vulkan_fnc_pointer = vkGetDeviceProcAddr(gpu, name.c_str());
+            PFN_vkVoidFunction vulkan_fnc_pointer = vkGetDeviceProcAddr(vk_device, name.c_str());
             check::on_vulkan_error::n_assert(vulkan_fnc_pointer != nullptr, "vkGetDeviceProcAddr failed for " + name);
             return vulkan_fnc_pointer;
           }
 
           /// \brief Convert a temp_queue_familly_id_t into a queue_desc
-          queue_desc _get_queue_info(temp_queue_familly_id_t temp_id)
+          std::pair<size_t, size_t> _get_queue_info(temp_queue_familly_id_t temp_id)
           {
             auto it = id_to_familly_queue.find(temp_id);
 
             check::on_vulkan_error::n_assert(it != id_to_familly_queue.end(), "Unable to find the requested temp_queue_familly_id_t");
 
-            return queue_desc(it->second.first, it->second.second);
+            return it->second;
           }
 
           /// \brief Return the vulkan device
-          VkDevice _get_vulkan_device()
+          VkDevice _get_vk_device() const
           {
-            return gpu;
+            return vk_device;
           }
 
         private:
-          VkDevice gpu;
+          VkDevice vk_device;
           physical_device phys_dev;
           std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> id_to_familly_queue;
 
@@ -279,7 +270,7 @@ namespace neam
         public:// advanced (vulkan device call wrappers)
           // this is the lazy way to wrap functions, and the big problem with this
           // method will be that the compiler may generate quite a lot of functions...
-#define   HYDRA_VK_DEV_FNC_WRAPPER(fnc)     template<typename... FncParams> inline auto _##fnc(FncParams... params) { return _fn_##fnc(gpu, std::forward<FncParams>(params)...); }
+#define   HYDRA_VK_DEV_FNC_WRAPPER(fnc)     template<typename... FncParams> inline auto _##fnc(FncParams... params) { return _fn_##fnc(vk_device, std::forward<FncParams>(params)...); }
           HYDRA_VK_DEV_FNC_WRAPPER(vkGetDeviceQueue);
           HYDRA_VK_DEV_FNC_WRAPPER(vkDeviceWaitIdle);
           HYDRA_VK_DEV_FNC_WRAPPER(vkAllocateMemory);

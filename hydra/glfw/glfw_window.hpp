@@ -260,48 +260,25 @@ namespace neam
           /// \brief Set the hydra icon (bonus function)
           void _set_hydra_icon()
           {
-            // from the icon sample of GLFW
-            const unsigned char icon_colors[][4] =
+            uint8_t hydra_logo[] = {0x7D, 0x3D, 0xEB, 0x5F, 0x7B};
+            constexpr size_t img_sz = 16;
+            constexpr size_t glyph_count = 4;
+            constexpr size_t y_pos = 7;
+            uint8_t pixels[img_sz * img_sz * 4] = {0};
+            for (size_t i = 0; i < glyph_count; ++i)
             {
-              {  0,   0,   0, 255}, // black
-              { 20,   0,   0, 127}, // red
-              {  0,   0,   0,  80}, // black (a bit transparent)
-              {  0,   0,   0, 100}, // black (a bit transparent)
-            };
-
-            const char* const hydra_icon[] =
-            {
-              "                                ",
-              "                                ",
-              "                                ",
-              "                                ",
-              "                                ",
-              "                                ",
-              "                                ",
-              "00  00  00  00  0000    000000  ",
-              "000000  000000  00  00  0000    ",
-              "00  00      00  000000  00  00  ",
-              "                                ",
-              "                                ",
-              "                                ",
-              "                                ",
-              "                                ",
-              "                                ",
-            };
-            unsigned char pixels[16 * 16 * 4] = {0};
-            unsigned char *target = pixels;
-            for (int y = 0;  y < 16;  y++)
-            {
-              for (int x = 0;  x < 32;  x += 2)
-              {
-                if (hydra_icon[y][x] >= '0' && hydra_icon[y][x] <= '9')
-                  memcpy(target, icon_colors[hydra_icon[y][x] - '0'], 4);
-
-                target += 4;
-              }
+              size_t bidx = y_pos * img_sz * 4 + 4 * 4 * i;
+              pixels[bidx + 3 + 0 * 4 + 0 * img_sz * 4] = hydra_logo[i] & 0x01 ? 255 : 0;
+              pixels[bidx + 3 + 1 * 4 + 0 * img_sz * 4] = hydra_logo[i] & 0x02 ? 255 : 0;
+              pixels[bidx + 3 + 2 * 4 + 0 * img_sz * 4] = hydra_logo[i] & 0x04 ? 255 : 0;
+              pixels[bidx + 3 + 0 * 4 + 1 * img_sz * 4] = hydra_logo[i] & 0x08 ? 255 : 0;
+              pixels[bidx + 3 + 1 * 4 + 1 * img_sz * 4] = hydra_logo[i] & 0x10 ? 255 : 0;
+              pixels[bidx + 3 + 2 * 4 + 1 * img_sz * 4] = hydra_logo[i] & 0x20 ? 255 : 0;
+              pixels[bidx + 3 + 0 * 4 + 2 * img_sz * 4] = hydra_logo[i] & 0x40 ? 255 : 0;
+              pixels[bidx + 3 + 1 * 4 + 2 * img_sz * 4] = hydra_logo[i] & 0x80 ? 255 : 0;
+              pixels[bidx + 3 + 2 * 4 + 2 * img_sz * 4] = 255;
             }
-
-            set_icon(glm::uvec2(16, 16), pixels);
+            set_icon(glm::uvec2(img_sz, img_sz), pixels);
           }
 
         private:

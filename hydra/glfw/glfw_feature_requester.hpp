@@ -78,7 +78,7 @@ namespace neam
                 temp_queue_familly_id_t tid = hdc.require_queue_capacity(queue_flags, [w](size_t qindex, const neam::hydra::vk::physical_device &gpu) -> bool
                 {
                   VkBool32 r = false;
-                  vkGetPhysicalDeviceSurfaceSupportKHR(gpu._get_vulkan_physical_device(), qindex, w->_get_surface()._get_vulkan_surface(), &r);
+                  vkGetPhysicalDeviceSurfaceSupportKHR(gpu._get_vk_physical_device(), qindex, w->_get_surface()._get_vk_surface(), &r);
                   return r;
                 }, true);
 

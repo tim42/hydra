@@ -400,7 +400,7 @@ namespace neam
           device_info.pEnabledFeatures = &features;
 
           VkDevice device;
-          check::on_vulkan_error::n_throw_exception(vkCreateDevice(gpu._get_vulkan_physical_device(), &device_info, nullptr, &device));
+          check::on_vulkan_error::n_throw_exception(vkCreateDevice(gpu._get_vk_physical_device(), &device_info, nullptr, &device));
 
           return vk::device(device, gpu, id_to_fq);
         }

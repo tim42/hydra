@@ -86,7 +86,7 @@ namespace neam
 
         public: // advanced
           /// \brief Return the vulkan command pool
-          VkCommandPool _get_vulkan_command_pool()
+          VkCommandPool _get_vulkan_command_pool() const
           {
             return cmd_pool;
           }
@@ -95,30 +95,6 @@ namespace neam
           device &dev;
           VkCommandPool cmd_pool;
       };
-
-
-
-      // from device.hpp (implementations)
-
-      command_pool device::create_command_pool(temp_queue_familly_id_t queue_id, VkCommandPoolCreateFlags flags)
-      {
-        queue_desc qd = _get_queue_info(queue_id);
-        return create_command_pool(qd, flags);
-      }
-
-      command_pool device::create_command_pool(const queue_desc &qd, VkCommandPoolCreateFlags flags)
-      {
-        VkCommandPoolCreateInfo cmd_pool_info = {};
-        cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        cmd_pool_info.pNext = NULL;
-        cmd_pool_info.queueFamilyIndex = qd.get_queue_familly_index();
-        cmd_pool_info.flags = flags;
-
-        VkCommandPool cmd_pool;
-        check::on_vulkan_error::n_throw_exception(_vkCreateCommandPool(&cmd_pool_info, nullptr, &cmd_pool));
-
-        return command_pool(*this, cmd_pool);
-      }
     } // namespace vk
   } // namespace hydra
 } // namespace neam

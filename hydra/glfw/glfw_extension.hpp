@@ -93,7 +93,7 @@ namespace neam
           void _create_surface(window &win, neam::hydra::vk::instance &instance, bool ask_for_queue = true)
           {
             VkSurfaceKHR surface;
-            neam::hydra::check::on_vulkan_error::n_throw_exception(glfwCreateWindowSurface(instance._get_vulkan_instance(), win._get_glfw_handle(), nullptr, &surface));
+            neam::hydra::check::on_vulkan_error::n_throw_exception(glfwCreateWindowSurface(instance._get_vk_instance(), win._get_glfw_handle(), nullptr, &surface));
             win._set_surface(vk::surface(instance, surface));
             if (ask_for_queue)
               requester.windows.emplace_back(&win);

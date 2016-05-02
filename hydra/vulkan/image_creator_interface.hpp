@@ -1,9 +1,9 @@
 //
-// file : queue_desc.hpp
-// in : file:///home/tim/projects/hydra/hydra/vulkan/queue_desc.hpp
+// file : image_creator_interface.hpp
+// in : file:///home/tim/projects/hydra/hydra/vulkan/image_creator_interface.hpp
 //
 // created by : Timothée Feuillet
-// date: Thu Apr 28 2016 16:10:45 GMT+0200 (CEST)
+// date: Sun May 01 2016 13:57:01 GMT+0200 (CEST)
 //
 //
 // Copyright (c) 2016 Timothée Feuillet
@@ -27,10 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_3064046323163029733_126501074_QUEUE_DESC_HPP__
-#define __N_3064046323163029733_126501074_QUEUE_DESC_HPP__
-
-#include <cstddef>
+#ifndef __N_26624251201935321307_35532239_IMAGE_CREATOR_INTERFACE_HPP__
+#define __N_26624251201935321307_35532239_IMAGE_CREATOR_INTERFACE_HPP__
 
 namespace neam
 {
@@ -38,35 +36,9 @@ namespace neam
   {
     namespace vk
     {
-      /// \brief Describe a queue inside a queue familly
-      class queue_desc
-      {
-        public: // advanced
-          queue_desc(size_t _queue_familly_index, size_t _queue_index)
-            : queue_familly_index(_queue_familly_index), queue_index(_queue_index)
-          {
-          }
-
-          /// \brief Return the familly index of the queue
-          size_t get_queue_familly_index() const
-          {
-            return queue_familly_index;
-          }
-
-          /// \brief Return the index of the queue inside the queue familly
-          size_t get_queue_index() const
-          {
-            return queue_index;
-          }
-
-        public:
-        private:
-          size_t queue_familly_index;
-          size_t queue_index;
-      };
+      
     } // namespace vk
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_3064046323163029733_126501074_QUEUE_DESC_HPP__
-
+#endif // __N_26624251201935321307_35532239_IMAGE_CREATOR_INTERFACE_HPP__

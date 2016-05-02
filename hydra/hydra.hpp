@@ -34,7 +34,10 @@
 #include "hydra_logger.hpp"
 // a reflective support for hydra (define HYDRA_NO_REFLECTIVE_SUPPORT to disable this)
 #include "hydra_reflective.hpp"
-
+// some specific exception for hydra. Also, some checks.
+// The macro HYDRA_DISABLE_OPTIONAL_CHECKS will disable asserts and error checking
+// on non-critical sections of the code.
+// NOTE: hydra assert throws exceptions (neam::hydra::exception that inherit from std::exception)
 #include "hydra_exception.hpp"
 
 #include "init/bootstrap.hpp"

@@ -21,7 +21,7 @@ int main(int, char **)
   neam::hydra::glfw::init_extension glfw_ext;
   neam::hydra::gen_feature_requester gfr;
 
-  // some requirements of the program
+  // some requirements of the app
   glfw_ext.request_graphic_queue(true); // the queue
   gfr.require_device_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
@@ -34,12 +34,17 @@ int main(int, char **)
   neam::hydra::glfw::window win = glfw_ext.create_window(instance, glm::uvec2(500, 500), "hydra-test-dev");
 
   neam::hydra::vk::device device = hydra_init.create_device(instance);
+  neam::hydra::vk::queue gqueue(device, win._get_win_queue());
 
   // run something
   neam::cr::out.log() << "device created !" << std::endl;
 
-  neam::hydra::vk::command_pool cmd_pool = device.create_command_pool(win._get_win_queue());
+  neam::hydra::vk::command_pool cmd_pool = gqueue.create_command_pool();
   neam::hydra::vk::command_buffer cmd = cmd_pool.create_command_buffer();
+
+  neam::hydra::vk::submit_info si;
+
+  si << neam::hydra::vk::cmd_buffer_pair{cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT};
 
   sleep(25);
 

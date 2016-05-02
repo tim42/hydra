@@ -204,7 +204,7 @@ namespace neam
         public: // advanced
           /// \brief Return the vulkan object that represent the physical device
           /// \note marked as advanced
-          VkPhysicalDevice _get_vulkan_physical_device() const
+          VkPhysicalDevice _get_vk_physical_device() const
           {
             return gpu;
           }

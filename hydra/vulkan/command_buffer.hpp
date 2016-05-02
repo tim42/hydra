@@ -70,7 +70,7 @@ namespace neam
 
         public: // advanced
           /// \brief Return the vulkan command buffer
-          VkCommandBuffer _get_vulkan_command_buffer()
+          VkCommandBuffer _get_vulkan_command_buffer() const
           {
             return cmd_buf;
           }

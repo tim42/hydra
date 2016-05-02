@@ -62,20 +62,20 @@ namespace neam
 
             uint32_t count = 0;
             check::on_vulkan_error::n_throw_exception(
-              vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vulkan_physical_device(), vk_surface, &count, nullptr)
+              vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vk_physical_device(), vk_surface, &count, nullptr)
             );
             formats.resize(count);
             check::on_vulkan_error::n_throw_exception(
-              vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vulkan_physical_device(), vk_surface, &count, formats.data())
+              vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vk_physical_device(), vk_surface, &count, formats.data())
             );
 
             count = 0;
             check::on_vulkan_error::n_throw_exception(
-              vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vulkan_physical_device(), vk_surface, &count, nullptr)
+              vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vk_physical_device(), vk_surface, &count, nullptr)
             );
             modes.resize(count);
             check::on_vulkan_error::n_throw_exception(
-              vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vulkan_physical_device(), vk_surface, &count, modes.data())
+              vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vk_physical_device(), vk_surface, &count, modes.data())
             );
           }
 
@@ -92,16 +92,16 @@ namespace neam
           ~surface()
           {
             if (vk_surface)
-              vkDestroySurfaceKHR(inst._get_vulkan_instance(), vk_surface, nullptr);
+              vkDestroySurfaceKHR(inst._get_vk_instance(), vk_surface, nullptr);
           }
 
           /// \brief Reload the surface capabilities
           void reload_capabilities()
           {
-            if (phydev._get_vulkan_physical_device() == nullptr)
+            if (phydev._get_vk_physical_device() == nullptr)
               return;
             check::on_vulkan_error::n_throw_exception(
-              vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phydev._get_vulkan_physical_device(), vk_surface, &capabilities)
+              vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phydev._get_vk_physical_device(), vk_surface, &capabilities)
             );
           }
 
@@ -113,24 +113,24 @@ namespace neam
             reload_capabilities();
             uint32_t count = 0;
             check::on_vulkan_error::n_throw_exception(
-              vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vulkan_physical_device(), vk_surface, &count, nullptr)
+              vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vk_physical_device(), vk_surface, &count, nullptr)
             );
             formats.resize(count);
             check::on_vulkan_error::n_throw_exception(
-              vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vulkan_physical_device(), vk_surface, &count, formats.data())
+              vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vk_physical_device(), vk_surface, &count, formats.data())
             );
 
             count = 0;
             check::on_vulkan_error::n_throw_exception(
-              vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vulkan_physical_device(), vk_surface, &count, nullptr)
+              vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vk_physical_device(), vk_surface, &count, nullptr)
             );
             modes.resize(count);
             check::on_vulkan_error::n_throw_exception(
-              vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vulkan_physical_device(), vk_surface, &count, modes.data())
+              vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vk_physical_device(), vk_surface, &count, modes.data())
             );
           }
 
-          /// \brief Return a arbitrary defined preferred present mode
+          /// \brief Return an arbitrary defined preferred present mode
           /// It will look for the best one (fast and nice) then the fast one
           /// and finally the fallback
           VkPresentModeKHR get_preferred_present_mode() const
@@ -149,6 +149,36 @@ namespace neam
             return mode;
           }
 
+          /// \brief Return an arbitrary defined image format for the surface
+          /// (it will try to get the 32bit BGRA)
+          VkFormat get_preferred_format() const
+          {
+            if (formats.size() == 1 && formats[0].format == VK_FORMAT_UNDEFINED)
+              return VK_FORMAT_B8G8R8A8_UNORM;
+            else if (formats.size() >= 1)
+            {
+              for (auto &it : formats)
+              {
+                if (it.format == VK_FORMAT_B8G8R8A8_UNORM)
+                  return VK_FORMAT_B8G8R8A8_UNORM;
+              }
+              return formats[0].format;
+            }
+
+#ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
+            check::on_vulkan_error::n_assert(false, "no image format is supported by the surface");
+#endif
+            return VK_FORMAT_B8G8R8A8_UNORM;
+          }
+
+          /// \brief Return an arbitrary defined transform that will most likely
+          /// fit every need
+          VkSurfaceTransformFlagBitsKHR get_preferred_transform() const
+          {
+            if (capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+              return VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+            return capabilities.currentTransform;
+          }
 
           /// \brief Get the minimum number of images the surface can have
           /// (used when defining the swapchain)
@@ -219,7 +249,7 @@ namespace neam
 
         public: // advanced
           /// \brief Return the wrapped vulkan surface
-          VkSurfaceKHR _get_vulkan_surface()
+          VkSurfaceKHR _get_vk_surface() const
           {
             return vk_surface;
           }

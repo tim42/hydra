@@ -98,7 +98,7 @@ namespace neam
         public: // advanced
           /// \brief Return the vulkan instance object
           /// \note "Marked" as advanced ('cause that's not meant to be used by the end user)
-          VkInstance _get_vulkan_instance()
+          VkInstance _get_vk_instance() const
           {
             return vulkan_instance;
           }

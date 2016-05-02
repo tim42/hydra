@@ -35,8 +35,19 @@
 
 #include "instance.hpp"
 #include "device.hpp"
+#include "device_memory.hpp"
+#include "queue.hpp"
 #include "command_pool.hpp"
 #include "command_buffer.hpp"
+#include "fence.hpp"
+#include "semaphore.hpp"
+#include "event.hpp"
+#include "memory_barrier.hpp"
+#include "image.hpp"
+
+#include "submit_info.hpp"
+
+// extensions:
 #include "surface.hpp"
 #include "swapchain.hpp"
 
