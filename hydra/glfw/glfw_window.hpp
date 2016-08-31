@@ -38,6 +38,7 @@
 #include "../hydra_exception.hpp"
 #include "../hydra_types.hpp"
 #include "../vulkan/surface.hpp"
+#include "../vulkan/swapchain.hpp"
 
 namespace neam
 {
@@ -102,6 +103,8 @@ namespace neam
           /// \brief destroy the window
           ~window()
           {
+            if (surface)
+              delete surface;
             if (win)
               glfwDestroyWindow(win);
           }
@@ -249,6 +252,13 @@ namespace neam
             return *surface;
           }
 
+          /// \brief Return the surface of the window
+          /// \see _have_surface()
+          const vk::surface &_get_surface() const
+          {
+            return *surface;
+          }
+
           /// \brief Set the surface of the window
           void _set_surface(vk::surface &&_surface)
           {
@@ -257,28 +267,50 @@ namespace neam
             surface = new vk::surface(std::move(_surface));
           }
 
-          /// \brief Set the hydra icon (bonus function)
-          void _set_hydra_icon()
+          /// \brief Create a swapchain (filled with default parameters).
+          /// That should be good enough for most applications
+          vk::swapchain _create_swapchain(vk::device &dev)
           {
-            uint8_t hydra_logo[] = {0x7D, 0x3D, 0xEB, 0x5F, 0x7B};
-            constexpr size_t img_sz = 16;
-            constexpr size_t glyph_count = 4;
-            constexpr size_t y_pos = 7;
-            uint8_t pixels[img_sz * img_sz * 4] = {0};
+            return vk::swapchain(dev, _get_surface(), get_size());
+          }
+
+          /// \brief Set the hydra icon (bonus function)
+          /// \note icon_sz must be a power of 2
+          /// \note glyph_count can't be more than 5, and more than 4 if icon_sz is 16
+          void _set_hydra_icon(size_t icon_sz = 256, size_t glyph_count = 4)
+          {
+            const uint8_t hydra_logo[] = {0x7D, 0x3D, 0xEB, 0x5F, 0x7B};
+
+            if (icon_sz < 16) return; // not possible
+            if (glyph_count <= 1 || glyph_count > sizeof(hydra_logo)) glyph_count = 4;
+            if (icon_sz == 16 && glyph_count > 4) glyph_count = 4;
+
+            const size_t sq_sz = icon_sz / (glyph_count * 4);
+            const size_t y_pos = icon_sz / 2 - (sq_sz / 2 + 1);
+            const size_t x_pos = sq_sz / 2;
+            uint8_t pixels[icon_sz * icon_sz * 4];
+            memset(pixels, 0, icon_sz * icon_sz * 4);
+
             for (size_t i = 0; i < glyph_count; ++i)
             {
-              size_t bidx = y_pos * img_sz * 4 + 4 * 4 * i;
-              pixels[bidx + 3 + 0 * 4 + 0 * img_sz * 4] = hydra_logo[i] & 0x01 ? 255 : 0;
-              pixels[bidx + 3 + 1 * 4 + 0 * img_sz * 4] = hydra_logo[i] & 0x02 ? 255 : 0;
-              pixels[bidx + 3 + 2 * 4 + 0 * img_sz * 4] = hydra_logo[i] & 0x04 ? 255 : 0;
-              pixels[bidx + 3 + 0 * 4 + 1 * img_sz * 4] = hydra_logo[i] & 0x08 ? 255 : 0;
-              pixels[bidx + 3 + 1 * 4 + 1 * img_sz * 4] = hydra_logo[i] & 0x10 ? 255 : 0;
-              pixels[bidx + 3 + 2 * 4 + 1 * img_sz * 4] = hydra_logo[i] & 0x20 ? 255 : 0;
-              pixels[bidx + 3 + 0 * 4 + 2 * img_sz * 4] = hydra_logo[i] & 0x40 ? 255 : 0;
-              pixels[bidx + 3 + 1 * 4 + 2 * img_sz * 4] = hydra_logo[i] & 0x80 ? 255 : 0;
-              pixels[bidx + 3 + 2 * 4 + 2 * img_sz * 4] = 255;
+              for (size_t y = 0; y < sq_sz; ++y)
+              {
+                for (size_t x = 0; x < sq_sz; ++x)
+                {
+                  size_t bidx = (y_pos + y) * icon_sz * 4 + (x_pos + x + 4 * sq_sz * i) * 4;
+                  pixels[bidx + 3 + 0 * sq_sz * 4 + 0 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x01 ? 255 : 0;
+                  pixels[bidx + 3 + 1 * sq_sz * 4 + 0 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x02 ? 255 : 0;
+                  pixels[bidx + 3 + 2 * sq_sz * 4 + 0 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x04 ? 255 : 0;
+                  pixels[bidx + 3 + 0 * sq_sz * 4 + 1 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x08 ? 255 : 0;
+                  pixels[bidx + 3 + 1 * sq_sz * 4 + 1 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x10 ? 255 : 0;
+                  pixels[bidx + 3 + 2 * sq_sz * 4 + 1 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x20 ? 255 : 0;
+                  pixels[bidx + 3 + 0 * sq_sz * 4 + 2 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x40 ? 255 : 0;
+                  pixels[bidx + 3 + 1 * sq_sz * 4 + 2 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x80 ? 255 : 0;
+                  pixels[bidx + 3 + 2 * sq_sz * 4 + 2 * icon_sz * sq_sz * 4] = 255;
+                }
+              }
             }
-            set_icon(glm::uvec2(img_sz, img_sz), pixels);
+            set_icon(glm::uvec2(icon_sz, icon_sz), pixels);
           }
 
         private:

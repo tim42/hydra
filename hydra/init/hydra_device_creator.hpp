@@ -359,7 +359,7 @@ namespace neam
             if (queue_consumption[i] == 0) // no queue here
               continue;
 
-            queue_prios[i].resize(queue_consumption[i]);
+            queue_prios[i].resize(queue_consumption[i], 0.f);
             queue_info[queue_info_count].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
             queue_info[queue_info_count].flags = 0;
             queue_info[queue_info_count].pNext = nullptr;

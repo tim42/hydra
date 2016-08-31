@@ -45,6 +45,7 @@ namespace neam
           /// \brief Convert a vulkan device feature list to a hydra one
           device_features(const VkPhysicalDeviceFeatures &vk_features)
           {
+            // This is just a safeguard, as the header may change and this will abort the compilation if the structure contains more/less members
             static_assert(sizeof(VkPhysicalDeviceFeatures) / 4 == feature_count, "it looks like you have an unsupported version of the vulkan header");
 
             // this is a lazy way to do this...
@@ -139,7 +140,7 @@ namespace neam
           }
 
         public: // advanced
-          /// \brief COnvert a hydra device feature list back to a vulkan one
+          /// \brief Convert a hydra device feature list back to a vulkan one
           VkPhysicalDeviceFeatures _to_vulkan() const
           {
             VkPhysicalDeviceFeatures ret;

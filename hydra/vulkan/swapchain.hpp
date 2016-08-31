@@ -30,11 +30,20 @@
 #ifndef __N_2428110920100477524_239810610_SWAPCHAIN_HPP__
 #define __N_2428110920100477524_239810610_SWAPCHAIN_HPP__
 
+#include <vector>
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
 #include "device.hpp"
 #include "surface.hpp"
+#include "image.hpp"
+#include "image_view.hpp"
+#include "fence.hpp"
+#include "semaphore.hpp"
+
+#include "viewport.hpp"
+#include "rect2D.hpp"
+#include "pipeline_viewport_state.hpp"
 
 namespace neam
 {
@@ -43,26 +52,33 @@ namespace neam
     namespace vk
     {
       /// \brief Wrap the swapchain vulkan extension
-      /// (could be compared to a GL double buffer)
+      /// (could be compared to a GL double/triple buffer)
       class swapchain
       {
         public: // advanced
           /// \brief Construct a swapchain from a vulkan swapchain object
-          swapchain(device &_dev, surface &_surf, VkSwapchainKHR _vk_swapchain)
-            : dev(_dev), surf(_surf), vk_swapchain(_vk_swapchain)
+          swapchain(device &_dev, surface &_surf, VkSwapchainKHR _vk_swapchain, const VkSwapchainCreateInfoKHR &_create_info)
+            : dev(_dev), surf(_surf), vk_swapchain(_vk_swapchain), create_info(_create_info),
+              sw_viewport(glm::vec2(create_info.imageExtent.width, create_info.imageExtent.height)),
+              sw_rect(glm::ivec2(0, 0), glm::uvec2(create_info.imageExtent.width, create_info.imageExtent.height))
           {
+            populate_image_vector();
           }
 
           /// \brief Create a swapchain from the vulkan create info structure.
           /// This is really what will give you the best fine tuning
           /// capabilities at the expense of user friendliness
-          swapchain(device &_dev, surface &_surf, VkSwapchainCreateInfoKHR create_info)
-           : dev(_dev), surf(_surf)
+          swapchain(device &_dev, surface &_surf, const VkSwapchainCreateInfoKHR &_create_info)
+            : dev(_dev), surf(_surf), create_info(_create_info),
+              sw_viewport(glm::vec2(create_info.imageExtent.width, create_info.imageExtent.height)),
+              sw_rect(glm::ivec2(0, 0), glm::uvec2(create_info.imageExtent.width, create_info.imageExtent.height))
           {
             create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
             create_info.pNext = nullptr;
             create_info.surface = _surf._get_vk_surface();
             check::on_vulkan_error::n_throw_exception(vkCreateSwapchainKHR(dev._get_vk_device(), &create_info, nullptr, &vk_swapchain));
+
+            populate_image_vector();
           }
 
         public:
@@ -72,7 +88,7 @@ namespace neam
           /// windows height and width
           swapchain(device &_dev, surface &_surf, const glm::uvec2 &preferred_image_size)
             : swapchain(_dev, _surf, _surf.get_preferred_format(),
-                        (_surf.get_current_size().x == (uint32_t)-1 &&
+                        (_surf.get_current_size().x == (uint32_t) - 1 &&
                          _surf.get_current_size().y == (uint32_t) - 1) ? preferred_image_size : _surf.get_current_size())
           {
           }
@@ -80,17 +96,16 @@ namespace neam
           /// \brief Create a swapchain, specifying some image configurations
           swapchain(device &_dev, surface &_surf, VkFormat image_format, const glm::uvec2 &image_size,
                     VkCompositeAlphaFlagBitsKHR composite_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-                    VkImageUsageFlags image_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                   )
-            : dev(_dev), surf(_surf)
+                    VkImageUsageFlags image_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+            : dev(_dev), surf(_surf), sw_viewport(glm::vec2(image_size.x, image_size.y)),
+              sw_rect(glm::ivec2(0, 0), image_size)
           {
-            size_t image_count = 2;
+            size_t image_count = 3;
             if (image_count < _surf.get_min_image_count())
               image_count = _surf.get_min_image_count();
             else if (image_count > _surf.get_max_image_count())
               image_count = _surf.get_max_image_count();
 
-            VkSwapchainCreateInfoKHR create_info;
             create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
             create_info.pNext = nullptr;
             create_info.surface = _surf._get_vk_surface();
@@ -111,11 +126,14 @@ namespace neam
             create_info.pQueueFamilyIndices = NULL;
 
             check::on_vulkan_error::n_throw_exception(vkCreateSwapchainKHR(dev._get_vk_device(), &create_info, nullptr, &vk_swapchain));
+
+            populate_image_vector();
           }
 
           /// \brief Move constructor
           swapchain(swapchain &&o)
-            : dev(o.dev), surf(o.surf), vk_swapchain(o.vk_swapchain)
+            : dev(o.dev), surf(o.surf), vk_swapchain(o.vk_swapchain), create_info(o.create_info), swapchain_images(std::move(o.swapchain_images)),
+              swapchain_image_views(std::move(o.swapchain_image_views)), sw_viewport(o.sw_viewport), sw_rect(o.sw_rect)
           {
             o.vk_swapchain = nullptr;
           }
@@ -126,16 +144,225 @@ namespace neam
               vkDestroySwapchainKHR(dev._get_vk_device(), vk_swapchain, nullptr);
           }
 
+          /// \brief Return the image format of the swapchain
+          VkFormat get_image_format() const
+          {
+            return create_info.imageFormat;
+          }
+
+          /// \brief Return the image count of the swapchain
+          size_t get_image_count() const
+          {
+            return swapchain_images.size();
+          }
+
+          /// \brief Return a const reference to the image vector of the swapchain
+          const std::deque<image> &get_image_vector() const
+          {
+            return swapchain_images;
+          }
+
+          /// \brief Return a const reference to the image vector of the swapchain
+          const std::deque<image_view> &get_image_view_vector() const
+          {
+            return swapchain_image_views;
+          }
+
+          /// \brief Recreate the swapchain (do not forget to invalidate comand buffers and everything that depends on the swapchain !)
+          /// \note You should call this at a correct timing (to avoid freeing in-use objects)
+          void recreate_swapchain(const glm::uvec2 &image_size)
+          {
+            swapchain_image_views.clear();
+            swapchain_images.clear();
+
+            create_info.oldSwapchain = vk_swapchain;
+            create_info.imageExtent.width = image_size.x;
+            create_info.imageExtent.height = image_size.y;
+            check::on_vulkan_error::n_throw_exception(vkCreateSwapchainKHR(dev._get_vk_device(), &create_info, nullptr, &vk_swapchain));
+
+            vkDestroySwapchainKHR(dev._get_vk_device(), create_info.oldSwapchain, nullptr);
+            create_info.oldSwapchain = nullptr;
+
+            sw_viewport.set_size(glm::vec2(image_size.x, image_size.y));
+            sw_rect.set_size(image_size);
+
+            populate_image_vector();
+          }
+
+          /// \brief Get the next image from the swapchain
+          /// \note This version does not signal a fence nor a semaphore
+          /// \param[out] should_recreate if specified, tells if the swapchain SHOULD be recreated
+          /// \return the image index or -1 if the swapchain MUST be recreated
+          /// \throw neam::hydra::exception_tpl on any error
+          uint32_t get_next_image_index(uint64_t timeout_ns = std::numeric_limits<uint64_t>::max(), bool *should_recreate = nullptr)
+          {
+            uint32_t image_index;
+            VkResult res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, nullptr, nullptr, &image_index);
+
+            if (res == VK_ERROR_OUT_OF_DATE_KHR)
+            {
+              if (should_recreate)
+                *should_recreate = true;
+              return (uint32_t)-1;
+            }
+            else if (res == VK_SUBOPTIMAL_KHR && should_recreate)
+              *should_recreate = true;
+            else // check for errors on vkAcquireNextImageKHR
+              check::on_vulkan_error::n_throw_exception(res);
+
+            return image_index;
+          }
+
+          /// \brief Get the next image from the swapchain
+          /// \note This version signals a fence
+          /// \param[out] should_recreate if specified, tells if the swapchain SHOULD be recreated
+          /// \return the image index or -1 if the swapchain MUST be recreated
+          /// \throw neam::hydra::exception_tpl on any error
+          uint32_t get_next_image_index(fence &fnc, uint64_t timeout_ns = std::numeric_limits<uint64_t>::max(), bool *should_recreate = nullptr)
+          {
+            uint32_t image_index;
+            VkResult res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, nullptr, fnc._get_vk_fence(), &image_index);
+
+            if (res == VK_ERROR_OUT_OF_DATE_KHR)
+            {
+              if (should_recreate)
+                *should_recreate = true;
+              return (uint32_t)-1;
+            }
+            else if (res == VK_SUBOPTIMAL_KHR && should_recreate)
+              *should_recreate = true;
+            else // check for errors on vkAcquireNextImageKHR
+              check::on_vulkan_error::n_throw_exception(res);
+
+            return image_index;
+          }
+
+          /// \brief Get the next image from the swapchain
+          /// \note This version signals a semaphore
+          /// \param[out] should_recreate if specified, tells if the swapchain SHOULD be recreated
+          /// \return the image index or -1 if the swapchain MUST be recreated
+          /// \throw neam::hydra::exception_tpl on any error
+          uint32_t get_next_image_index(semaphore &sema, uint64_t timeout_ns = std::numeric_limits<uint64_t>::max(), bool *should_recreate = nullptr)
+          {
+            uint32_t image_index;
+            VkResult res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, sema._get_vk_semaphore(), nullptr, &image_index);
+
+            if (res == VK_ERROR_OUT_OF_DATE_KHR)
+            {
+              if (should_recreate)
+                *should_recreate = true;
+              return (uint32_t)-1;
+            }
+            else if (res == VK_SUBOPTIMAL_KHR && should_recreate)
+              *should_recreate = true;
+            else // check for errors on vkAcquireNextImageKHR
+              check::on_vulkan_error::n_throw_exception(res);
+
+            return image_index;
+          }
+
+          /// \brief Get the next image from the swapchain
+          /// \note This version signals a semaphore and a fence
+          /// \param[out] should_recreate if specified, tells if the swapchain SHOULD be recreated
+          /// \return the image index or -1 if the swapchain MUST be recreated
+          /// \throw neam::hydra::exception_tpl on any error
+          uint32_t get_next_image_index(semaphore &sema, fence &fnc, uint64_t timeout_ns = std::numeric_limits<uint64_t>::max(), bool *should_recreate = nullptr)
+          {
+            uint32_t image_index;
+            VkResult res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, sema._get_vk_semaphore(), fnc._get_vk_fence(), &image_index);
+
+            if (res == VK_ERROR_OUT_OF_DATE_KHR)
+            {
+              if (should_recreate)
+                *should_recreate = true;
+              return (uint32_t)-1;
+            }
+            else if (res == VK_SUBOPTIMAL_KHR && should_recreate)
+              *should_recreate = true;
+            else // check for errors on vkAcquireNextImageKHR
+              check::on_vulkan_error::n_throw_exception(res);
+
+            return image_index;
+          }
+
+          /// \brief Return a reference to a viewport that covers the whole surface
+          /// \note that reference is updated when the swapchain is recreated
+          const viewport &get_full_viewport() const
+          {
+            return sw_viewport;
+          }
+
+          /// \brief Return a rectD that covers the whole viewport
+          /// \note that reference is updated when the swapchain is recreated
+          const rect2D &get_full_rect2D() const
+          {
+            return sw_rect;
+          }
+
+          /// \brief Return a uvec2 (not a reference !!) hat describe the width and height of the swapchain
+          glm::uvec2 get_dimensions() const
+          {
+            return glm::uvec2(create_info.imageExtent.width, create_info.imageExtent.height);
+          }
+
+
         public: // advanced
           VkSwapchainKHR _get_vk_swapchain() const
           {
             return vk_swapchain;
           }
 
-        private:
+          /// \brief Create a new pipeline_viewport_state from the swapchain
+          /// \note It should not outlive the swapchain that created it
+          pipeline_viewport_state _create_pipeline_viewport_state() const
+          {
+            return pipeline_viewport_state({&get_full_viewport()}, {&get_full_rect2D()});
+          }
+
+        private: // helper
+          void populate_image_vector()
+          {
+            uint32_t image_count;
+            vkGetSwapchainImagesKHR(dev._get_vk_device(), vk_swapchain, &image_count, nullptr);
+            std::vector<VkImage> vk_images;
+            vk_images.resize(image_count);
+            vkGetSwapchainImagesKHR(dev._get_vk_device(), vk_swapchain, &image_count, vk_images.data());
+
+            // a fake create info with just enough populated to make the image class works correctly
+            VkImageCreateInfo img_create_info;
+            img_create_info.imageType = VK_IMAGE_TYPE_2D;
+            img_create_info.format = create_info.imageFormat;
+            img_create_info.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+            // updatepopulate the vk::image vector
+            for (size_t i = 0; i < vk_images.size(); ++i)
+            {
+              if (i >= swapchain_images.size())
+                swapchain_images.emplace_back(dev, vk_images[i], img_create_info, true);
+              else
+                swapchain_images[i] = image(dev, vk_images[i], img_create_info, true);
+            }
+
+            // update/populate the vk::image_view vector
+            for (size_t i = 0; i < swapchain_images.size(); ++i)
+            {
+              if (i >= swapchain_image_views.size())
+                swapchain_image_views.emplace_back(dev, swapchain_images[i], VK_IMAGE_VIEW_TYPE_2D);
+              else
+                swapchain_image_views[i] = image_view(dev, swapchain_images[i], VK_IMAGE_VIEW_TYPE_2D);
+            }
+          }
+
+        private: // properties
           device &dev;
           surface &surf;
           VkSwapchainKHR vk_swapchain;
+          VkSwapchainCreateInfoKHR create_info;
+
+          std::deque<image> swapchain_images;
+          std::deque<image_view> swapchain_image_views;
+          viewport sw_viewport;
+          rect2D sw_rect;
       };
     } // namespace vk
   } // namespace hydra

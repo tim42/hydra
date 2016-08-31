@@ -179,7 +179,7 @@ namespace neam
         std::list<std::string> instance_extensions;
         std::list<std::string> instance_layers;
         std::list<queue_caps> queue_capabilities;
-        std::vector<temp_queue_familly_id_t> temporary_ids;
+        std::deque<temp_queue_familly_id_t> temporary_ids;
     };
   } // namespace hydra
 } // namespace neam

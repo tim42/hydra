@@ -40,7 +40,6 @@
 #include "device.hpp"
 #include "device_memory.hpp"
 
-
 namespace neam
 {
   namespace hydra
@@ -48,12 +47,14 @@ namespace neam
     namespace vk
     {
       /// \brief Wrap a vulkan image.
+      /// \todo That is not finished, and I really HATE the fact the image class holds the memory for the image
       class image
       {
         public: // advanced
           /// \brief Create from a vulkan image
-          image(device &_dev, VkImage _vk_image)
-            : dev(_dev), vk_image(_vk_image), mem(_dev)
+          image(device &_dev, VkImage _vk_image, const VkImageCreateInfo &_ici, bool _do_not_destroy = false)
+            : dev(_dev), vk_image(_vk_image), image_create_info(_ici),
+              do_not_destroy(_do_not_destroy)
             {
               dev._vkGetImageMemoryRequirements(vk_image, &mem_requirements);
             }
@@ -61,14 +62,35 @@ namespace neam
         public:
           /// \brief Move constructor
           image(image &&o)
-           : dev(o.dev), vk_image(o.vk_image), mem_requirements(o.mem_requirements), mem(std::move(o.mem))
+            : dev(o.dev), vk_image(o.vk_image), image_create_info(o.image_create_info),
+              do_not_destroy(o.do_not_destroy),
+              mem_requirements(o.mem_requirements)
           {
             o.vk_image = nullptr;
           }
 
+          image &operator = (image &&o)
+          {
+            if (&o == this)
+              return *this;
+
+            check::on_vulkan_error::n_assert(&o.dev == &dev, "can't assign images with different vulkan devices");
+
+            if (vk_image && do_not_destroy == false)
+              dev._vkDestroyImage(vk_image, nullptr);
+
+            vk_image = o.vk_image;
+            image_create_info = o.image_create_info;
+            do_not_destroy = o.do_not_destroy;
+            mem_requirements = o.mem_requirements;
+
+            return *this;
+          }
+
+          /// \brief Destructor
           ~image()
           {
-            if (vk_image)
+            if (vk_image && do_not_destroy == false)
               dev._vkDestroyImage(vk_image, nullptr);
           }
 
@@ -105,7 +127,7 @@ namespace neam
             VkImage vk_image;
 
             check::on_vulkan_error::n_throw_exception(dev._vkCreateImage(&ici, nullptr, &vk_image));
-            return image(dev, vk_image);
+            return image(dev, vk_image, ici);
           }
 
           /// \brief Create the image from a bunch of image creators
@@ -154,63 +176,55 @@ namespace neam
             VkImage vk_image;
 
             check::on_vulkan_error::n_throw_exception(dev._vkCreateImage(&ici, nullptr, &vk_image));
-            return image(dev, vk_image);
+            return image(dev, vk_image, ici);
           }
 
-          /// \brief allocate the memory for the image.
-          /// \param requirements is the requirements the memory must meet
-          ///                  and should be a value of VkMemoryPropertyFlagBits
-          /// \note The memory is managed by the image instance and freed when
-          ///       its life ends. You can still detach the memory and claim it
-          ///       for some other use, but then its management is yours.
-          /// \note If a memory area was previously allocated for the texture,
-          ///       it is freed.
-          void allocate_memory(VkFlags requirements = 0)
+          /// \brief Bind some memory to the image
+          void bind_memory(const device_memory &mem, size_t offset)
           {
-            mem.allocate(mem_requirements.size, requirements, mem_requirements.memoryTypeBits);
-
-            dev._vkBindImageMemory(vk_image, mem._get_vk_device_memory(), 0);
+            check::on_vulkan_error::n_throw_exception(dev._vkBindImageMemory(vk_image, mem._get_vk_device_memory(), offset));
           }
 
-          /// \brief Use an already allocated memory for the image
-          /// The operation will fail if there isn't enough space in the
-          /// allocated area.
-          /// \note The memory is then managed by the image object. If you
-          /// want to get it back, there's the detach_memory() method.
-          void use_allocated_memory(device_memory &&_mem)
+          /// \brief Return a structure that describe the image resource
+          /// (this is a vulkan structure)
+          VkSubresourceLayout get_image_subresource_layout(VkImageAspectFlags mask, size_t mip_level = 0, size_t array_layer = 0) const
           {
-            check::on_vulkan_error::n_assert(_mem.get_size() >= mem_requirements.size, "supplied device_memory does not have enough space to store the image");
+            VkImageSubresource subres;
+            subres.aspectMask = mask;
+            subres.mipLevel = mip_level;
+            subres.arrayLayer = array_layer;
 
-            mem = std::move(_mem);
-            dev._vkBindImageMemory(vk_image, mem._get_vk_device_memory(), 0);
+            VkSubresourceLayout layout;
+            dev._vkGetImageSubresourceLayout(vk_image, &subres, &layout);
+            return layout;
           }
 
-          /// \brief Return the memory required by the image
-          size_t get_required_size() const
+          /// \brief Return an image memory barrier that will create a transition to old_layout from new_layout
+          /// \note as this class is pretty dumb (and generic), you will have to handle yourself specific bits of
+          /// the image
+//           image_memory_barrier layout_transition(VkImageLayout new_layout)
+//           {
+//             const VkImageLayout old_layout = image_create_info.initialLayout;
+//             image_create_info.initialLayout = new_layout;
+//             return image_memory_barrier(vk_image, old_layout, new_layout);
+//           }
+
+          /// \brief Return the type of image stored (1D, 2D, 3D)
+          VkImageType get_image_type() const
           {
-            return mem_requirements.size;
+            return image_create_info.imageType;
           }
 
-          /// \brief Return a const reference to the device_memory object that
-          /// handle the memory are of the image
-          /// You can use it to map the memory into the app address space, flush
-          /// the changes, ...
-          /// If you must have a non-const instance, you must call
-          /// the detach_memory() method instead
-          const device_memory &get_memory() const
+          /// \brief Return the image internal format (like R8G8B8A8, ...)
+          VkFormat get_image_format() const
           {
-            return mem;
+            return image_create_info.format;
           }
 
-          /// \brief Unbind the memory from the texture and return an instance
-          /// that manage that memory
-          device_memory detach_memory()
+          /// \brief Return the memory requirements of the image
+          const VkMemoryRequirements &get_memory_requirements() const
           {
-            if (!mem.is_allocated())
-              return device_memory(dev);
-
-            device_memory ret = std::move(mem);
-            return ret;
+            return mem_requirements;
           }
 
         public: // advanced
@@ -223,9 +237,11 @@ namespace neam
         private:
           device &dev;
           VkImage vk_image;
-          VkMemoryRequirements mem_requirements;
 
-          device_memory mem;
+          VkImageCreateInfo image_create_info;
+
+          bool do_not_destroy;
+          VkMemoryRequirements mem_requirements;
       };
     } // namespace vk
   } // namespace hydra

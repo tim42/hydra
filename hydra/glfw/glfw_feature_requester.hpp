@@ -80,7 +80,7 @@ namespace neam
                   VkBool32 r = false;
                   vkGetPhysicalDeviceSurfaceSupportKHR(gpu._get_vk_physical_device(), qindex, w->_get_surface()._get_vk_surface(), &r);
                   return r;
-                }, true);
+                }, false);
 
                 w->_set_win_queue(tid);
               }

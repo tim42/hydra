@@ -48,8 +48,6 @@ namespace neam
       /// operation to be completed before doing something else)
       ///
       /// There's also some static methods to wait for multiple fences
-      ///
-      /// \todo The fence should implement the "ownership" pattern (if useful)
       class fence
       {
         public: // advanced

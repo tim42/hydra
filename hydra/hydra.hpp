@@ -30,25 +30,40 @@
 #ifndef __N_396519513304418946_3159317424_HYDRA_HPP__
 #define __N_396519513304418946_3159317424_HYDRA_HPP__
 
+// NOTE: There's *_ext.hpp file in the current folder. Those files aren't included
+// by this header as they are the main header of some extensions. If you plan using
+// that extension with hydra, you may want to include 
+
 // a logger for hydra (define HYDRA_NO_MESSAGES to disable logs)
 #include "hydra_logger.hpp"
-// a reflective support for hydra (define HYDRA_NO_REFLECTIVE_SUPPORT to disable this)
+
+// an optional reflective support for hydra (define HYDRA_NO_REFLECTIVE_SUPPORT to disable this)
+// you don't need to have reflective to build and use hydra, but if the reflective header is included
+// hydra will generate some meta/data for it
 #include "hydra_reflective.hpp"
+
 // some specific exception for hydra. Also, some checks.
 // The macro HYDRA_DISABLE_OPTIONAL_CHECKS will disable asserts and error checking
-// on non-critical sections of the code.
-// NOTE: hydra assert throws exceptions (neam::hydra::exception that inherit from std::exception)
+// on non-critical sections of the code,
+// N_DISABLE_CHECKS will disable all the asserts and error checking
+// N_ALLOW_DEBUG will log a lot of information about checks and asserts
+// NOTE: hydra assert throws exceptions (neam::hydra::exception that inherits from std::exception)
 #include "hydra_exception.hpp"
 
+// include the bootstrap / init files
 #include "init/bootstrap.hpp"
 #include "init/feature_requesters/gen_feature_requester.hpp"
 
+#include <glm/glm.hpp> // glm is a core dependency of hydra
+
+// include the vulkan wrapper
 #include "vulkan/vulkan.hpp"
 
-#include <glm/glm.hpp>
-
 // include main components
+#include "geometry/geometry.hpp"
 #include "threading/threading.hpp"
+#include "geometry/geometry.hpp"
+#include "material/material.hpp"
 
 namespace neam
 {

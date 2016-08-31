@@ -80,6 +80,12 @@ namespace neam
             return phys_dev;
           }
 
+          /// \brief Wait for the device to become idle
+          void wait_idle() const
+          {
+            _fn_vkDeviceWaitIdle(vk_device);
+          }
+
         public: // advanced
           /// \brief Return the address of a procedure. No check is performed.
           inline PFN_vkVoidFunction _get_proc_addr_unsafe(const std::string &name)
@@ -170,7 +176,7 @@ namespace neam
             HYDRA_LOAD_FNC(vkGetQueryPoolResults);
             HYDRA_LOAD_FNC(vkCreateBuffer);
             HYDRA_LOAD_FNC(vkDestroyBuffer);
-            HYDRA_LOAD_FNC(vkCreateBufferView);
+            HYDRA_LOAD_FNC(vkCreateBufferView);   // TODO (buffer views)
             HYDRA_LOAD_FNC(vkDestroyBufferView);
             HYDRA_LOAD_FNC(vkCreateImage);
             HYDRA_LOAD_FNC(vkDestroyImage);

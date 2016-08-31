@@ -104,7 +104,7 @@ namespace neam
               vk_wait_semas.emplace_back();
               vk_sig_semas.emplace_back();
 
-              vk_submit_infos.back().sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+              vk_submit_infos.back().sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
               vk_submit_infos.back().pNext = nullptr;
               vk_submit_infos.back().commandBufferCount = 0;
               vk_submit_infos.back().pWaitDstStageMask = wait_dst_stage_mask.back().data();
@@ -139,20 +139,20 @@ namespace neam
           }
 
           /// \brief Add a semaphore to wait on
-          void add_wait(const semaphore &sem)
+          void add_wait(const semaphore &sem, VkPipelineStageFlags wait_flags)
           {
             init(0);
 
             queue_submits.back().vk_wait_semas.back().push_back(sem._get_vk_semaphore());
+            queue_submits.back().wait_dst_stage_mask.back().push_back(wait_flags);
           }
 
           /// \brief Add a command buffer
-          void add(const command_buffer &cmdbuf, VkPipelineStageFlags wait_flags)
+          void add(const command_buffer &cmdbuf)
           {
             init(1);
 
-            queue_submits.back().vk_cmd_bufs.back().push_back(cmdbuf._get_vulkan_command_buffer());
-            queue_submits.back().wait_dst_stage_mask.back().push_back(wait_flags);
+            queue_submits.back().vk_cmd_bufs.back().push_back(cmdbuf._get_vk_command_buffer());
           }
 
           /// \brief Add a semaphore to signal
@@ -196,18 +196,18 @@ namespace neam
       };
 
       /// \brief Alias for si.add_wait(semaphore)
-      submit_info &operator << (submit_info &si, const semaphore &sem)
+      using cmd_sema_pair = std::pair<const semaphore &, VkPipelineStageFlags>;
+      submit_info &operator << (submit_info &si, const cmd_sema_pair &sem)
       {
-        si.add_wait(sem);
+        si.add_wait(sem.first, sem.second);
         return si;
       }
 
-      using cmd_buffer_pair = std::pair<const command_buffer &, VkPipelineStageFlags>;
 
-      /// \brief Alias for si.add_wait(command_buffer)
-      submit_info &operator << (submit_info &si, const cmd_buffer_pair &p)
+      /// \brief Alias for si.add(command_buffer)
+      submit_info &operator << (submit_info &si, const command_buffer &cb)
       {
-        si.add(p.first, p.second);
+        si.add(cb);
         return si;
       }
 

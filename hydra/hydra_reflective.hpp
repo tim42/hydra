@@ -54,19 +54,13 @@
 #define NHR_MONITOR_THIS_NAME(n)        neam::r::function_call self_call(N_PRETTY_NAME_INFO(n))
 #define NHR_MONITOR_THIS                neam::r::function_call self_call(N_PRETTY_NAME_INFO(__PRETTY_FUNCTION__))
 
-namespace neam
-{
-  namespace hydra
-  {
-    static constexpr neam::r::reason shader_compilation_reason = neam::r::reason {"shader compilation error"};
-    static constexpr neam::r::reason scheduler_lateness_reason = neam::r::reason {"scheduler lateness"};
-  } // namespace hydra
-} // namespace neam
-
 #define _NHR_GET_ACTIVE_FUNC            if (neam::r::function_call::get_active_function_call()) neam::r::function_call::get_active_function_call()
 
+// Use this when you fail in a method/function that is monitored
+#define NHR_FAIL(rsn)                   self_call->fail(rsn)
+
 // Use this when you fail in a method/function that isn't monitored
-#define NHR_FAIL(rsn)                   _NHR_GET_ACTIVE_FUNC->fail(rsn)
+#define NHR_IND_FAIL(rsn)                   _NHR_GET_ACTIVE_FUNC->fail(rsn)
 
 // Create a measure point
 #define NHR_MEASURE_POINT(mpn)          neam::r::measure_point _u ## __COUNTER__(mpn)
@@ -76,6 +70,7 @@ namespace neam
 #define NHR_MONITOR_THIS                /* :/ */
 #define NHR_MONITOR_THIS_NAME(n)        /* :/ */
 #define NHR_FAIL(rsn)                   /* :) */
+#define NHR_IND_FAIL(rsn)               /* :| */
 #define NHR_MEASURE_POINT(mpn)          /* :) */
 #endif
 

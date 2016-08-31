@@ -70,6 +70,7 @@ namespace neam
           /// \brief Destructor
           ~instance()
           {
+            remove_default_debug_callback();
             if (vulkan_instance != nullptr)
               vkDestroyInstance(vulkan_instance, nullptr);
           }
@@ -95,6 +96,36 @@ namespace neam
           /// implementation is in hydra_device_creator.hpp
           hydra_device_creator get_device_creator() const;
 
+          /// \brief Setup/install a debug callback that will print validation layers messages to stdout/stderr
+          /// \note For this to work, you'll need the VK_EXT_DEBUG_REPORT_EXTENSION_NAME extension
+          /// \note the callback is automatically removed at destruction
+          void install_default_debug_callback(VkDebugReportFlagsEXT report_flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT)
+          {
+            auto vkCreateDebugReportCallbackEXT = (PFN_vkCreateDebugReportCallbackEXT) vkGetInstanceProcAddr(vulkan_instance, "vkCreateDebugReportCallbackEXT");
+            check::on_vulkan_error::n_assert(vkCreateDebugReportCallbackEXT != nullptr, "vk::instance : extension VK_EXT_DEBUG_REPORT_EXTENSION_NAME not activated");
+
+            VkDebugReportCallbackCreateInfoEXT rcci
+            {
+              VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT,
+              nullptr,
+              report_flags,
+              (PFN_vkDebugReportCallbackEXT)(&instance::debug_callback),
+              nullptr
+            };
+            check::on_vulkan_error::n_throw_exception(vkCreateDebugReportCallbackEXT(vulkan_instance, &rcci, nullptr, &default_debug_callback));
+          }
+
+          /// \brief Remove the default debug callback, if installed
+          void remove_default_debug_callback()
+          {
+            if (default_debug_callback == nullptr)
+              return;
+            auto vkDestroyDebugReportCallbackEXT = (PFN_vkDestroyDebugReportCallbackEXT) vkGetInstanceProcAddr(vulkan_instance, "vkDestroyDebugReportCallbackEXT");
+            check::on_vulkan_error::n_assert(vkDestroyDebugReportCallbackEXT != nullptr, "vk::instance : extension VK_EXT_DEBUG_REPORT_EXTENSION_NAME not activated");
+
+            vkDestroyDebugReportCallbackEXT(vulkan_instance, default_debug_callback, nullptr);
+          }
+
         public: // advanced
           /// \brief Return the vulkan instance object
           /// \note "Marked" as advanced ('cause that's not meant to be used by the end user)
@@ -119,10 +150,74 @@ namespace neam
               gpu_list.emplace_back(physical_device(it));
           }
 
+          static VkBool32 debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t obj, size_t location, int32_t code, const char* layerPrefix, const char* msg, void* userData)
+          {
+            (void)userData;
+
+            neam::cr::multiplexed_stream *ms = nullptr;
+            switch (flags)
+            {
+              case VK_DEBUG_REPORT_INFORMATION_BIT_EXT: ms = &neam::cr::out.info();
+                break;
+              case VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT:
+              case VK_DEBUG_REPORT_WARNING_BIT_EXT: ms = &neam::cr::out.warning();
+                break;
+              case VK_DEBUG_REPORT_ERROR_BIT_EXT: ms = &neam::cr::out.error();
+                break;
+              case VK_DEBUG_REPORT_DEBUG_BIT_EXT: ms = &neam::cr::out.debug();
+                break;
+              default: ms = &neam::cr::out.info();
+                break;
+            }
+#define _HYDRA_CASE(cs)     case cs: (*ms) << #cs; break;
+            switch (objType)
+            {
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SEMAPHORE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_FENCE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_EVENT_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_QUERY_POOL_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_VIEW_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_CACHE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_POOL_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_POOL_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SWAPCHAIN_KHR_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_RANGE_SIZE_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_MAX_ENUM_EXT)
+            }
+#undef _HYDRA_CASE
+
+            // finally print the message:
+            (*ms) << " [" << obj << '/' << location << '/' << code << "]: " << layerPrefix << ": " << msg << std::endl;
+
+            return VK_FALSE;
+          }
+
         private:
           VkInstance vulkan_instance;
           std::string app_name;
           std::vector<physical_device> gpu_list;
+
+          VkDebugReportCallbackEXT default_debug_callback = nullptr;
       };
     } // namespace vk
   } // namespace hydra

@@ -43,6 +43,10 @@ namespace neam
   {
     namespace vk
     {
+      class command_buffer_recorder;
+      class render_pass;
+      class framebuffer;
+
       class command_buffer
       {
         public: // advanced
@@ -66,14 +70,51 @@ namespace neam
               dev._vkFreeCommandBuffers(pool._get_vulkan_command_pool(), 1, &cmd_buf);
           }
 
-          
+          /// \brief Start the recording of the command buffer
+          /// \note the recording job is done by the command_buffer_recorder instance
+          /// \note This is to be used only for primary command buffers
+          /// Implemented in command_buffer_recorder.hpp
+          command_buffer_recorder begin_recording(VkCommandBufferUsageFlagBits flags = (VkCommandBufferUsageFlagBits)0);
+
+          /// \brief Start the recording of the command buffer
+          /// \note the recording job is done by the command_buffer_recorder instance
+          /// \note This is to be used only for secondary command buffers
+          /// Implemented in command_buffer_recorder.hpp
+          command_buffer_recorder begin_recording(bool occlusion_query_enable, VkQueryControlFlags query_flags = 0, VkQueryPipelineStatisticFlags stat_flags = 0, VkCommandBufferUsageFlagBits flags = (VkCommandBufferUsageFlagBits)0);
+
+          /// \brief Start the recording of the command buffer
+          /// \note the recording job is done by the command_buffer_recorder instance
+          /// \note This is to be used only for secondary command buffers
+          /// Implemented in command_buffer_recorder.hpp
+          command_buffer_recorder begin_recording(const framebuffer &fb,
+                                                  bool occlusion_query_enable = false, VkQueryControlFlags query_flags = 0, VkQueryPipelineStatisticFlags stat_flags = 0,
+                                                  VkCommandBufferUsageFlagBits flags = (VkCommandBufferUsageFlagBits)0);
+
+          /// \brief Start the recording of the command buffer
+          /// \note the recording job is done by the command_buffer_recorder instance
+          /// \note This is to be used only for secondary command buffers
+          /// Implemented in command_buffer_recorder.hpp
+          command_buffer_recorder begin_recording(const render_pass &rp, uint32_t subpass,
+                                                  bool occlusion_query_enable = false, VkQueryControlFlags query_flags = 0, VkQueryPipelineStatisticFlags stat_flags = 0,
+                                                  VkCommandBufferUsageFlagBits flags = (VkCommandBufferUsageFlagBits)0);
+
+          /// \brief Start the recording of the command buffer
+          /// \note the recording job is done by the command_buffer_recorder instance
+          /// \note This is to be used only for secondary command buffers
+          /// Implemented in command_buffer_recorder.hpp
+          command_buffer_recorder begin_recording(const framebuffer &fb, const render_pass &rp, uint32_t subpass,
+                                                  bool occlusion_query_enable = false, VkQueryControlFlags query_flags = 0, VkQueryPipelineStatisticFlags stat_flags = 0,
+                                                  VkCommandBufferUsageFlagBits flags = (VkCommandBufferUsageFlagBits)0);
+
+          /// \brief Reset the command buffer
+          void reset(VkCommandBufferResetFlags flags = 0) { check::on_vulkan_error::n_throw_exception(dev._fn_vkResetCommandBuffer(cmd_buf, flags)); }
+
+          /// \brief End the recording of the command buffer
+          void end_recording() { check::on_vulkan_error::n_throw_exception(dev._fn_vkEndCommandBuffer(cmd_buf)); }
 
         public: // advanced
           /// \brief Return the vulkan command buffer
-          VkCommandBuffer _get_vulkan_command_buffer() const
-          {
-            return cmd_buf;
-          }
+          VkCommandBuffer _get_vk_command_buffer() const { return cmd_buf; }
 
         private:
           device &dev;
@@ -83,7 +124,9 @@ namespace neam
 
 
 
-      // Implementations //
+      // ////////////////////////
+      // // Implementations // //
+      // ////////////////////////
 
       command_buffer command_pool::create_command_buffer(VkCommandBufferLevel level)
       {

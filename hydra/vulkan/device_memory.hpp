@@ -89,6 +89,15 @@ namespace neam
           }
 
           /// \brief Allocate some memory and return a new device_memory instance to wrap that memory
+          static device_memory allocate(device &dev, const VkMemoryRequirements &mem_reqs, VkFlags required_memory_flags)
+          {
+            device_memory dm(dev);
+
+            dm.allocate(mem_reqs, required_memory_flags);
+            return dm;
+          }
+
+          /// \brief Allocate some memory and return a new device_memory instance to wrap that memory
           static device_memory allocate(device &dev, size_t size, size_t memory_type_index)
           {
             device_memory dm(dev);
@@ -98,7 +107,7 @@ namespace neam
           }
 
           /// \brief Allocate some memory and return a new device_memory instance to wrap that memory
-          static device_memory allocate(device &dev, size_t size, VkFlags required_memory_flags, uint32_t memory_type_bits = 0xFFFFFFFF)
+          static device_memory allocate(device &dev, size_t size, VkFlags required_memory_flags, uint32_t memory_type_bits = 0)
           {
             device_memory dm(dev);
 
@@ -119,7 +128,13 @@ namespace neam
           }
 
           /// \brief Allocate some memory on the device
-          void allocate(size_t _size, VkFlags required_memory_flags, uint32_t memory_type_bits = 0xFFFFFFFF)
+          void allocate(const VkMemoryRequirements &mem_reqs, VkFlags required_memory_flags)
+          {
+            allocate(mem_reqs.size, required_memory_flags, mem_reqs.memoryTypeBits);
+          }
+
+          /// \brief Allocate some memory on the device
+          void allocate(size_t _size, VkFlags required_memory_flags, uint32_t memory_type_bits = 0)
           {
             size_t memory_type_index = (size_t)-1;
             // search for the memory type index
@@ -138,6 +153,8 @@ namespace neam
               memory_type_bits >>= 1;
             }
 
+            check::on_vulkan_error::n_assert(memory_type_index != (size_t)-1, "could not find a suitable memory type to allocate");
+
             allocate(_size, memory_type_index);
           }
 
@@ -155,6 +172,9 @@ namespace neam
 
             check::on_vulkan_error::n_throw_exception(dev._vkAllocateMemory(&mem_alloc, nullptr, &vk_memory));
 
+#ifndef HYDRA_NO_MESSAGES
+            neam::cr::out.info() << LOGGER_INFO << "allocating a chunk of " << _size << " bytes on the GPU..." << std::endl;
+#endif
             size = _size;
           }
 
@@ -187,8 +207,11 @@ namespace neam
           /// \brief Unmap the memory
           void unmap_memory() const
           {
-            mapped_memories.clear();
-            dev._vkUnmapMemory(vk_memory);
+            if (mapped_memories.size() > 0)
+            {
+              mapped_memories.clear();
+              dev._vkUnmapMemory(vk_memory);
+            }
           }
 
           /// \brief Write the changes of all mapped areas to the device
@@ -225,7 +248,8 @@ namespace neam
             mmr.offset = it->second.first;
             mmr.size = it->second.second;
 
-            check::on_vulkan_error::n_throw_exception(dev._vkFlushMappedMemoryRanges(1, &mmr));          }
+            check::on_vulkan_error::n_throw_exception(dev._vkFlushMappedMemoryRanges(1, &mmr));
+          }
 
           /// \brief Write the changes to the device
           template<typename ContainerT>

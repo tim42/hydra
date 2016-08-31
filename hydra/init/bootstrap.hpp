@@ -100,6 +100,9 @@ namespace neam
 
           vk::device device = hdc.create_device(compatible_gpu_list[0]);
           new_device_created(device);
+
+          cr::out.log() << LOGGER_INFO << "vulkan device created on " << compatible_gpu_list[0].get_name() << std::endl;
+
           return device;
         }
 
@@ -116,6 +119,8 @@ namespace neam
 
           for (init_interface *ii : initializers)
             hic.require(ii->get_feature_requester());
+          for (feature_requester_interface *fri : feature_requesters)
+            hic.require(fri);
 
           return hic;
         }
@@ -141,6 +146,8 @@ namespace neam
 
           for (init_interface *ii : initializers)
             hdc.require(ii->get_feature_requester());
+          for (feature_requester_interface *fri : feature_requesters)
+            hdc.require(fri);
 
           return hdc;
         }

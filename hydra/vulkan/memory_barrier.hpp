@@ -32,6 +32,9 @@
 
 #include <vulkan/vulkan.h>
 
+#include "image.hpp"
+#include "buffer.hpp"
+
 namespace neam
 {
   namespace hydra
@@ -39,7 +42,7 @@ namespace neam
     namespace vk
     {
       /// \brief A wrapper around VkMemoryBarrier
-      class memory_barrier : private VkMemoryBarrier
+      class memory_barrier : public VkMemoryBarrier
       {
         public:
           /// \brief Initialize the memory_barrier
@@ -57,45 +60,151 @@ namespace neam
             srcAccessMask = src_access_mask;
             dstAccessMask = dest_access_mask;
           }
-
-          /// \brief Set the source access mask
-          void set_source_access_mask(VkAccessFlags access_mask)
-          {
-            srcAccessMask = access_mask;
-          }
-
-          /// \brief Set the source access mask
-          void set_destination_access_mask(VkAccessFlags access_mask)
-          {
-            dstAccessMask = access_mask;
-          }
-
-          /// \brief Set the source access mask
-          VkAccessFlags get_source_access_mask() const
-          {
-            return srcAccessMask;
-          }
-
-          /// \brief Set the source access mask
-          VkAccessFlags get_destination_access_mask() const
-          {
-            return dstAccessMask;
-          }
-
-        public: // advanced
-          /// \brief Return the vulkan memory_barrier object
-          VkMemoryBarrier *get_vk_memory_barrier()
-          {
-            return this;
-          }
-
-          /// \brief Return the vulkan memory_barrier object
-          const VkMemoryBarrier *get_vk_memory_barrier() const
-          {
-            return this;
-          }
       };
       static_assert(sizeof(memory_barrier) == sizeof(VkMemoryBarrier), "compiler is not compatible with hydra");
+
+      /// \brief A wrapper around VkBufferMemoryBarrier
+      class buffer_memory_barrier : public VkBufferMemoryBarrier
+      {
+        public:
+          /// \brief Initialize the memory_barrier
+          buffer_memory_barrier(const ::neam::hydra::vk::buffer &_buffer, VkAccessFlags src_access_mask = 0, VkAccessFlags dest_access_mask = 0)
+          {
+            sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            pNext = nullptr;
+            srcAccessMask = src_access_mask;
+            dstAccessMask = dest_access_mask;
+            buffer = _buffer._get_vk_buffer();
+            size = VK_WHOLE_SIZE;
+            offset = 0;
+            srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+          }
+
+          /// \brief Set both source and destination access masks
+          void set_access_masks(VkAccessFlags src_access_mask, VkAccessFlags dest_access_mask)
+          {
+            srcAccessMask = src_access_mask;
+            dstAccessMask = dest_access_mask;
+          }
+      };
+      static_assert(sizeof(buffer_memory_barrier) == sizeof(VkBufferMemoryBarrier), "compiler is not compatible with hydra");
+
+      /// \brief A wrapper around VkImageMemoryBarrier
+      class image_memory_barrier : public VkImageMemoryBarrier
+      {
+        public:
+          /// \brief Initialize the memory_barrier
+          image_memory_barrier(const ::neam::hydra::vk::image &_image, VkImageLayout old_layout, VkImageLayout new_layout, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT)
+          {
+            sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            pNext = nullptr;
+            srcAccessMask = 0;
+            dstAccessMask = 0;
+            srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+            image = _image.get_vk_image();
+            oldLayout = old_layout;
+            newLayout = new_layout;
+            subresourceRange.aspectMask = aspect_mask;
+
+            // default values for 2D image, without mipmaps
+            subresourceRange.baseMipLevel = 0;
+            subresourceRange.levelCount = 1;
+            subresourceRange.baseArrayLayer = 0;
+            subresourceRange.layerCount = 1;
+
+            autoset_access_masks();
+          }
+
+          /// \brief Set both source and destination access masks
+          void set_access_masks(VkAccessFlags src_access_mask, VkAccessFlags dest_access_mask)
+          {
+            srcAccessMask = src_access_mask;
+            dstAccessMask = dest_access_mask;
+          }
+
+          /// \brief Set the old and the new layouts
+          void set_layouts(VkImageLayout old_layout, VkImageLayout new_layout)
+          {
+            oldLayout = old_layout;
+            newLayout = new_layout;
+          }
+
+          /// \brief Helper to set the subresourceRange member
+          void set_subresource_range(const VkImageSubresourceRange &isr)
+          {
+            subresourceRange.aspectMask = isr.aspectMask;
+            subresourceRange.baseArrayLayer = isr.baseArrayLayer;
+            subresourceRange.baseMipLevel = isr.baseMipLevel;
+            subresourceRange.layerCount = isr.layerCount;
+            subresourceRange.levelCount = isr.levelCount;
+          }
+
+          /// \brief Autoset the access masks from the layout member
+          /// \note I have no idea if this will work in most of the cases.
+          void autoset_access_masks()
+          {
+            switch(oldLayout)
+            {
+              case VK_IMAGE_LAYOUT_GENERAL:
+                break;
+              case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+                srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+                srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+                srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+                srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+                srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+                srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_PREINITIALIZED:
+                srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+                break;
+
+              default:
+                break;
+            }
+            switch(newLayout)
+            {
+              case VK_IMAGE_LAYOUT_GENERAL:
+                break;
+              case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+                dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+                dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+                dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+                srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+                dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+                dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                break;
+              case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+                dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                break;
+
+              default:
+                break;
+            }
+          }
+      };
+      static_assert(sizeof(image_memory_barrier) == sizeof(VkImageMemoryBarrier), "compiler is not compatible with hydra");
     } // namespace vk
   } // namespace hydra
 } // namespace neam

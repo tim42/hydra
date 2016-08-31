@@ -38,18 +38,26 @@
 #include "device_memory.hpp"
 #include "queue.hpp"
 #include "command_pool.hpp"
+#include "descriptor_pool.hpp"
 #include "command_buffer.hpp"
+#include "command_buffer_recorder.hpp"
 #include "fence.hpp"
 #include "semaphore.hpp"
 #include "event.hpp"
 #include "memory_barrier.hpp"
 #include "image.hpp"
-
+#include "image_view.hpp"
 #include "submit_info.hpp"
+#include "shader_module.hpp"
+#include "pipeline.hpp"
+#include "descriptor_set_layout.hpp"
+#include "descriptor_set.hpp"
 
 // extensions:
 #include "surface.hpp"
 #include "swapchain.hpp"
+
+#include "shader_loaders/spirv_loader.hpp"
 
 namespace neam
 {

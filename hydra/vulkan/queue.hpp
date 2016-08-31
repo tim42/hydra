@@ -38,6 +38,7 @@
 #include "fence.hpp"
 #include "semaphore.hpp"
 #include "submit_info.hpp"
+#include "swapchain.hpp"
 
 namespace neam
 {
@@ -113,6 +114,34 @@ namespace neam
           void submit(const fence &fence_to_sig)
           {
             check::on_vulkan_error::n_throw_exception(dev._fn_vkQueueSubmit(vk_queue, 0, nullptr, fence_to_sig._get_vk_fence()));
+          }
+
+          /// \brief Wait the queue to be idle
+          void wait_idle() const
+          {
+            dev._fn_vkQueueWaitIdle(vk_queue);
+          }
+
+          /// \brief Submit a request to present the image
+          void present(const swapchain &sw, uint32_t image_index, const std::vector<const semaphore *> &wait_semaphore)
+          {
+            std::vector<VkSemaphore> vk_wait_sema;
+            vk_wait_sema.reserve(wait_semaphore.size());
+            for (const semaphore *it : wait_semaphore)
+              vk_wait_sema.push_back(it->_get_vk_semaphore());
+
+            VkSwapchainKHR vk_sw = sw._get_vk_swapchain();
+
+            VkPresentInfoKHR present_info
+            {
+              VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr,
+              (uint32_t)vk_wait_sema.size(), vk_wait_sema.data(),
+
+              1, &vk_sw, &image_index,
+              nullptr
+            };
+
+            check::on_vulkan_error::n_throw_exception(vkQueuePresentKHR(vk_queue, &present_info));
           }
 
         public: // advanced
