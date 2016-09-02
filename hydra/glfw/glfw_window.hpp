@@ -37,6 +37,7 @@
 
 #include "../hydra_exception.hpp"
 #include "../hydra_types.hpp"
+#include "../hydra_logo.hpp"
 #include "../vulkan/surface.hpp"
 #include "../vulkan/swapchain.hpp"
 
@@ -279,38 +280,8 @@ namespace neam
           /// \note glyph_count can't be more than 5, and more than 4 if icon_sz is 16
           void _set_hydra_icon(size_t icon_sz = 256, size_t glyph_count = 4)
           {
-            const uint8_t hydra_logo[] = {0x7D, 0x3D, 0xEB, 0x5F, 0x7B};
-
-            if (icon_sz < 16) return; // not possible
-            if (glyph_count <= 1 || glyph_count > sizeof(hydra_logo)) glyph_count = 4;
-            if (icon_sz == 16 && glyph_count > 4) glyph_count = 4;
-
-            const size_t sq_sz = icon_sz / (glyph_count * 4);
-            const size_t y_pos = icon_sz / 2 - (sq_sz / 2 + 1);
-            const size_t x_pos = sq_sz / 2;
             uint8_t pixels[icon_sz * icon_sz * 4];
-            memset(pixels, 0, icon_sz * icon_sz * 4);
-
-            for (size_t i = 0; i < glyph_count; ++i)
-            {
-              for (size_t y = 0; y < sq_sz; ++y)
-              {
-                for (size_t x = 0; x < sq_sz; ++x)
-                {
-                  size_t bidx = (y_pos + y) * icon_sz * 4 + (x_pos + x + 4 * sq_sz * i) * 4;
-                  pixels[bidx + 3 + 0 * sq_sz * 4 + 0 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x01 ? 255 : 0;
-                  pixels[bidx + 3 + 1 * sq_sz * 4 + 0 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x02 ? 255 : 0;
-                  pixels[bidx + 3 + 2 * sq_sz * 4 + 0 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x04 ? 255 : 0;
-                  pixels[bidx + 3 + 0 * sq_sz * 4 + 1 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x08 ? 255 : 0;
-                  pixels[bidx + 3 + 1 * sq_sz * 4 + 1 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x10 ? 255 : 0;
-                  pixels[bidx + 3 + 2 * sq_sz * 4 + 1 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x20 ? 255 : 0;
-                  pixels[bidx + 3 + 0 * sq_sz * 4 + 2 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x40 ? 255 : 0;
-                  pixels[bidx + 3 + 1 * sq_sz * 4 + 2 * icon_sz * sq_sz * 4] = hydra_logo[i] & 0x80 ? 255 : 0;
-                  pixels[bidx + 3 + 2 * sq_sz * 4 + 2 * icon_sz * sq_sz * 4] = 255;
-                }
-              }
-            }
-            set_icon(glm::uvec2(icon_sz, icon_sz), pixels);
+            set_icon(glm::uvec2(icon_sz, icon_sz), generate_rgba_logo(pixels, icon_sz, glyph_count));
           }
 
         private:
