@@ -44,6 +44,7 @@
 
 // some specific exception for hydra. Also, some checks.
 // The macro HYDRA_DISABLE_OPTIONAL_CHECKS will disable asserts and error checking
+// The macro HYDRA_ENABLE_DEBUG_CHECKS will enable some asserts and error checking that may slow down a bit the code
 // on non-critical sections of the code,
 // N_DISABLE_CHECKS will disable all the asserts and error checking
 // N_ALLOW_DEBUG will log a lot of information about checks and asserts
@@ -60,6 +61,7 @@
 #include "vulkan/vulkan.hpp"
 
 // include main components
+#include "utilities/utilities.hpp"
 #include "geometry/geometry.hpp"
 #include "threading/threading.hpp"
 #include "geometry/geometry.hpp"
