@@ -52,6 +52,7 @@
 #include "pipeline.hpp"
 #include "descriptor_set_layout.hpp"
 #include "descriptor_set.hpp"
+#include "sampler.hpp"
 
 // extensions:
 #include "surface.hpp"

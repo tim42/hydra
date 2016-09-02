@@ -47,9 +47,11 @@ namespace neam
   namespace hydra
   {
     /// \brief Batch async data transfers (using staging buffers, ...).
+    /// It can transfer buffers and images
     class batch_transfers
     {
       private:
+        // buffer stuff
         struct _data_transfer
         {
           vk::buffer *buf;
@@ -62,8 +64,23 @@ namespace neam
           vk::fence *signal_fence;
         };
 
+        struct _img_data_transfer
+        {
+          vk::image *img;
+          VkImageLayout layout;
+          glm::ivec3 offset;
+          glm::uvec3 size;
+
+          int8_t *data;
+          size_t data_size;
+
+          vk::semaphore *signal_semaphore;
+          vk::fence *signal_fence;
+          VkImageLayout final_layout;
+        };
+
       public:
-        batch_transfers(vk::device &_dev, vk::queue &_tqueue, vk::command_pool &_cmd_pool, size_t transfer_window_size = 2 * 1024 * 1024)
+        batch_transfers(vk::device &_dev, vk::queue &_tqueue, vk::command_pool &_cmd_pool, size_t transfer_window_size = 20 * 1024 * 1024)
           : dev(_dev), tqueue(_tqueue), cmd_pool(_cmd_pool), cmd_buf(cmd_pool.create_command_buffer()),
             staging_buffer(dev, transfer_window_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT),
             end_fence(dev)
@@ -73,8 +90,18 @@ namespace neam
 
         ~batch_transfers()
         {
-          for (_data_transfer &it : transfer_list)
-            operator delete(it.data);
+          {
+            std::lock_guard<spinlock> _u0(transfer_list_lock);
+
+            for (_data_transfer &it : transfer_list)
+              operator delete(it.data);
+            transfer_list.clear();
+
+            for (_img_data_transfer &it : img_transfer_list)
+              operator delete(it.data);
+            img_transfer_list.clear();
+          }
+
           allocation.free();
         }
 
@@ -93,6 +120,7 @@ namespace neam
         /// \brief Add a buffer to be filled with some data
         /// \note the data will be copied
         /// \param signal_semaphore will be signaled when the whole buffer has been transfered
+        /// \param signal_fence will be signaled when the whole buffer has been transfered
         void add_transfer(vk::buffer &buf, size_t buf_offset, size_t data_size, const void *_data, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
         {
           void *data = operator new(data_size);
@@ -105,6 +133,56 @@ namespace neam
           {
             &buf, buf_offset, (int8_t *)data, data_size, 0,
             signal_semaphore, signal_fence
+          });
+        }
+
+        /// \brief Add an image to be filled with some data
+        /// \note the data will be copied
+        /// \note you can't transfer data to images if the data size is bigger than get_transfer_window_size()
+        /// \param final_layout Is the layout the image will be transitionned to after the transfer
+        /// \param signal_semaphore will be signaled when the whole buffer has been transfered
+        /// \param signal_fence will be signaled when the whole buffer has been transfered
+        void add_transfer(vk::image &img, VkImageLayout img_layout, VkImageLayout final_layout, size_t data_size, const void *_data,
+                          vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
+        {
+          void *data = operator new(data_size);
+          memcpy(data, _data, data_size);
+
+          std::lock_guard<spinlock> _u0(transfer_list_lock);
+          total_size += data_size;
+
+          img_transfer_list.push_back(_img_data_transfer
+          {
+            &img, img_layout,
+            glm::ivec3(0, 0, 0), img.get_size(),
+            (int8_t *)data, data_size,
+            signal_semaphore, signal_fence,
+            final_layout
+          });
+        }
+
+        /// \brief Add a subregion of an image to be filled with some data
+        /// \note the data will be copied
+        /// \note you can't transfer data to images if the data size is bigger than get_transfer_window_size()
+        /// \param final_layout Is the layout the image will be transitionned to after the transfer
+        /// \param signal_semaphore will be signaled when the whole buffer has been transfered
+        /// \param signal_fence will be signaled when the whole buffer has been transfered
+        void add_transfer(vk::image &img, VkImageLayout img_layout, VkImageLayout final_layout, const glm::ivec3 &offset, const glm::uvec3 &size,
+                          size_t data_size, const void *_data, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
+        {
+          void *data = operator new(data_size);
+          memcpy(data, _data, data_size);
+
+          std::lock_guard<spinlock> _u0(transfer_list_lock);
+          total_size += data_size;
+
+          img_transfer_list.push_back(_img_data_transfer
+          {
+            &img, img_layout,
+            offset, size,
+            (int8_t *)data, data_size,
+            signal_semaphore, signal_fence,
+            final_layout
           });
         }
 
@@ -162,11 +240,12 @@ namespace neam
             int8_t *memory = (int8_t *)mem_area->map_memory(mem_offset, staging_buffer.size());
             vk::command_buffer_recorder cbr = cmd_buf.begin_recording();
             size_t current_offset = 0;
-            int i = 0;
+            int i;
 
             std::lock_guard<spinlock> _u0(transfer_list_lock);
 
-            for (; i < (int)transfer_list.size(); ++i)
+            // transfer buffers //
+            for (i = 0; i < (int)transfer_list.size(); ++i)
             {
               const size_t max_sz = current_offset - staging_buffer.size();
               const size_t cp_sz = (transfer_list[i].data_size - transfer_list[i].data_offset);
@@ -189,12 +268,15 @@ namespace neam
               }
               else
               {
-                memcpy(memory + current_offset, transfer_list[i].data + transfer_list[i].data_offset, max_sz);
-                cbr.copy_buffer(staging_buffer, *transfer_list[i].buf, {{ current_offset, transfer_list[i].buf_offset, max_sz }});
+                if (max_sz > 100) // is there enough space ?
+                {
+                  memcpy(memory + current_offset, transfer_list[i].data + transfer_list[i].data_offset, max_sz);
+                  cbr.copy_buffer(staging_buffer, *transfer_list[i].buf, {{ current_offset, transfer_list[i].buf_offset, max_sz }});
 
-                transfer_list[i].data_offset += max_sz;
-                transfer_list[i].buf_offset += max_sz;
-                total_size -= max_sz;
+                  transfer_list[i].data_offset += max_sz;
+                  transfer_list[i].buf_offset += max_sz;
+                  total_size -= max_sz;
+                }
 
                 // can't copy the whole buffer, don't delete the entry and exit
                 --i;
@@ -203,8 +285,52 @@ namespace neam
             }
 
             // remove in-transfer entries
-            if (i >= 0)
+            if (i >= 0 && !transfer_list.empty())
               transfer_list.erase(transfer_list.begin(), transfer_list.begin() + i);
+
+            // transfer images //
+            for (i = 0; i < (int)img_transfer_list.size(); ++i)
+            {
+              const size_t max_sz = current_offset - staging_buffer.size();
+              const size_t cp_sz = (img_transfer_list[i].data_size);
+              if (max_sz >= cp_sz)
+              {
+                memcpy(memory + current_offset, img_transfer_list[i].data, cp_sz);
+                if (img_transfer_list[i].layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+                {
+                  cbr.pipeline_barrier(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
+                                       { vk::image_memory_barrier(*img_transfer_list[i].img, img_transfer_list[i].layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) });
+                }
+                cbr.copy_buffer_to_image(staging_buffer, *img_transfer_list[i].img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                         { current_offset, img_transfer_list[i].offset, img_transfer_list[i].size });
+                if (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL != img_transfer_list[i].final_layout)
+                {
+                  cbr.pipeline_barrier(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
+                                       { vk::image_memory_barrier(*img_transfer_list[i].img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, img_transfer_list[i].final_layout) });
+                }
+
+                operator delete(img_transfer_list[i].data);
+
+                total_size -= cp_sz;
+                current_offset += cp_sz;
+
+                if (img_transfer_list[i].signal_semaphore)
+                  semaphore_vct.push_back(img_transfer_list[i].signal_semaphore);
+                if (img_transfer_list[i].signal_fence)
+                  fence_vct.push_back(img_transfer_list[i].signal_fence);
+                if (max_sz == cp_sz)
+                  break;
+              }
+              else
+              {
+                --i;
+                break; // next time
+              }
+            }
+
+            // remove in-transfer entries
+            if (i >= 0 && !img_transfer_list.empty())
+              img_transfer_list.erase(img_transfer_list.begin(), img_transfer_list.begin() + i);
           }
 
           cmd_buf.end_recording();
@@ -256,6 +382,7 @@ namespace neam
 
         spinlock transfer_list_lock;
         std::deque<_data_transfer> transfer_list;
+        std::deque<_img_data_transfer> img_transfer_list;
         size_t total_size = 0;
 
         memory_allocation allocation;

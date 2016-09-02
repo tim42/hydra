@@ -134,7 +134,7 @@ namespace neam
         {
           if (mem._is_non_shared()) // check in the non_shared map&list
           {
-            check::on_vulkan_error::n_assert(mem.offset() != 0, "free_memory(): invalid free (invalid offset in device memory)");
+            check::on_vulkan_error::n_assert(mem.offset() == 0, "free_memory(): invalid free (invalid offset in device memory)");
             auto map_it = non_shared_map.find((intptr_t)mem.mem());
             check::on_vulkan_error::n_assert(map_it != non_shared_map.end(), "free_memory(): invalid free / double free");
 

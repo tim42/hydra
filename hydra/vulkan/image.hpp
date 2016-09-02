@@ -40,6 +40,9 @@
 #include "device.hpp"
 #include "device_memory.hpp"
 
+// default creators
+#include "image_creators/image_2d.hpp"
+
 namespace neam
 {
   namespace hydra
@@ -219,6 +222,12 @@ namespace neam
           VkFormat get_image_format() const
           {
             return image_create_info.format;
+          }
+
+          /// \brief Return the image size
+          glm::uvec3 get_size() const
+          {
+            return glm::uvec3(image_create_info.extent.width, image_create_info.extent.height, image_create_info.extent.depth);
           }
 
           /// \brief Return the memory requirements of the image

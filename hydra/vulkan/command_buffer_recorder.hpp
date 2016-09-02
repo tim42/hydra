@@ -48,6 +48,9 @@
 #include "clear_value.hpp"
 #include "buffer.hpp"
 #include "memory_barrier.hpp"
+#include "buffer_image_copy.hpp"
+#include "descriptor_set.hpp"
+#include "pipeline_layout.hpp"
 
 namespace neam
 {
@@ -483,8 +486,33 @@ namespace neam
                                          imb.size(), (VkImageMemoryBarrier*)imb.data());
           }
 
+          /// \brief Copy data from a buffer into an image
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdCopyBufferToImage.html">vulkan khr doc</a>
+          void copy_buffer_to_image(const buffer &src, const image &dst, VkImageLayout dst_layout, const std::vector<buffer_image_copy> &bic_vct)
+          {
+            dev._fn_vkCmdCopyBufferToImage(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst.get_vk_image(), dst_layout, bic_vct.size(), (const VkBufferImageCopy*)bic_vct.data());
+          }
+
+          /// \brief Copy data from a buffer into an image
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdCopyBufferToImage.html">vulkan khr doc</a>
+          void copy_buffer_to_image(const buffer &src, const image &dst, VkImageLayout dst_layout, const buffer_image_copy &bic)
+          {
+            dev._fn_vkCmdCopyBufferToImage(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst.get_vk_image(), dst_layout, 1, (const VkBufferImageCopy*)&bic);
+          }
+
+          /// \brief Binds descriptor sets to a command buffer
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdBindDescriptorSets.html">vulkan khr doc</a>
+          void bind_descriptor_set(VkPipelineBindPoint point, const pipeline_layout &pl, uint32_t first_set, const std::vector<descriptor_set *> &ds_vct)
+          {
+            std::vector<VkDescriptorSet> vk_ds_vct;
+            vk_ds_vct.reserve(ds_vct.size());
+            for (auto it : ds_vct)
+              vk_ds_vct.push_back(it->_get_vk_descritpor_set());
+            dev._fn_vkCmdBindDescriptorSets(cmd_buff._get_vk_command_buffer(), point, pl._get_vk_pipeline_layout(), first_set, vk_ds_vct.size(), vk_ds_vct.data(), 0, nullptr);
+          }
+
 //           /// \brief
-//           /// \link
+//           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/.html">vulkan khr doc</a>
 //           void set_()
 //           {
 //             dev._fn_vkCmd(cmd_buff._get_vk_command_buffer());
@@ -492,8 +520,6 @@ namespace neam
 #define TODO_FNC(x)
           // TODO
           TODO_FNC(vkCmdWaitEvents);        // NOTE: This could be done now
-          TODO_FNC(vkCmdBindDescriptorSets);
-          TODO_FNC(vkCmdCopyBufferToImage);
           TODO_FNC(vkCmdCopyImageToBuffer);
           TODO_FNC(vkCmdClearAttachments);  // NOTE: may be done now (missing: wrapper for VkClearRect)
           TODO_FNC(vkCmdResolveImage);      // NOTE: may be done now (missing: wrapper for VkImageResolve)

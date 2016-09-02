@@ -146,61 +146,20 @@ namespace neam
           /// \note I have no idea if this will work in most of the cases.
           void autoset_access_masks()
           {
-            switch(oldLayout)
+            if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
             {
-              case VK_IMAGE_LAYOUT_GENERAL:
-                break;
-              case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-                srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-                srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
-                srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-                srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-                srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-                srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_PREINITIALIZED:
-                srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-                break;
-
-              default:
-                break;
+              srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+              dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
             }
-            switch(newLayout)
+            else if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
             {
-              case VK_IMAGE_LAYOUT_GENERAL:
-                break;
-              case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-                dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-                dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
-                dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-                srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
-                dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-                dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-                break;
-              case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-                dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                break;
-
-              default:
-                break;
+              srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+              dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            }
+            else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+            {
+              srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+              dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             }
           }
       };
