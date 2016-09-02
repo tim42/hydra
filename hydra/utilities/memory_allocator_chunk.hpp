@@ -92,15 +92,16 @@ namespace neam
           auto &x = cr::out.log() << LOGGER_INFO_TPL("memory_allocator_chunk", __LINE__) << "chunk@" << this << ":" << cr::newline
                    << "free memory:      " << (free_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
                    << "1st lvl bl:       " << std::bitset<first_level_bits>(first_level_bl) << cr::newline
-                   << "1st lvl wh:       " << std::bitset<first_level_bits>(first_level_wh) << cr::newline << cr::newline;
+                   << "1st lvl wh:       " << std::bitset<first_level_bits>(first_level_wh) << cr::newline;
 
           for (size_t i = 0; i < second_level_entries; i += 2)
           {
+            x << cr::newline;
             x << "2nd lvl bl[" << i+1 << '/' << i << "]:  " << std::bitset<64>(second_level_bl[1 + i]) << ' ' << std::bitset<64>(second_level_bl[0 + i]) << cr::newline;
-            x << "2nd lvl wh[" << i+1 << '/' << i << "]:  " << std::bitset<64>(second_level_wh[1 + i]) << ' ' << std::bitset<64>(second_level_wh[0 + i]) << cr::newline << cr::newline;
+            x << "2nd lvl wh[" << i+1 << '/' << i << "]:  " << std::bitset<64>(second_level_wh[1 + i]) << ' ' << std::bitset<64>(second_level_wh[0 + i]) << cr::newline;
           }
 
-          x << std::endl;
+          x << " -- --" << std::endl;
         }
 
         /// \brief Check if the chunk is fully empty
@@ -112,13 +113,49 @@ namespace neam
         /// \brief Return the free memory (beware of memory fragmentation)
         size_t get_total_free_memory() const { return free_memory; }
 
-        bool is_fragmented() const { return true; }
-
         /// \brief A fast, with no false negative but with lots of false positive
         /// way to check if you can allocate some memory.
         /// \note Works better with big sizes
         bool can_allocate(size_t size)
         {
+          constexpr uint64_t mask = ~0;
+
+          // There's no way it can fit in memory
+          if (size > free_memory)
+            return false;
+
+          // First level heuristics (512kio with default values)
+          {
+            uint64_t fl_mask = mask >> (64 - first_level_bits);
+
+            // This is a fast one, as we have at least one white first level entry at 0,
+            // so for things that are smaller or equal to the first_level_granularity
+            // we have an empty slot for them !
+            if (size <= first_level_granularity && ((first_level_wh & fl_mask) != fl_mask))
+              return true;
+
+            // Same thing, but this time with bigger requests (that would need a free
+            // slot) but don't have it
+            if (size > first_level_granularity && ((first_level_wh & fl_mask) == fl_mask))
+              return false;
+          }
+
+          // Second level heuristics (16kio with default values)
+          {
+            bool maybe = false;
+            // Probably something like 8 entries, so that is fast
+            for (size_t i = 0; i < second_level_entries; ++i)
+            {
+              if (size > second_level_granularity && ((second_level_wh[i] & mask) != mask))
+                  maybe = true;
+              else if (size <= second_level_granularity && ((second_level_wh[i] & mask) != mask))
+                return true;
+            }
+            if (size > second_level_granularity)
+              return maybe;
+          }
+
+          // In doubt, return true
           return true;
         }
 
