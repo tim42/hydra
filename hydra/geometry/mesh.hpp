@@ -34,7 +34,7 @@
 
 #include "../vulkan/vulkan.hpp"
 #include "../utilities/transfer.hpp"
-#include "../utilities/memory_allocator.hpp"
+#include "../utilities/memory_allocation.hpp"
 
 namespace neam
 {
@@ -85,6 +85,8 @@ namespace neam
           pvis = std::move(o.pvis);
           return *this;
         }
+
+        ~mesh() { allocation.free(); }
 
         /// \brief Add a buffer
         void add_buffer(size_t size, VkBufferUsageFlags usage, VkBufferCreateFlags flags = 0)
@@ -183,15 +185,28 @@ namespace neam
           return ret;
         }
 
-        /// \brief Bind a memory area to every single buffers
-        /// (it does alignement & everything else).
-        /// \see get_memory_requirements()
-        void bind_memory_area(const memory_allocation &m) { bind_memory_area(*m.mem, m.offset); }
+        /// \brief Allocate and bind some memory for the batch transfer
+        /// The memory is then freed when the transfer object is destructed
+        void allocate_memory(memory_allocator &mem_alloc, VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+        {
+          _bind_memory_area(mem_alloc.allocate_memory(get_memory_requirements(), flags));
+        }
 
         /// \brief Bind a memory area to every single buffers
         /// (it does alignement & everything else).
         /// \see get_memory_requirements()
-        void bind_memory_area(vk::device_memory &dm, size_t offset)
+        /// \note The memory is freed after the end of the mesh's life
+        void _bind_memory_area(const memory_allocation &ma)
+        {
+          _bind_memory_area(*ma.mem(), ma.offset());
+          allocation.free();
+          allocation = ma;
+        }
+
+        /// \brief Bind a memory area to every single buffers
+        /// (it does alignement & everything else).
+        /// \see get_memory_requirements()
+        void _bind_memory_area(const vk::device_memory &dm, size_t offset)
         {
           buffers_offsets.clear();
           for (vk::buffer &it : buffers)
@@ -209,14 +224,14 @@ namespace neam
         }
 
         /// \brief Return the associated device memory (if any)
-        vk::device_memory *get_device_memory() { return dev_mem; }
+        const vk::device_memory *_get_device_memory() { return dev_mem; }
 
         /// \brief Return the offset of a buffer (may throw if no memory)
-        size_t get_buffer_offset(size_t buffer_index) const { return buffers_offsets.at(buffer_index); }
+        size_t _get_buffer_offset(size_t buffer_index) const { return buffers_offsets.at(buffer_index); }
 
         /// \brief Map the buffer to host memory
         /// \note The bound memory MUST be host visible
-        void *map_buffer(size_t buffer_index) const { return dev_mem->map_memory(buffers_offsets.at(buffer_index), buffers[buffer_index].size()); }
+        void *_map_buffer(size_t buffer_index) const { return dev_mem->map_memory(buffers_offsets.at(buffer_index), buffers[buffer_index].size()); }
 
 
         /// \brief Transfer some data to a buffer (using a batch transfer utility)
@@ -270,7 +285,8 @@ namespace neam
         VkIndexType index_type = VK_INDEX_TYPE_UINT16;
 
         std::deque<size_t> buffers_offsets;
-        vk::device_memory *dev_mem = nullptr;
+        memory_allocation allocation;
+        const vk::device_memory *dev_mem = nullptr;
 
         bool index_buffer_present = false;
 

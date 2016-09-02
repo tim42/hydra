@@ -74,6 +74,9 @@ int main(int, char **)
   neam::hydra::vk::queue gqueue(device, win._get_win_queue());
   neam::hydra::vk::queue tqueue(device, *temp_transfer_queue);
 
+  // create the memory allocator
+  neam::hydra::memory_allocator mem_alloc(device);
+
   // create the swapchain
   neam::hydra::vk::swapchain sc = win._create_swapchain(device);
 
@@ -83,9 +86,7 @@ int main(int, char **)
 
   // create the batch transfer
   neam::hydra::batch_transfers btransfers(device, tqueue, transfer_cmd_pool);
-  neam::hydra::vk::device_memory btransfers_mem = neam::hydra::vk::device_memory::allocate(device, btransfers.get_memory_requirements(),
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-  btransfers.bind_memory_area(btransfers_mem, 0);
+  btransfers.allocate_memory(mem_alloc);
 
   //////////////////////////////////////////////////////////////////////////////
   // create the render pass
@@ -111,8 +112,7 @@ int main(int, char **)
   mesh.add_buffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
   mesh.get_vertex_input_state() = dummy_vertex::get_vertex_description();
 
-  neam::hydra::vk::device_memory mesh_mem = neam::hydra::vk::device_memory::allocate(device, mesh.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-  mesh.bind_memory_area(mesh_mem, 0);
+  mesh.allocate_memory(mem_alloc);
 
   mesh.transfer_data(btransfers, 0, sizeof(indices[0]) * indices.size(), indices.data());
   mesh.transfer_data(btransfers, 1, sizeof(vertices[0]) * vertices.size(), vertices.data(), nullptr, &end_transfer);

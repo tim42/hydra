@@ -119,7 +119,7 @@ namespace neam
         bool can_allocate(size_t size)
         {
           constexpr uint64_t mask = ~0;
-
+#ifndef HYDRA_ALLOCATOR_FAST_FREE
           // There's no way it can fit in memory
           if (size > free_memory)
             return false;
@@ -154,7 +154,7 @@ namespace neam
             if (size > second_level_granularity)
               return maybe;
           }
-
+#endif
           // In doubt, return true
           return true;
         }
@@ -183,7 +183,6 @@ namespace neam
           // super-fast search (using black levels) //
           if (size >= second_level_granularity * 2)
           {
-            cr::out.log() << LOGGER_INFO_TPL("allocate", __LINE__) << "using fast free space search" << std::endl;
             offset = fast_free_space_search(0, size);
             if (offset != -1) // found !
               mark_space_as_used(offset, size);
@@ -191,22 +190,18 @@ namespace neam
           }
 #endif
           // fastidious search
-          cr::out.log() << LOGGER_INFO_TPL("allocate", __LINE__) << "using fast forward" << std::endl;
           while (offset + size < chunk_allocation_size)
           {
-            const int old_offset = offset;
+//             const int old_offset = offset;
             offset = fast_forward(offset); // skip used contents
-            cr::out.log() << LOGGER_INFO_TPL("allocate", __LINE__) << "ff: " << offset << " vs " << old_offset << std::endl;
             if (offset + size > chunk_allocation_size)
               return -1; // there's isn't anything we can do :/
             size_t avail_free_space = get_free_space_at_offset(offset, size);
-            cr::out.log() << LOGGER_INFO_TPL("allocate", __LINE__) << "free space: " << avail_free_space << std::endl;
             if (avail_free_space >= size)
               break;
             offset += avail_free_space;
           }
 
-          cr::out.log() << LOGGER_INFO_TPL("allocate", __LINE__) << "offset: " << offset << std::endl;
           mark_space_as_used(offset, size);
           return offset;
         }
@@ -297,7 +292,6 @@ namespace neam
           {
           _first_level_search:
             from_first_level = true;
-            cr::out.log() << LOGGER_INFO_TPL(__PRETTY_FUNCTION__, __LINE__) << "using fast forward / first level" << std::endl;
             unsigned fl_bidx = offset / first_level_granularity;
             for (; fl_bidx < first_level_bits && (((first_level_wh >> fl_bidx) & 1) != 0); ++fl_bidx, offset += first_level_granularity)
             {}
@@ -308,7 +302,6 @@ namespace neam
           {
           _second_level_search:
             from_second_level = true;
-            cr::out.log() << LOGGER_INFO_TPL(__PRETTY_FUNCTION__, __LINE__) << "using fast forward / second level" << std::endl;
             unsigned sl_idx = offset / (second_level_granularity * 64);
             unsigned sl_bidx = 0;
             uint64_t tmp = second_level_wh[sl_idx];
@@ -327,7 +320,6 @@ namespace neam
 
           // slower discard (bitmap-based, 512o) //
           {
-            cr::out.log() << LOGGER_INFO_TPL(__PRETTY_FUNCTION__, __LINE__) << "using fast forward / bitmap" << std::endl;
             unsigned bm_idx = offset / (granularity * 64);
             unsigned bm_bidx = (offset / granularity) % 64;
             uint64_t tmp = bitmap[bm_idx];

@@ -40,6 +40,8 @@
 #include "../hydra_exception.hpp"
 #include "../vulkan/vulkan.hpp"
 
+#include "memory_allocator.hpp"
+
 namespace neam
 {
   namespace hydra
@@ -61,7 +63,7 @@ namespace neam
         };
 
       public:
-        batch_transfers(vk::device &_dev, vk::queue &_tqueue, vk::command_pool &_cmd_pool, size_t transfer_window_size = 1024 * 1024)
+        batch_transfers(vk::device &_dev, vk::queue &_tqueue, vk::command_pool &_cmd_pool, size_t transfer_window_size = 2 * 1024 * 1024)
           : dev(_dev), tqueue(_tqueue), cmd_pool(_cmd_pool), cmd_buf(cmd_pool.create_command_buffer()),
             staging_buffer(dev, transfer_window_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT),
             end_fence(dev)
@@ -73,6 +75,7 @@ namespace neam
         {
           for (_data_transfer &it : transfer_list)
             operator delete(it.data);
+          allocation.free();
         }
 
         /// \brief Return the total size of the data to transfer
@@ -105,13 +108,38 @@ namespace neam
           });
         }
 
+        /// \brief Allocate and bind some memory for the batch transfer
+        /// The memory is then freed when the transfer object is destructed
+        void allocate_memory(memory_allocator &mem_alloc)
+        {
+          _bind_memory_area(mem_alloc.allocate_memory(get_memory_requirements(), VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
+        }
+
         /// \brief Affect some memory for the batch transfer
-        void bind_memory_area(vk::device_memory &area, size_t offset)
+        /// \note The duty to free the memory is yours. Please use allocate_memory()
+        ///       if you don't like that
+        void _bind_memory_area(vk::device_memory &area, size_t offset)
         {
           check::on_vulkan_error::n_assert(area.get_size() >= staging_buffer.size(), "memory area too small");
           check::on_vulkan_error::n_assert(transfer_in_progress == false, "could not change the memory area while a transfer is in progress");
+
+          allocation.free();
+          allocation = memory_allocation();
+
           mem_area = &area;
+          mem_offset = offset;
           staging_buffer.bind_memory(*mem_area, offset);
+        }
+
+        /// \brief Bind some memory for the batch transfer
+        void _bind_memory_area(const memory_allocation &ma)
+        {
+          check::on_vulkan_error::n_assert(ma.size() >= staging_buffer.size(), "memory area too small");
+          check::on_vulkan_error::n_assert(transfer_in_progress == false, "could not change the memory area while a transfer is in progress");
+          allocation = std::move(ma);
+          mem_area = ma.mem();
+          mem_offset = ma.offset();
+          staging_buffer.bind_memory(*ma.mem(), ma.offset());
         }
 
         /// \brief Start the transfer
@@ -121,7 +149,7 @@ namespace neam
         ///       and some transfer may be added asynchronically)
         void start()
         {
-          if (transfer_in_progress.exchange(true) == true) // we're already transfering !!
+          if (transfer_in_progress.exchange(true) == true) // we're already transferring !!
             return;
 
           if (transfer_list.empty())
@@ -131,7 +159,7 @@ namespace neam
           std::vector<vk::semaphore *> semaphore_vct;
           std::vector<vk::fence *> fence_vct;
           {
-            int8_t *memory = (int8_t *)mem_area->map_memory();
+            int8_t *memory = (int8_t *)mem_area->map_memory(mem_offset, staging_buffer.size());
             vk::command_buffer_recorder cbr = cmd_buf.begin_recording();
             size_t current_offset = 0;
             int i = 0;
@@ -192,7 +220,7 @@ namespace neam
 
           // start the transfer: flush and unmap
           mem_area->flush();
-          mem_area->unmap_memory();
+//           mem_area->unmap_memory();
 
           tqueue.submit(si);
         }
@@ -218,7 +246,8 @@ namespace neam
         vk::queue &tqueue;
         vk::command_pool &cmd_pool;
 
-        vk::device_memory *mem_area = nullptr;
+        const vk::device_memory *mem_area = nullptr;
+        size_t mem_offset = 0;
         std::atomic_bool transfer_in_progress;
 
         vk::command_buffer cmd_buf;
@@ -228,6 +257,8 @@ namespace neam
         spinlock transfer_list_lock;
         std::deque<_data_transfer> transfer_list;
         size_t total_size = 0;
+
+        memory_allocation allocation;
     };
   } // namespace hydra
 } // namespace neam

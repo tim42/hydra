@@ -107,7 +107,7 @@ namespace neam
           }
 
           /// \brief Allocate some memory and return a new device_memory instance to wrap that memory
-          static device_memory allocate(device &dev, size_t size, VkFlags required_memory_flags, uint32_t memory_type_bits = 0)
+          static device_memory allocate(device &dev, size_t size, VkMemoryPropertyFlags required_memory_flags, uint32_t memory_type_bits)
           {
             device_memory dm(dev);
 
@@ -128,15 +128,16 @@ namespace neam
           }
 
           /// \brief Allocate some memory on the device
-          void allocate(const VkMemoryRequirements &mem_reqs, VkFlags required_memory_flags)
+          void allocate(const VkMemoryRequirements &mem_reqs, VkMemoryPropertyFlags required_memory_flags)
           {
             allocate(mem_reqs.size, required_memory_flags, mem_reqs.memoryTypeBits);
           }
 
-          /// \brief Allocate some memory on the device
-          void allocate(size_t _size, VkFlags required_memory_flags, uint32_t memory_type_bits = 0)
+          /// \brief Return the memory type index corresponding to the paramerters
+          /// \return the memory type index if found, -1 otherwise
+          static int get_memory_type_index(device &dev, VkMemoryPropertyFlags required_memory_flags, uint32_t memory_type_bits)
           {
-            size_t memory_type_index = (size_t)-1;
+            int memory_type_index = -1;
             // search for the memory type index
             const VkPhysicalDeviceMemoryProperties &dmp = dev.get_physical_device().get_memory_property();
             for (size_t i = 0; i < dmp.memoryTypeCount; i++)
@@ -144,6 +145,7 @@ namespace neam
               if ((memory_type_bits & 1) == 1)
               {
                 // Type is available, does it match user properties?
+                // TODO: perfect match (if possible)
                 if ((dmp.memoryTypes[i].propertyFlags & required_memory_flags) == required_memory_flags)
                 {
                   memory_type_index = i;
@@ -152,6 +154,13 @@ namespace neam
               }
               memory_type_bits >>= 1;
             }
+            return memory_type_index;
+          }
+
+          /// \brief Allocate some memory on the device
+          void allocate(size_t _size, VkMemoryPropertyFlags required_memory_flags, uint32_t memory_type_bits)
+          {
+            size_t memory_type_index = get_memory_type_index(dev, required_memory_flags, memory_type_bits);
 
             check::on_vulkan_error::n_assert(memory_type_index != (size_t)-1, "could not find a suitable memory type to allocate");
 
