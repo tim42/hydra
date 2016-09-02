@@ -1,13 +1,14 @@
-![YägGLer logo](data/images/hydra-logo.png)
-
-
-# `hydra`: C++ vulkan renderer.
+![hydra](data/images/hydra-logo.png)
 
 ---
 
-## this is not the renderer you are looking for
+**this is not the renderer you are looking for**
+
 
 ---
+
+hydra: C++14 vulkan renderer.
+
 
 This project is under development, and can't be used in any kind of project.
 Yet.
