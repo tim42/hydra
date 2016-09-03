@@ -87,6 +87,8 @@ namespace neam
             do_not_destroy = o.do_not_destroy;
             mem_requirements = o.mem_requirements;
 
+            o.vk_image = nullptr;
+
             return *this;
           }
 
