@@ -62,18 +62,44 @@ namespace neam
         ///       the chunk size.
         memory_allocator(vk::device &_dev) : dev(_dev)
         {
-          memory_types.resize(dev.get_physical_device().get_memory_property().memoryTypeCount);
-          for (size_t i = 0; i < memory_types.size(); ++i)
-          {
-            memory_types[i].set_memory_type_index(i);
-            memory_types[i].set_memory_allocator(this);
-            memory_types[i].set_vk_device(&dev);
-          }
-
 #ifndef HYDRA_NO_MESSAGES
           // A lovely print
           memory_allocator_chunk::print_nfo();
 #endif
+
+          // Check if we need to have separate chains for optimal images and buffers
+          // (some devices will need this, some others not)
+          // Not having this would result in massive chunk fragmentation on NVIDIA hardware (you align on 64kio),
+          // but having separate chains (when needed) will result in better memory compaction
+          //
+          // Having more chains won't consume much memory (only chunks of 8Mio, but only if used)
+          if (dev.get_physical_device().get_limits().bufferImageGranularity > memory_allocator_chunk::chunk_allocation_size)
+          {
+            separate_chains = true;
+            bits_to_skip = 0;
+          }
+          else
+          {
+            separate_chains = false;
+            bits_to_skip = 1;
+          }
+
+          // Init the chains
+          const size_t allocation_type_count = (3 >> bits_to_skip) + 1;
+
+          allocator_chains.resize(allocation_type_count);
+
+          for (size_t i = 0; i < allocator_chains.size(); ++i)
+          {
+            allocator_chains[i].resize(dev.get_physical_device().get_memory_property().memoryTypeCount);
+            for (size_t j = 0; j < allocator_chains[i].size(); ++j)
+            {
+              allocator_chains[i][j].set_memory_type_index(j);
+              allocator_chains[i][j].set_memory_allocator(this);
+              allocator_chains[i][j].set_allocation_type((allocation_type)(i << bits_to_skip));
+              allocator_chains[i][j].set_vk_device(&dev);
+            }
+          }
         }
 
         /// \brief Free the memory, destroy the allocator
@@ -83,11 +109,11 @@ namespace neam
         /// \param short_lived Indicate whether or not the memory will be freed soon.
         ///                    You may gain performance (and have less fragmentation) in the long term
         ///                    if you correctly set this flag
-        memory_allocation allocate_memory(const VkMemoryRequirements &reqs, VkMemoryPropertyFlags flags, bool short_lived = false)
+        memory_allocation allocate_memory(const VkMemoryRequirements &reqs, VkMemoryPropertyFlags flags, allocation_type at = allocation_type::normal)
         {
           uint32_t mti = vk::device_memory::get_memory_type_index(dev, flags, reqs.memoryTypeBits);
           check::on_vulkan_error::n_assert(mti != (uint32_t)-1, "could not find a suitable memory type to allocate");
-          return allocate_memory(reqs.size, reqs.alignment, mti, short_lived);
+          return allocate_memory(reqs.size, reqs.alignment, mti, at);
         }
 
         /// \brief Allocate some memory (throw on error)
@@ -96,10 +122,8 @@ namespace neam
         /// \param short_lived Indicate whether or not the memory will be freed soon.
         ///                    You may gain performance (and have less fragmentation) in the long term
         ///                    if you correctly set this flag
-        memory_allocation allocate_memory(size_t size, uint32_t alignment, uint32_t memory_type_index, bool short_lived = false)
+        memory_allocation allocate_memory(size_t size, uint32_t alignment, uint32_t memory_type_index, allocation_type at = allocation_type::normal)
         {
-          (void) alignment;
-
           if (size > memory_allocator_chunk::chunk_allocation_size)
           {
             // non-shared allocation, we have a requested size too big to fit in a chunk
@@ -110,17 +134,19 @@ namespace neam
 
             // update stats
             ++allocation_count;
-            allocated_memory += size;
             used_memory += size;
-            return memory_allocation(memory_type_index, true, 0, size, &(*it), this);
+            return memory_allocation(memory_type_index, true, at, 0, size, &(*it), this);
           }
           else
           {
-            check::on_vulkan_error::n_assert(memory_type_index < memory_types.size(), "allocate_memory(): invalid memory type index");
-            if (short_lived)
-              return memory_types[memory_type_index].allocate_memory_short_lived(size);
-            else
-              return memory_types[memory_type_index].allocate_memory(size);
+            unsigned alltype_idx = (unsigned)(at) >> bits_to_skip;
+            check::on_vulkan_error::n_assert(alltype_idx < allocator_chains.size(), "allocate_memory(): invalid allocation type");
+            check::on_vulkan_error::n_assert(memory_type_index < allocator_chains[alltype_idx].size(), "allocate_memory(): invalid memory type index");
+            memory_allocation ret = allocator_chains[alltype_idx][memory_type_index].allocate_memory(size, alignment);
+            // update stats
+            ++allocation_count;
+            used_memory += size;
+            return ret;
           }
         }
 
@@ -146,22 +172,24 @@ namespace neam
 
             // update stats
             allocation_count -= 1;
-            allocated_memory -= mem.size();
             used_memory -= mem.size();
           }
           else
           {
-            check::on_vulkan_error::n_assert(mem._type_index() < memory_types.size(), "allocate_memory(): invalid memory type index");
-            memory_types[mem._type_index()].free_memory(mem);
+            unsigned alltype_idx = (unsigned)(mem._get_allocation_type()) >> bits_to_skip;
+            check::on_vulkan_error::n_assert(alltype_idx < allocator_chains.size(), "allocate_memory(): invalid allocation type");
+            check::on_vulkan_error::n_assert(mem._type_index() < allocator_chains[alltype_idx].size(), "allocate_memory(): invalid memory type index");
+            allocator_chains[alltype_idx][mem._type_index()].free_memory(mem);
           }
         }
 
       private:
         vk::device &dev;
+        bool separate_chains = true;
+        uint32_t bits_to_skip = 0;
 
         // stats //
         size_t allocation_count = 0;
-        size_t allocated_memory = 0;
         size_t used_memory = 0;
 
         // types //
@@ -172,7 +200,7 @@ namespace neam
         std::unordered_map<intptr_t, dmlist_iterator> non_shared_map; // a fast way to get the list entry
 
         // shared allocations //
-        std::vector<memory_allocator_chunk_chain> memory_types;
+        std::vector<std::vector<memory_allocator_chunk_chain>> allocator_chains;
     };
 
 

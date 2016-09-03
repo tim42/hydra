@@ -43,10 +43,9 @@ namespace neam
       public:
         memory_allocator_chunk_chain() {}
         memory_allocator_chunk_chain(memory_allocator_chunk_chain &&o)
-          : memory_type_index(o.memory_type_index), allocator(o.allocator),
-            chunk_list(std::move(o.chunk_list)),
-            short_lived_chunk_list(std::move(o.short_lived_chunk_list)),
-            dev_to_mac(o.dev_to_mac)
+          : memory_type_index(o.memory_type_index), allocator(o.allocator), 
+            type(o.type), dev(o.dev),
+            chunk_list(std::move(o.chunk_list)), dev_to_mac(std::move(o.dev_to_mac))
         {}
         ~memory_allocator_chunk_chain() {}
 
@@ -54,73 +53,49 @@ namespace neam
         void set_memory_type_index(uint32_t mti) { memory_type_index = mti; }
         /// \brief Set the memory allocator
         void set_memory_allocator(memory_allocator *ma) { allocator = ma; }
+        /// \brief Set the allocation type
+        void set_allocation_type(allocation_type _type) { type = _type; }
         /// \brief Set the device
         void set_vk_device(vk::device *_dev) { dev = _dev; }
 
 
-        memory_allocation allocate_memory(size_t size)
+        memory_allocation allocate_memory(size_t size, size_t alignment)
         {
           for (memory_allocator_chunk &it : chunk_list)
           {
             if (it.can_allocate(size)) // fast heuristic to determinate if that chunk can allocate the requested memory
             {
-              int offset = it.allocate(size);
+              it.print_stats();
+              int offset = it.allocate(size, alignment);
+              it.print_stats();
               if (offset == -1)
                 continue; // how unfortunate :/
-              return memory_allocation(memory_type_index, false, offset, size, &it.get_device_memory(), allocator);
+              return memory_allocation(memory_type_index, false, type, offset, size, &it.get_device_memory(), allocator);
             }
           }
 
           // If we get here, we don't have enough chunk...
           chunk_list.emplace_front(*dev, memory_type_index);
           memory_allocator_chunk &it = chunk_list.front();
-          dev_to_mac.emplace(std::make_pair(&it.get_device_memory(), std::make_pair(false, &it)));
-          int offset = it.allocate(size);
+          dev_to_mac.emplace(std::make_pair(&it.get_device_memory(), &it));
+          int offset = it.allocate(size, alignment);
           check::on_vulkan_error::n_assert(offset != -1, "m_a_c_c::allocate(): allocation failed in an empty chunk. yay.");
-          return memory_allocation(memory_type_index, false, offset, size, &it.get_device_memory(), allocator);
-        }
-
-        memory_allocation allocate_memory_short_lived(size_t size)
-        {
-          for (memory_allocator_chunk &it : short_lived_chunk_list)
-          {
-            if (it.can_allocate(size)) // fast heuristic to determinate if that chunk can allocate the requested memory
-            {
-              int offset = it.allocate(size);
-              if (offset == -1)
-                continue; // how unfortunate :/
-              return memory_allocation(memory_type_index, false, offset, size, &it.get_device_memory(), allocator);
-            }
-          }
-
-          // If we get here, we don't have enough chunk...
-          short_lived_chunk_list.emplace_front(*dev, memory_type_index);
-          memory_allocator_chunk &it = short_lived_chunk_list.front();
-          dev_to_mac.emplace(std::make_pair(&it.get_device_memory(), std::make_pair(true, &it)));
-          int offset = it.allocate(size);
-          check::on_vulkan_error::n_assert(offset != -1, "m_a_c_c::allocate(): allocation failed in an empty chunk. yay.");
-          return memory_allocation(memory_type_index, false, offset, size, &it.get_device_memory(), allocator);
+          return memory_allocation(memory_type_index, false, type, offset, size, &it.get_device_memory(), allocator);
         }
 
         void free_memory(const memory_allocation &ma)
         {
-          bool is_short_lived;
           memory_allocator_chunk *mac;
           auto dtm_it = dev_to_mac.find(ma.mem());
           check::on_vulkan_error::n_assert(dtm_it != dev_to_mac.end(), "m_a_c_c::free_memory(): invalid free (can't find the corresponding memory_allocator_chunk)");
 
-          is_short_lived = dtm_it->second.first;
-          mac = dtm_it->second.second;
+          mac = dtm_it->second;
 
           mac->free(ma.offset(), ma.size());
 
-          if (mac->is_empty())
+          if (mac->is_empty()) // remove empty chunks
           {
-            std::list<memory_allocator_chunk> *list = &chunk_list;
-            if (is_short_lived)
-              list = &short_lived_chunk_list;
-
-            list->remove_if([&](const memory_allocator_chunk &_mac)
+            chunk_list.remove_if([&](const memory_allocator_chunk &_mac)
             {
               return &_mac.get_device_memory() == ma.mem();
             });
@@ -130,11 +105,11 @@ namespace neam
       private:
         uint32_t memory_type_index = 0;
         memory_allocator *allocator = nullptr;
+        allocation_type type;
         vk::device *dev;
 
         std::list<memory_allocator_chunk> chunk_list; // normal chunk list
-        std::list<memory_allocator_chunk> short_lived_chunk_list; // chunks dedicated to short living memory
-        std::unordered_map<const vk::device_memory *, std::pair<bool, memory_allocator_chunk *>> dev_to_mac;
+        std::unordered_map<const vk::device_memory *, memory_allocator_chunk *> dev_to_mac;
     };
   } // namespace hydra
 } // namespace neam

@@ -113,7 +113,7 @@ int main(int, char **)
   mesh.add_buffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
   mesh.add_buffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
   mesh.get_vertex_input_state() = dummy_vertex::get_vertex_description();
-
+  neam::cr::out.log() << LOGGER_INFO << "meshsz: " << mesh.get_memory_requirements().size << std::endl;
   mesh.allocate_memory(mem_alloc);
 
   mesh.transfer_data(btransfers, 0, sizeof(indices[0]) * indices.size(), indices.data());
@@ -137,13 +137,9 @@ int main(int, char **)
   neam::hydra::vk::sampler sampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f, 16.f);
 
   // allocate memory for the image (+ transfer data to it)
-  neam::hydra::vk::device_memory dm = neam::hydra::vk::device_memory::allocate(device, hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
   {
-    // TODO: FIX the issue below
-//     neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-//     hydra_logo_img.bind_memory(*ma.mem(), ma.offset());
-    hydra_logo_img.bind_memory(dm, 0);
+    neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::optimal_image);
+    hydra_logo_img.bind_memory(*ma.mem(), ma.offset());
 
     uint8_t pixels[logo_size * logo_size * 4];
     neam::hydra::generate_rgba_logo(pixels, logo_size, 5);

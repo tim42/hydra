@@ -43,6 +43,16 @@ namespace neam
     } // namespace vk
     class memory_allocator;
 
+    enum class allocation_type : int
+    {
+      normal        =      0,
+      optimal_image = 1 << 1,
+      short_lived   = 1 << 2,
+
+      short_lived_optimal_image = short_lived | optimal_image,
+    };
+
+
     /// \brief Represent a memory allocation
     struct memory_allocation
     {
@@ -58,15 +68,16 @@ namespace neam
 
         bool _is_non_shared() const { return non_shared; }
         uint32_t _type_index() const { return type_index; }
+        allocation_type _get_allocation_type() const { return alltype; }
 
       public: // advanced
-        memory_allocation(uint32_t _type_index, bool _non_shared, size_t offset, size_t size, const vk::device_memory *mem, memory_allocator *allocator)
-         : type_index(_type_index), non_shared(_non_shared), _offset(offset), _size(size), _mem(mem), _allocator(allocator)
+        memory_allocation(uint32_t _type_index, bool _non_shared, allocation_type _alltype, size_t offset, size_t size, const vk::device_memory *mem, memory_allocator *allocator)
+         : type_index(_type_index), non_shared(_non_shared), alltype(_alltype), _offset(offset), _size(size), _mem(mem), _allocator(allocator)
         {}
-        memory_allocation() : memory_allocation(-1, false, -1, 0, nullptr, nullptr) {}
+        memory_allocation() : memory_allocation(-1, false, allocation_type::normal, -1, 0, nullptr, nullptr) {}
 
         memory_allocation(const memory_allocation &o)
-          : type_index(o.type_index), non_shared(o.non_shared), _offset(o._offset), _size(o._size),
+          : type_index(o.type_index), non_shared(o.non_shared), alltype(o.alltype), _offset(o._offset), _size(o._size),
             _mem(o._mem), _allocator(o._allocator)
         {
 //           o._allocator = nullptr;
@@ -81,6 +92,7 @@ namespace neam
             return *this;
           type_index = (o.type_index);
           non_shared = (o.non_shared);
+          alltype = o.alltype;
           _offset = (o._offset);
           _size = (o._size);
           _mem = (o._mem);
@@ -92,6 +104,7 @@ namespace neam
       private:
         uint32_t type_index;
         bool non_shared;
+        allocation_type alltype;
         size_t _offset;
         size_t _size;
         const vk::device_memory *_mem;

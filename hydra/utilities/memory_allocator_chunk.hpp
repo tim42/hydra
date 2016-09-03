@@ -167,7 +167,7 @@ namespace neam
         /// The returned offset is aligned to granularity (default, 512byte)
         /// \note bigger allocation are faster (the fastest is for size > 2 * first_level_granularity)
         /// \note the algorythm used is a kind of first-fit. (beware the fragmentation)
-        int allocate(size_t size)
+        int allocate(size_t size, size_t alignment)
         {
           check::on_vulkan_error::n_assert(size <= chunk_allocation_size, "m_a_c::allocate(): size is greater than the chunk");
 
@@ -178,32 +178,49 @@ namespace neam
           if (size % granularity) size += granularity - (size % granularity);
 
           int offset = 0; // base offset
+          int aoffset = 0; // aligned offset
+
+          size_t asize = size;
 
 #ifndef HYDRA_ALLOCATOR_FAST_FREE
           // super-fast search (using black levels) //
           if (size >= second_level_granularity * 2)
           {
-            offset = fast_free_space_search(0, size);
-            if (offset != -1) // found !
-              mark_space_as_used(offset, size);
-            return offset;
+            aoffset = fast_free_space_search(0, size, alignment);
+            if (aoffset == -1) // not found !
+              return -1;
+
+            offset = aoffset - aoffset % granularity;
+            asize = size + (aoffset - offset);
+            if (asize % granularity) size += granularity - (asize % granularity);
+            mark_space_as_used(offset, asize);
+            return aoffset;
           }
 #endif
           // fastidious search
           while (offset + size < chunk_allocation_size)
           {
-//             const int old_offset = offset;
             offset = fast_forward(offset); // skip used contents
-            if (offset + size > chunk_allocation_size)
+            aoffset = offset;
+            asize = size;
+            // align offset
+            if (offset % alignment != 0)
+            {
+              aoffset += alignment - (offset % alignment);
+              offset = aoffset - (aoffset % granularity);
+              asize += aoffset - offset;
+              if (asize % granularity) asize += granularity - (asize % granularity);
+            }
+            if (offset + asize > chunk_allocation_size)
               return -1; // there's isn't anything we can do :/
-            size_t avail_free_space = get_free_space_at_offset(offset, size);
-            if (avail_free_space >= size)
+            size_t avail_free_space = get_free_space_at_offset(offset, asize);
+            if (avail_free_space >= asize)
               break;
             offset += avail_free_space;
           }
 
-          mark_space_as_used(offset, size);
-          return offset;
+          mark_space_as_used(offset, asize);
+          return aoffset;
         }
 
         /// \brief Free the memory at offset offset and size size.
@@ -212,6 +229,7 @@ namespace neam
         {
           // re-align size
           if (size % granularity) size += granularity - (size % granularity);
+          offset = offset - (offset % granularity);
 
           check::on_vulkan_error::n_assert(offset + size <= chunk_allocation_size, "m_a_c::free(): invalid free (offset + size bigger than total memory)");
 
@@ -444,7 +462,7 @@ namespace neam
 
         /// \brief Used to find big chunks of free space (> 32kio)
         /// \note Disabled if using the fast-free/slow-alloc switch
-        long fast_free_space_search(size_t offset, size_t size)
+        long fast_free_space_search(size_t offset, size_t size, size_t alignment)
         {
           size_t found_sz = 0;
           // super-fast search (using black levels) //
@@ -524,13 +542,30 @@ namespace neam
               bm_bidx = 64;
             }
           }
+          // rollback if we have been too far
+          if (((tmp >> bm_bidx) & 1) != 0)
+          {
+            offset += granularity;
+            found_sz -= granularity;
+          }
+
+          int aoffset = offset;
+          size_t asize = size;
+          // align offset
+          if (offset % alignment != 0)
+          {
+            aoffset += alignment - (offset % alignment);
+            offset = aoffset - (aoffset % granularity);
+            asize += aoffset - offset;
+            if (asize % granularity) asize += granularity - (asize % granularity);
+          }
 
           // forward search
           bm_idx = (offset + found_sz) / (granularity * 64);
           bm_bidx = ((offset + found_sz) / granularity) % 64;
           tmp = bitmap[bm_idx];
 
-          for (; ((tmp >> bm_bidx) & 1) == 0 && found_sz < size; bm_bidx = (bm_bidx + 1) % 64, found_sz += granularity)
+          for (; ((tmp >> bm_bidx) & 1) == 0 && found_sz < asize; bm_bidx = (bm_bidx + 1) % 64, found_sz += granularity)
           {
             if (bm_bidx == 63)
             {
@@ -540,11 +575,11 @@ namespace neam
             }
           }
 
-          if (found_sz >= size) // Yay ! found something
-            return offset;
+          if (found_sz >= asize) // Yay ! found something
+            return aoffset;
 
           // Not enough free space ! (tail recursion !)
-          return fast_free_space_search(offset + found_sz, size);
+          return fast_free_space_search(offset + found_sz, size, alignment);
         }
 
         /// \brief Update the bitmap and its herarchy to tell the space has been allocated
