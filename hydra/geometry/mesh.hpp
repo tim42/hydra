@@ -156,7 +156,7 @@ namespace neam
           size_t ret = 0;
           for (const vk::buffer &it : buffers)
           {
-            auto reqs = it.get_memory_requirements();
+            VkMemoryRequirements reqs = it.get_memory_requirements();
             if ((ret % reqs.alignment) != 0)
               ret += (reqs.alignment - (ret % reqs.alignment));
             ret += reqs.size;
@@ -169,18 +169,18 @@ namespace neam
         {
           VkMemoryRequirements ret;
           ret.size = 0;
-          ret.memoryTypeBits = 0;
+          ret.memoryTypeBits = ~0;
           if (buffers.size())
             ret.alignment = buffers[0].get_memory_requirements().alignment;
           else
-            ret.alignment = 0;
+            ret.alignment = 1;
           for (const vk::buffer &it : buffers)
           {
-            auto reqs = it.get_memory_requirements();
+            VkMemoryRequirements reqs = it.get_memory_requirements();
             if ((ret.size % reqs.alignment) != 0)
               ret.size += (reqs.alignment - (ret.size % reqs.alignment));
             ret.size += reqs.size;
-            ret.memoryTypeBits |= reqs.memoryTypeBits;
+            ret.memoryTypeBits &= reqs.memoryTypeBits;
           }
           return ret;
         }
