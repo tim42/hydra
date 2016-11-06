@@ -55,6 +55,10 @@
 #include "init/bootstrap.hpp"
 #include "init/feature_requesters/gen_feature_requester.hpp"
 
+// Make GLM compatible with vulkan
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
 #include <glm/glm.hpp> // glm is a core dependency of hydra
 
 // include the vulkan wrapper
@@ -65,7 +69,11 @@
 #include "geometry/geometry.hpp"
 #include "threading/threading.hpp"
 #include "geometry/geometry.hpp"
-#include "material/material.hpp"
+
+// #ifndef HYDRA_NO_RENDERER
+// // include the renderer (can be disabled by defining HYDRA_NO_RENDERER)
+// #include "renderer/renderer.hpp"
+// #endif
 
 namespace neam
 {

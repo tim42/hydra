@@ -1,14 +1,15 @@
 
 // #include <neam/reflective/reflective.hpp>
 
-#define N_ALLOW_DEBUG true // we want full debug information
-//#define N_DISABLE_CHECKS // we don't want anything
+//#define N_ALLOW_DEBUG true // we want full debug information
+#define N_DISABLE_CHECKS // we don't want anything
 
 #include <hydra/tools/logger/logger.hpp>
 
 #include <hydra/hydra.hpp>          // the main header of hydra
-#include <hydra/hydra_glfw_ext.hpp> // for the window creation / handling
 #include <hydra/hydra_glm_udl.hpp>  // we do want the easy glm udl (optional, not used by hydra)
+#include <hydra/hydra_glfw_ext.hpp> // for the window creation / handling
+#include <hydra/hydra_lodepng_ext.hpp> // for the window creation / handling
 
 
 #include <hydra/tools/chrono.hpp>
@@ -20,7 +21,7 @@ struct dummy_vertex
   glm::vec3 color;
   glm::vec2 uv;
 
-  static neam::hydra::vk::pipeline_vertex_input_state get_vertex_description()
+  static neam::hydra::vk::pipeline_vertex_input_state get_vertex_input_state()
   {
     neam::hydra::vk::pipeline_vertex_input_state pvis;
     pvis.add_binding_description(0, sizeof(dummy_vertex), VK_VERTEX_INPUT_RATE_VERTEX);
@@ -70,7 +71,7 @@ int main(int, char **)
   instance.install_default_debug_callback(VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT | VK_DEBUG_REPORT_ERROR_BIT_EXT);
 //   instance.install_default_debug_callback(VK_DEBUG_REPORT_FLAG_BITS_MAX_ENUM_EXT); // We want all the reports (maximum debug)
 
-  neam::hydra::glfw::window win = glfw_ext.create_window(instance, glm::uvec2(500, 500), "hydra-test-dev");
+  neam::hydra::glfw::window win = glfw_ext.create_window(instance, glm::uvec2(900, 900), "hydra-test-dev");
 
   neam::hydra::vk::device device = hydra_init.create_device(instance);
   neam::hydra::vk::queue gqueue(device, win._get_win_queue());
@@ -112,8 +113,7 @@ int main(int, char **)
 
   mesh.add_buffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
   mesh.add_buffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-  mesh.get_vertex_input_state() = dummy_vertex::get_vertex_description();
-  neam::cr::out.log() << LOGGER_INFO << "meshsz: " << mesh.get_memory_requirements().size << std::endl;
+  mesh.get_vertex_input_state() = dummy_vertex::get_vertex_input_state();
   mesh.allocate_memory(mem_alloc);
 
   mesh.transfer_data(btransfers, 0, sizeof(indices[0]) * indices.size(), indices.data());
@@ -122,28 +122,28 @@ int main(int, char **)
   //////////////////////////////////////////////////////////////////////////////
   // setup the descriptors/...
   neam::hydra::vk::descriptor_set_layout_binding sampler_dslb(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
-  neam::hydra::vk::descriptor_set_layout sampler_ds_layout(device, std::vector<neam::hydra::vk::descriptor_set_layout_binding>{sampler_dslb});
+  neam::hydra::vk::descriptor_set_layout sampler_ds_layout(device, {sampler_dslb});
 
   neam::hydra::vk::descriptor_pool ds_pool(device, 1, {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}});
   neam::hydra::vk::descriptor_set descriptor_set = ds_pool.allocate_descriptor_set(sampler_ds_layout);
 
   // image, view, sampler:
-  unsigned int logo_size = 512;
-  neam::hydra::vk::image hydra_logo_img = neam::hydra::vk::image::create_image(device, std::vector<neam::hydra::vk::image_2d>
-  {
-    neam::hydra::vk::image_2d({logo_size, logo_size}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-  });
+  unsigned int logo_size = 1024;
+  neam::hydra::vk::image hydra_logo_img = neam::hydra::vk::image::create_image_arg(device,
+     neam::hydra::vk::image_2d({logo_size, logo_size}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+  );
 
-  neam::hydra::vk::sampler sampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f, 16.f);
+  neam::hydra::vk::sampler sampler(device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f, 16.f);
 
   // allocate memory for the image (+ transfer data to it)
   {
     neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::optimal_image);
     hydra_logo_img.bind_memory(*ma.mem(), ma.offset());
 
-    uint8_t pixels[logo_size * logo_size * 4];
+    uint8_t *pixels = new uint8_t[logo_size * logo_size * 4];
     neam::hydra::generate_rgba_logo(pixels, logo_size, 5);
     btransfers.add_transfer(hydra_logo_img, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, logo_size * logo_size * 4, pixels, nullptr, &end_transfer);
+    delete[] pixels;
 
     btransfers.start(); // We can transfer buffers while the other things initialize...
   }
@@ -151,12 +151,13 @@ int main(int, char **)
   neam::hydra::vk::image_view hydra_logo_img_view(device, hydra_logo_img, VK_IMAGE_VIEW_TYPE_2D);
 
   // update ds
-  descriptor_set.write_descriptor_set(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, { neam::hydra::vk::image_info{ sampler, hydra_logo_img_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL } });
+  descriptor_set.write_descriptor_set(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {{ sampler, hydra_logo_img_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }});
 
   //////////////////////////////////////////////////////////////////////////////
   // load the shaders
   neam::hydra::vk::shader_module vert_mod = neam::hydra::vk::spirv_shader::load_from_file(device, "vert.spv");
   neam::hydra::vk::shader_module frag_mod = neam::hydra::vk::spirv_shader::load_from_file(device, "frag.spv");
+
   // create the pipeline
   neam::hydra::vk::pipeline_creator pcr;
   pcr.get_pipeline_shader_stage()
@@ -175,6 +176,7 @@ int main(int, char **)
   neam::hydra::vk::pipeline_layout pl(device, { &sampler_ds_layout });
   pcr.set_pipeline_layout(pl);
   pcr.set_render_pass(render_pass);
+  pcr.set_subpass_index(0);
 
   neam::hydra::vk::pipeline pipeline = pcr.create_pipeline(device);
 
@@ -195,7 +197,7 @@ int main(int, char **)
     {
       neam::hydra::vk::command_buffer_recorder cbr = cmd_vct.back().begin_recording(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
-      cbr.begin_render_pass(render_pass, fb_vct.back(), sc.get_full_rect2D(), VK_SUBPASS_CONTENTS_INLINE, { glm::vec4(0.2, 0.2, 0.4, 1) });
+      cbr.begin_render_pass(render_pass, fb_vct.back(), sc.get_full_rect2D(), VK_SUBPASS_CONTENTS_INLINE, { glm::vec4(0.0f, 0x89 / 255.f, 1.0f, 1.f) });
       cbr.bind_pipeline(pipeline);
       cbr.bind_descriptor_set(VK_PIPELINE_BIND_POINT_GRAPHICS, pcr.get_pipeline_layout(), 0, { &descriptor_set });
       mesh.bind(cbr);
