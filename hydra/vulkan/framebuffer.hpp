@@ -115,8 +115,8 @@ namespace neam
               dev._vkDestroyFramebuffer(vk_framebuffer, nullptr);
 
             glm::uvec3 dims = get_future_dimensions();
-            create_info.height = dims.x;
-            create_info.width = dims.y;
+            create_info.width = dims.x;
+            create_info.height = dims.y;
             create_info.layers = dims.z;
             create_info.renderPass = pass->get_vk_render_pass();
 

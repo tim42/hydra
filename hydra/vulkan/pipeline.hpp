@@ -67,6 +67,8 @@ namespace neam
           pipeline &operator = (pipeline &&o)
           {
             check::on_vulkan_error::n_assert(&o.dev == &dev, "can't assign pipelines with different vulkan devices");
+            if (vk_pipeline)
+              dev._vkDestroyPipeline(vk_pipeline, nullptr);
 
             vk_pipeline = o.vk_pipeline;
             o.vk_pipeline = nullptr;
@@ -179,6 +181,12 @@ namespace neam
               create_info.flags |= VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
             else
               create_info.flags &= ~VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+          }
+
+          /// \brief Get the allow derivate state
+          bool allow_derivate_pipelines() const
+          {
+            return create_info.flags & VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
           }
 
           /// \brief Set custom flags (the fags controlling the inheritence are set automatically)

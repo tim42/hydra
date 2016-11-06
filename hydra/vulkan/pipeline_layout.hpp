@@ -63,7 +63,7 @@ namespace neam
           }
 
           /// \brief Create a pipeline layout (without push constants)
-          pipeline_layout(device &_dev, const std::vector<descriptor_set_layout *> &dsl_vct)
+          pipeline_layout(device &_dev, const std::vector<descriptor_set_layout *> &dsl_vct, const std::vector<VkPushConstantRange> &pc_range_vct = {})
            : dev(_dev)
           {
             std::vector<VkDescriptorSetLayout> vk_dsl_vct;
@@ -74,7 +74,7 @@ namespace neam
             {
               VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, nullptr, 0,
               (uint32_t)vk_dsl_vct.size(), vk_dsl_vct.data(),
-              0, nullptr
+              (uint32_t)pc_range_vct.size(), pc_range_vct.data()
             };
             check::on_vulkan_error::n_throw_exception(dev._vkCreatePipelineLayout(&plci, nullptr, &vk_playout));
           }

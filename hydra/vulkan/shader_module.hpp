@@ -86,6 +86,8 @@ namespace neam
             check::on_vulkan_error::n_assert(&o.dev == &dev, "can't assign shader modules with different vulkan devices");
             if (&o == this)
               return *this;
+            if (vk_shader_module)
+              dev._vkDestroyShaderModule(vk_shader_module, nullptr);
             vk_shader_module = o.vk_shader_module;
             o.vk_shader_module = nullptr;
             return *this;

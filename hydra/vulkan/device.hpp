@@ -135,7 +135,8 @@ namespace neam
           //
           // If you activated the "ultra-debug" mode on hydra, this will quite
           // flood your logs as for each function there's a check to see if the
-          // returned value is not a null pointer
+          // returned value is not a null pointer (but it only occurs one time
+          // at initialization)
           //
 
         public: // andvanced

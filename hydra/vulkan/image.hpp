@@ -30,10 +30,13 @@
 #ifndef __N_24664119311256314033_1924421680_IMAGE_HPP__
 #define __N_24664119311256314033_1924421680_IMAGE_HPP__
 
+#include <tuple>
+
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
 #include "../tools/execute_pack.hpp"
+#include "../tools/genseq.hpp"
 
 #include "../hydra_exception.hpp"
 
@@ -177,6 +180,48 @@ namespace neam
 
             for (const auto &it : container)
               it.update_image_create_info(ici);
+
+            VkImage vk_image;
+
+            check::on_vulkan_error::n_throw_exception(dev._vkCreateImage(&ici, nullptr, &vk_image));
+            return image(dev, vk_image, ici);
+          }
+
+          /// \brief Create the image from a bunch of image creators
+          /// An image creators allows you fine grained configuration on how
+          /// the image will be used, stored, ... and is probably easier to use
+          /// than a bare structure or functions with a lot of parameters
+          ///
+          /// In order to work, an image creator must have a method with
+          /// the following signature (for compile-time):
+          /// static void update_image_create_info(VkImageCreateInfo &);
+          /// and (for those in parameter):
+          /// void update_image_create_info(VkImageCreateInfo &) const;
+          /// There's also an interface that define this:
+          /// image_creator_interface, but that's optional.
+          ///
+          /// Compile-time (those in template parameters) image creators are
+          /// executed *before* runtime ones.
+          ///
+          /// There's a bunch of image creators in the image_creators folder
+          template<typename... ImageCreators, typename... ImageCreatorsArgs>
+          static image create_image_arg(device &dev, const ImageCreatorsArgs &... args)
+          {
+            check::on_vulkan_error::n_assert((sizeof...(ImageCreators) + sizeof...(ImageCreatorsArgs)) > 0, "you should set at least one image creator when calling image::create_image()");
+
+            VkImageCreateInfo ici;
+
+            memset(&ici, 0, sizeof(ici));
+
+            ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+            ici.pNext = nullptr;
+
+            ici.queueFamilyIndexCount = 0;
+            ici.pQueueFamilyIndices = nullptr;
+
+            NEAM_EXECUTE_PACK(ImageCreators::update_image_create_info(ici));
+
+            NEAM_EXECUTE_PACK(args.update_image_create_info(ici));
 
             VkImage vk_image;
 
