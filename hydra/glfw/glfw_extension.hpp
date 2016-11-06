@@ -33,6 +33,7 @@
 #include <GLFW/glfw3.h>
 #include "glfw_feature_requester.hpp"
 #include "glfw_window.hpp"
+#include "glfw_events.hpp"
 
 #include  "../init/hydra_init_interface.hpp"
 #include  "../hydra_exception.hpp"
