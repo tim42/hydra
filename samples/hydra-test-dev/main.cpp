@@ -155,8 +155,8 @@ int main(int, char **)
 
   //////////////////////////////////////////////////////////////////////////////
   // load the shaders
-  neam::hydra::vk::shader_module vert_mod = neam::hydra::vk::spirv_shader::load_from_file(device, "vert.spv");
-  neam::hydra::vk::shader_module frag_mod = neam::hydra::vk::spirv_shader::load_from_file(device, "frag.spv");
+  neam::hydra::vk::shader_module vert_mod = neam::hydra::vk::spirv_shader::load_from_file(device, "data/shaders/2d_plane.vert.spv");
+  neam::hydra::vk::shader_module frag_mod = neam::hydra::vk::spirv_shader::load_from_file(device, "data/shaders/2d_plane.frag.spv");
 
   // create the pipeline
   neam::hydra::vk::pipeline_creator pcr;

@@ -237,6 +237,7 @@ namespace neam
       neam::hydra::glfw::init_extension glfw_ext;
       neam::hydra::bootstrap hydra_init;
       neam::hydra::temp_queue_familly_id_t *temp_transfer_queue = nullptr;
+
     protected:
       neam::hydra::vk::instance instance;
       neam::hydra::glfw::window window;
@@ -267,7 +268,7 @@ namespace neam
       neam::hydra::shader_manager shmgr;
       neam::hydra::pipeline_manager ppmgr;
 
-      neam::hydra::vk::render_pass render_pass; // NOTE: automatically refreshed by init() and refresh()
+      neam::hydra::vk::render_pass render_pass; // NOTE: automatically refreshed by refresh()
   };
 } // namespace neam
 

@@ -138,8 +138,8 @@ namespace neam
         //////////////////////////////////////////////////////////////////////////////
         // create the pipeline
         pcr.get_pipeline_shader_stage()
-          .add_shader(shmgr.load_shader("vert.spv"), VK_SHADER_STAGE_VERTEX_BIT)
-          .add_shader(shmgr.load_shader("frag.spv"), VK_SHADER_STAGE_FRAGMENT_BIT);
+          .add_shader(shmgr.load_shader("data/shaders/2d_plane.vert.spv"), VK_SHADER_STAGE_VERTEX_BIT)
+          .add_shader(shmgr.load_shader("data/shaders/2d_plane.frag.spv"), VK_SHADER_STAGE_FRAGMENT_BIT);
 
         // yep.
         mesh.setup_vertex_description(pcr);
@@ -157,8 +157,6 @@ namespace neam
         ppmgr.add_pipeline("hydra-logo", pcr);
       }
 
-      virtual ~sample_app() {}
-
     protected: // hooks
       virtual void init_command_buffer(neam::hydra::vk::command_buffer_recorder &cbr, neam::hydra::vk::framebuffer &fb, size_t /*index*/) override
       {
@@ -168,6 +166,11 @@ namespace neam
         mesh.bind(cbr);
         cbr.draw_indexed(indices.size(), 1, 0, 0, 0); // TODO: a draw state, like in YägGLer
         cbr.end_render_pass();
+      }
+
+      virtual void render_loop_hook() override
+      {
+        
       }
 
     protected:

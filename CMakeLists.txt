@@ -61,6 +61,9 @@ add_subdirectory("./third_party/")
 # build the tools
 add_subdirectory("./${PROJ_NAME}/tools")
 
+# build the data
+add_subdirectory("./data/")
+
 # create the PROJ_FLAGS variable
 include(cmake/flags.cmake)
 
@@ -84,4 +87,4 @@ endif()
 # endif()
 
 # copy
-# file(COPY ./data DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/)
+file(COPY ./data DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/)
