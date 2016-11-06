@@ -30,8 +30,22 @@
 #ifndef __N_70305883316559647_442029613_UTILITIES_HPP__2___
 #define __N_70305883316559647_442029613_UTILITIES_HPP__2___
 
+// Batch transfers asynchronously
 #include "transfer.hpp"
+
+// Manage the GPU memory
 #include "memory_allocator.hpp"
+
+// An easy way to manage uniform/... buffers
+#include "auto_buffer.hpp"
+
+// Avoid loading multiple time the same shader
+#include "shader_manager.hpp"
+
+// Avoid creating multiple time the same pipeline and improve pipeline re-use
+#include "pipeline_manager.hpp"
+
+#include "image_loader.hpp"
 
 namespace neam
 {

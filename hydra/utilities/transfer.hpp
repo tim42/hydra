@@ -118,7 +118,7 @@ namespace neam
         size_t get_transfer_count() const { return transfer_list.size(); }
 
         /// \brief Add a buffer to be filled with some data
-        /// \note the data will be copied
+        /// \note the data will be copied, so you can either free it or modify it without any risk
         /// \param signal_semaphore will be signaled when the whole buffer has been transfered
         /// \param signal_fence will be signaled when the whole buffer has been transfered
         void add_transfer(vk::buffer &buf, size_t buf_offset, size_t data_size, const void *_data, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
@@ -137,7 +137,7 @@ namespace neam
         }
 
         /// \brief Add an image to be filled with some data
-        /// \note the data will be copied
+        /// \note the data will be copied, so you can either free it or modify it without any risk
         /// \note you can't transfer data to images if the data size is bigger than get_transfer_window_size()
         /// \param final_layout Is the layout the image will be transitionned to after the transfer
         /// \param signal_semaphore will be signaled when the whole buffer has been transfered
@@ -162,7 +162,7 @@ namespace neam
         }
 
         /// \brief Add a subregion of an image to be filled with some data
-        /// \note the data will be copied
+        /// \note the data will be copied, so you can either free it or modify it without any risk
         /// \note you can't transfer data to images if the data size is bigger than get_transfer_window_size()
         /// \param final_layout Is the layout the image will be transitionned to after the transfer
         /// \param signal_semaphore will be signaled when the whole buffer has been transfered
@@ -341,7 +341,10 @@ namespace neam
           for (vk::semaphore *it : semaphore_vct)
             si >> *it;
           for (vk::fence *it : fence_vct)
+          {
+            it->reset();
             si >> *it;
+          }
           si >> end_fence;
 
           // start the transfer: flush and unmap
@@ -365,6 +368,12 @@ namespace neam
             return true;
           }
           return false;
+        }
+
+        /// \brief Wait for the transfer to end
+        void wait_end_transfer()
+        {
+          end_fence.wait();
         }
 
       private:
