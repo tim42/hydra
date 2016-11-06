@@ -43,17 +43,19 @@ namespace neam
 {
   namespace hydra
   {
-    /// \brief A chunk of memory, allocated on the device
+    /// \brief Manage a chunk of memory (it does not perform anything by itself,
+    /// if you plan to use it, it is just a tool to manage some memory)
     /// \note Not intended to be used directly. Instead please use a
     /// memory_allocator.
     /// \see class memory_allocator
     /// \note Reducing bitmap_entries may improve performance but will reduce the
     ///       granularity of the allocation (the default is to have a granularity of 512byte)
+    template<size_t ChunkAllocationSize = 8 * 1024 * 1024, size_t BitmapEntries = 256>
     class memory_allocator_chunk
     {
       public:
-        constexpr static size_t chunk_allocation_size = 8 * 1024 * 1024; // must be a power of 2
-        constexpr static size_t bitmap_entries = 256;                    // must be a power of 2
+        constexpr static size_t chunk_allocation_size = ChunkAllocationSize;       // must be a power of 2
+        constexpr static size_t bitmap_entries = BitmapEntries;                    // must be a power of 2
 
         constexpr static size_t second_level_entries = bitmap_entries * 2 / 64;
         constexpr static size_t first_level_bits = second_level_entries * 2;
@@ -65,17 +67,6 @@ namespace neam
         static_assert(first_level_bits <= 64, "second level entries can't fit in a 64bit integer");
 
       public:
-        /// \brief Construct the allocator chunk.
-        memory_allocator_chunk(vk::device &dev, size_t _memory_type_index)
-          : dmem(vk::device_memory::allocate(dev, chunk_allocation_size, _memory_type_index)),
-            memory_type_index(_memory_type_index)
-        {
-          memset(bitmap.data(), 0, bitmap_entries * 8);
-          memset(second_level_bl.data(), 0, second_level_entries * 8);
-          memset(second_level_wh.data(), 0, second_level_entries * 8);
-        }
-        ~memory_allocator_chunk() {} // free the chunk
-
         /// \brief Print information about the chunk
         static void print_nfo()
         {
@@ -158,9 +149,6 @@ namespace neam
           // In doubt, return true
           return true;
         }
-
-        /// \brief Return a const reference to the device memory
-        const vk::device_memory &get_device_memory() const { return dmem; }
 
         /// \brief Allocate something from the memory chunk. It either return -1
         /// If the allocation failed or the offset within the memory.
@@ -654,10 +642,6 @@ namespace neam
         }
 
       private:
-        // the memory //
-        vk::device_memory dmem;
-        size_t memory_type_index;
-
         size_t free_memory = chunk_allocation_size;
 
         // the hierarchical bitmap //

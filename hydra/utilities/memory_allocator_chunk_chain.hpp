@@ -61,31 +61,28 @@ namespace neam
 
         memory_allocation allocate_memory(size_t size, size_t alignment)
         {
-          for (memory_allocator_chunk &it : chunk_list)
+          for (auto &it : chunk_list)
           {
-            if (it.can_allocate(size)) // fast heuristic to determinate if that chunk can allocate the requested memory
+            if (it.first.can_allocate(size)) // fast heuristic to determinate if that chunk can allocate the requested memory
             {
-              it.print_stats();
-              int offset = it.allocate(size, alignment);
-              it.print_stats();
+              int offset = it.first.allocate(size, alignment);
               if (offset == -1)
                 continue; // how unfortunate :/
-              return memory_allocation(memory_type_index, false, type, offset, size, &it.get_device_memory(), allocator);
+              return memory_allocation(memory_type_index, false, type, offset, size, &it.second, allocator);
             }
           }
-
           // If we get here, we don't have enough chunk...
-          chunk_list.emplace_front(*dev, memory_type_index);
-          memory_allocator_chunk &it = chunk_list.front();
-          dev_to_mac.emplace(std::make_pair(&it.get_device_memory(), &it));
-          int offset = it.allocate(size, alignment);
+          chunk_list.emplace_front(memory_allocator_chunk<>(), vk::device_memory::allocate(*dev, memory_allocator_chunk<>::chunk_allocation_size, memory_type_index));
+          auto &it = chunk_list.front();
+          dev_to_mac.emplace(std::make_pair(&it.second, &it.first));
+          int offset = it.first.allocate(size, alignment);
           check::on_vulkan_error::n_assert(offset != -1, "m_a_c_c::allocate(): allocation failed in an empty chunk. yay.");
-          return memory_allocation(memory_type_index, false, type, offset, size, &it.get_device_memory(), allocator);
+          return memory_allocation(memory_type_index, false, type, offset, size, &it.second, allocator);
         }
 
         void free_memory(const memory_allocation &ma)
         {
-          memory_allocator_chunk *mac;
+          memory_allocator_chunk<> *mac;
           auto dtm_it = dev_to_mac.find(ma.mem());
           check::on_vulkan_error::n_assert(dtm_it != dev_to_mac.end(), "m_a_c_c::free_memory(): invalid free (can't find the corresponding memory_allocator_chunk)");
 
@@ -95,9 +92,9 @@ namespace neam
 
           if (mac->is_empty()) // remove empty chunks
           {
-            chunk_list.remove_if([&](const memory_allocator_chunk &_mac)
+            chunk_list.remove_if([&](const std::pair<memory_allocator_chunk<>, vk::device_memory> &_mac)
             {
-              return &_mac.get_device_memory() == ma.mem();
+              return &_mac.second == ma.mem();
             });
           }
         }
@@ -108,8 +105,8 @@ namespace neam
         allocation_type type;
         vk::device *dev;
 
-        std::list<memory_allocator_chunk> chunk_list; // normal chunk list
-        std::unordered_map<const vk::device_memory *, memory_allocator_chunk *> dev_to_mac;
+        std::list<std::pair<memory_allocator_chunk<>, vk::device_memory>> chunk_list; // normal chunk list
+        std::unordered_map<const vk::device_memory *, memory_allocator_chunk<> *> dev_to_mac;
     };
   } // namespace hydra
 } // namespace neam

@@ -54,6 +54,10 @@ namespace neam
     class memory_allocator
     {
       public:
+        /// \brief What is the smallest allocation you can do ?
+        static constexpr size_t allocation_granularity = memory_allocator_chunk<>::granularity;
+
+      public:
         /// \brief Create the memory allocator
         /// \note chunks / allocations greater than the default chunk size will have
         ///       their own vk::device_memory (allocation) and won't be kept when freed.
@@ -64,7 +68,7 @@ namespace neam
         {
 #ifndef HYDRA_NO_MESSAGES
           // A lovely print
-          memory_allocator_chunk::print_nfo();
+          memory_allocator_chunk<>::print_nfo();
 #endif
 
           // Check if we need to have separate chains for optimal images and buffers
@@ -73,7 +77,7 @@ namespace neam
           // but having separate chains (when needed) will result in better memory compaction
           //
           // Having more chains won't consume much memory (only chunks of 8Mio, but only if used)
-          if (dev.get_physical_device().get_limits().bufferImageGranularity > memory_allocator_chunk::chunk_allocation_size)
+          if (dev.get_physical_device().get_limits().bufferImageGranularity > memory_allocator_chunk<>::chunk_allocation_size)
           {
             separate_chains = true;
             bits_to_skip = 0;
@@ -124,7 +128,7 @@ namespace neam
         ///                    if you correctly set this flag
         memory_allocation allocate_memory(size_t size, uint32_t alignment, uint32_t memory_type_index, allocation_type at = allocation_type::normal)
         {
-          if (size > memory_allocator_chunk::chunk_allocation_size)
+          if (size > memory_allocator_chunk<>::chunk_allocation_size)
           {
             // non-shared allocation, we have a requested size too big to fit in a chunk
             non_shared_list.emplace_back(vk::device_memory::allocate(dev, size, memory_type_index));
