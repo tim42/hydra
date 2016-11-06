@@ -30,6 +30,8 @@
 #ifndef __N_94954772477713296_2016124446_SAMPLE_HPP__
 #define __N_94954772477713296_2016124446_SAMPLE_HPP__
 
+#include <memory>
+
 #include "app.hpp"
 
 /// \brief A dummy vertex, just for fun
@@ -128,7 +130,7 @@ namespace neam
           btransfers.start(); // We can transfer buffers while the other things initialize...
         }
 
-        hydra_logo_img_view = new neam::hydra::vk::image_view(device, hydra_logo_img, VK_IMAGE_VIEW_TYPE_2D);
+        hydra_logo_img_view = decltype(hydra_logo_img_view)(new neam::hydra::vk::image_view(device, hydra_logo_img, VK_IMAGE_VIEW_TYPE_2D));
 
         // update ds
         descriptor_set.write_descriptor_set(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {{ sampler, *hydra_logo_img_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }});
@@ -155,10 +157,7 @@ namespace neam
         ppmgr.add_pipeline("hydra-logo", pcr);
       }
 
-      virtual ~sample_app()
-      {
-        delete hydra_logo_img_view;
-      }
+      virtual ~sample_app() {}
 
     protected: // hooks
       virtual void init_command_buffer(neam::hydra::vk::command_buffer_recorder &cbr, neam::hydra::vk::framebuffer &fb, size_t /*index*/) override
@@ -185,7 +184,7 @@ namespace neam
 
       neam::hydra::vk::attachment_color_blending acb = neam::hydra::vk::attachment_color_blending::create_alpha_blending();
       neam::hydra::vk::pipeline_layout pipeline_layout;
-      neam::hydra::vk::image_view *hydra_logo_img_view;
+      std::unique_ptr<neam::hydra::vk::image_view> hydra_logo_img_view;
 
       neam::hydra::vk::pipeline_creator pcr;
   };
