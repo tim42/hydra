@@ -62,7 +62,7 @@ add_subdirectory("./third_party/")
 add_subdirectory("./${PROJ_NAME}/tools")
 
 # build the data
-add_subdirectory("./data/")
+include("./data/CMakeLists.txt")
 
 # create the PROJ_FLAGS variable
 include(cmake/flags.cmake)
