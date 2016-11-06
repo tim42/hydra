@@ -43,13 +43,14 @@
 namespace neam
 {
   /// \brief A simple application class that just do some work
-  class application
+  class application : public neam::hydra::glfw::events::window_listener
   {
     public:
       application(const glm::uvec2 &window_size, const std::string &window_name)
         : gfr(), glfw_ext(), hydra_init(),
           instance(create_instance()),
           window(glfw_ext.create_window(instance, window_size, window_name)),
+          emgr(window),
           device(hydra_init.create_device(instance)),
           gqueue(device, window._get_win_queue()),
           tqueue(device, *temp_transfer_queue),
@@ -62,13 +63,14 @@ namespace neam
           render_finished(device),
           shmgr(device),
           ppmgr(device),
-          render_pass(device),
-          last_win_size(window_size)
+          render_pass(device)
       {
         btransfers.allocate_memory(mem_alloc);
+
+        emgr.register_window_listener(this);
       }
 
-      ~application()
+      virtual ~application()
       {
         device.wait_idle();
       }
@@ -84,7 +86,6 @@ namespace neam
       {
         pre_init_hook();
 
-        last_win_size = window.get_size();
         // (re)create the framebuffer / command buffer things
         framebuffers.clear();
         frame_command_buffers.clear();
@@ -158,7 +159,7 @@ namespace neam
             gqueue.submit(frame_submit_info[index]);
             gqueue.present(swapchain, index, { &render_finished });
 
-            if (recreate || last_win_size != window.get_size())
+            if (recreate)
             {
               refresh();
             }
@@ -207,6 +208,9 @@ namespace neam
         return temp_instance;
       }
 
+      // Watch for resize events
+      virtual void framebuffer_resized(const glm::vec2 &) { refresh(); }
+
     protected: // hooks
       virtual void create_instance_hook(neam::hydra::gen_feature_requester &/*gfr*/) {}
       virtual void create_instance_hook(neam::hydra::bootstrap &/*hydra_init*/) {}
@@ -236,6 +240,7 @@ namespace neam
     protected:
       neam::hydra::vk::instance instance;
       neam::hydra::glfw::window window;
+      neam::hydra::glfw::events::manager emgr;
       neam::hydra::vk::device device;
       neam::hydra::vk::queue gqueue;
       neam::hydra::vk::queue tqueue;
@@ -263,9 +268,6 @@ namespace neam
       neam::hydra::pipeline_manager ppmgr;
 
       neam::hydra::vk::render_pass render_pass; // NOTE: automatically refreshed by init() and refresh()
-
-    private:
-      glm::uvec2 last_win_size;
   };
 } // namespace neam
 
