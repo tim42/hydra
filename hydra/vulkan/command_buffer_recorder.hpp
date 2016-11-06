@@ -70,8 +70,12 @@ namespace neam
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdBindPipeline.html">vulkan khr doc</a>
           void bind_pipeline(const pipeline &p, VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS)
           {
+            last_bound_pipeline = &p;
             dev._fn_vkCmdBindPipeline(cmd_buff._get_vk_command_buffer(), bind_point, p.get_vk_pipeline());
           }
+
+          /// \brief Return the last bound pipeline (if any)
+          const pipeline *get_last_bound_pipeline() const { return last_bound_pipeline; }
 
           /// \brief Set the viewport on a command buffer
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetViewport.html">vulkan khr doc</a>
@@ -312,6 +316,14 @@ namespace neam
             dev._fn_vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), stage_flags, offset, size, values);
           }
 
+          /// \brief Update the values of push constants
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdPushConstants.html">vulkan khr doc</a>
+          template<typename Type>
+          void push_constants(const pipeline_layout &pl, VkShaderStageFlags stage_flags, uint32_t offset, const Type &value)
+          {
+            dev._fn_vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), stage_flags, offset, sizeof(value), (const void *)&value);
+          }
+
           /// \brief Begin a new render pass
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdBeginRenderPass.html">vulkan khr doc</a>
           void begin_render_pass(const render_pass &rp, const framebuffer &fb, const rect2D &area, VkSubpassContents sp_contents, const std::vector<clear_value> &cv)
@@ -520,9 +532,10 @@ namespace neam
 #define TODO_FNC(x)
           // TODO
           TODO_FNC(vkCmdWaitEvents);        // NOTE: This could be done now
-          TODO_FNC(vkCmdCopyImageToBuffer);
+          TODO_FNC(vkCmdCopyImageToBuffer); // NOTE: This could be done now
           TODO_FNC(vkCmdClearAttachments);  // NOTE: may be done now (missing: wrapper for VkClearRect)
           TODO_FNC(vkCmdResolveImage);      // NOTE: may be done now (missing: wrapper for VkImageResolve)
+
           TODO_FNC(vkCmdBeginQuery);
           TODO_FNC(vkCmdEndQuery);
           TODO_FNC(vkCmdResetQueryPool);
@@ -533,6 +546,9 @@ namespace neam
         private:
           device &dev;
           command_buffer &cmd_buff;
+
+          // state information
+          const pipeline *last_bound_pipeline = nullptr;
       };
 
 
