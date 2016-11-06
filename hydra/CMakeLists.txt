@@ -11,7 +11,7 @@ include_directories(${GLM_INCLUDE_DIR})
 # add_library(${PROJ_APP} STATIC ${PROJ_SOURCES})
 
 # install
-install(DIRECTORY ./ DESTINATION include/neam/nblockchain
+install(DIRECTORY ./ DESTINATION include/neam/hydra
         FILES_MATCHING PATTERN "*.hpp"
         PATTERN "tools" EXCLUDE        # submodule tools has its own include rules
         PATTERN ".git" EXCLUDE
@@ -19,7 +19,7 @@ install(DIRECTORY ./ DESTINATION include/neam/nblockchain
         PATTERN "samples" EXCLUDE)
 
 # link tools
-set(tools_dest ${NEAM_INSTALL_PREFIX}/include/neam/nblockchain/)
+set(tools_dest ${NEAM_INSTALL_PREFIX}/include/neam/hydra/)
 set(tools_target ${NEAM_INSTALL_PREFIX}/include/neam/tools)
 if (UNIX)
   install(CODE "execute_process(COMMAND ln -s \"${tools_target}\" \"${tools_dest}/\")")
