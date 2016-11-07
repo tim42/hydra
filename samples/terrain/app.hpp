@@ -31,6 +31,7 @@
 #define __N_1117511799121637201_1265716500_APP_HPP__
 
 #include <vector>
+#include <thread>
 
 #include <hydra/hydra.hpp>          // the main header of hydra
 #include <hydra/hydra_glm_udl.hpp>  // we do want the easy glm udl (optional, not used by hydra)
@@ -58,7 +59,7 @@ namespace neam
           swapchain(window._create_swapchain(device)),
           cmd_pool(gqueue.create_command_pool()),
           transfer_cmd_pool(tqueue.create_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)),
-          btransfers(device, tqueue, transfer_cmd_pool),
+          btransfers(device, tqueue, transfer_cmd_pool, vrd),
           image_ready(device),
           render_finished(device),
           shmgr(device),
@@ -126,7 +127,8 @@ namespace neam
       void run()
       {
         neam::cr::chrono cr;
-        float frame_cnt = 0;
+        float frame_cnt = 0.f;
+        float wasted = 0.f;
 
         neam::cr::out.log() << LOGGER_INFO << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
         btransfers.wait_end_transfer(); // can't really do much more here
@@ -138,6 +140,8 @@ namespace neam
         cr.reset();
         while (!window.should_close())
         {
+          neam::cr::chrono frame_cr;
+
           glfwPollEvents();
 
           {
@@ -151,7 +155,7 @@ namespace neam
             {
               neam::hydra::vk::command_buffer_recorder cbr = frame_command_buffers[index].begin_recording(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
-              init_command_buffer(cbr, framebuffers[index], index);
+              recreate_command_buffer(cbr, framebuffers[index], index);
 
               frame_command_buffers[index].end_recording();
             }
@@ -165,15 +169,26 @@ namespace neam
             }
           }
 
+          vrd.update();
           render_loop_hook();
+          btransfers.start();
 
           ++frame_cnt;
 
           if (cr.get_accumulated_time() > 2.)
           {
-            neam::cr::out.log() << (cr.get_accumulated_time() / frame_cnt) * 1000.f << "ms/frame\t(" << (int)(frame_cnt / cr.get_accumulated_time()) << "fps)" << std::endl;
+            neam::cr::out.log() << (cr.get_accumulated_time() / frame_cnt) * 1000.f << "ms/frame [wasted: " << (wasted / frame_cnt) * 1000.f << "ms/frame]\t(" << (int)(frame_cnt / cr.get_accumulated_time()) << "fps)" << std::endl;
             cr.reset();
-            frame_cnt = 0;
+            frame_cnt = 0.f;
+            wasted = 0.f;
+          }
+
+          if (rate_limit > 0.0001 && frame_cr.get_accumulated_time() < rate_limit)
+          {
+            double cr = rate_limit - frame_cr.get_accumulated_time();
+            wasted += cr;
+            uint32_t diffms = uint32_t(cr * 1.e6);
+            std::this_thread::sleep_for(std::chrono::microseconds(diffms));
           }
         }
 
@@ -255,6 +270,7 @@ namespace neam
       // command pools (graphic / transfer)
       neam::hydra::vk::command_pool cmd_pool;
       neam::hydra::vk::command_pool transfer_cmd_pool;
+      neam::hydra::vk_resource_destructor vrd;
       neam::hydra::batch_transfers btransfers;
 
       // per-frame information
@@ -269,6 +285,8 @@ namespace neam
       neam::hydra::pipeline_manager ppmgr;
 
       neam::hydra::vk::render_pass render_pass; // NOTE: automatically refreshed by refresh()
+
+      double rate_limit = 0.f; // no limit
   };
 } // namespace neam
 

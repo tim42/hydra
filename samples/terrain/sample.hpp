@@ -30,6 +30,8 @@
 #ifndef __N_94954772477713296_2016124446_SAMPLE_HPP__
 #define __N_94954772477713296_2016124446_SAMPLE_HPP__
 
+// #define HYDRA_AUTO_BUFFER_NO_SMART_SYNC
+// #define HYDRA_AUTO_BUFFER_SMART_SYNC_FORCE_TRANSFER
 #include <memory>
 
 #include "app.hpp"
@@ -53,10 +55,10 @@ struct dummy_vertex
 };
 const std::vector<dummy_vertex> vertices =
 {
-    {{-0.5f, -0.5f}, {0x09 / 255.f, 1.0f, 0.0f}, {0.f, 0.f}},
-    {{0.5f,  -0.5f}, {0.0f, 0x89 / 255.f, 1.0f}, {1.f, 0.f}},
-    {{0.5f,   0.5f}, {0xF6 / 255.f, 0.0f, 1.0f}, {1.f, 1.f}},
-    {{-0.5f,  0.5f}, {1.0f, 0x76 / 255.f, 0.0f}, {0.f, 1.f}}
+    {{-1.0f, -1.0f}, {0x09 / 255.f, 1.0f, 0.0f}, {0.f, 0.f}},
+    {{1.0f,  -1.0f}, {0.0f, 0x89 / 255.f, 1.0f}, {1.f, 0.f}},
+    {{1.0f,   1.0f}, {0xF6 / 255.f, 0.0f, 1.0f}, {1.f, 1.f}},
+    {{-1.0f,  1.0f}, {1.0f, 0x76 / 255.f, 0.0f}, {0.f, 1.f}}
 };
 const std::vector<uint16_t> indices =
 {
@@ -74,9 +76,16 @@ namespace neam
       sample_app(const glm::uvec2 &window_size, const std::string &window_name)
        : application(window_size, window_name),
          mesh(device),
-         sampler_dslb(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT),
-         sampler_ds_layout(device, {sampler_dslb}),
-         ds_pool(device, 1, {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}}),
+         sampler_ds_layout(device,
+         {
+           neam::hydra::vk::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT),
+           neam::hydra::vk::descriptor_set_layout_binding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT),
+         }),
+         ds_pool(device, 1,
+         {
+           {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+         }),
          descriptor_set(ds_pool.allocate_descriptor_set(sampler_ds_layout)),
          hydra_logo_img
          (
@@ -91,7 +100,8 @@ namespace neam
            )
          ),
          sampler(device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f, 16.f),
-         pipeline_layout(device, { &sampler_ds_layout })
+         pipeline_layout(device, { &sampler_ds_layout }),
+         uniform_buffer(device, neam::hydra::vk::buffer(device, 100, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
       {
         //////////////////////////////////////////////////////////////////////////////
         // create the render pass
@@ -121,11 +131,24 @@ namespace neam
         {
           neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::optimal_image);
           hydra_logo_img.bind_memory(*ma.mem(), ma.offset());
+          // the memory allocation is destructed, but that isn't so important
 
           uint8_t *pixels = new uint8_t[logo_size * logo_size * 4];
           neam::hydra::generate_rgba_logo(pixels, logo_size, 5);
           btransfers.add_transfer(hydra_logo_img, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, logo_size * logo_size * 4, pixels);
           delete[] pixels;
+        }
+        //////////////////////////////////////////////////////////////////////////////
+        // allocate memory for the uniform buffer (+ transfer data to it)
+        {
+          uniform_buffer.set_transfer_info(btransfers, tqueue, transfer_cmd_pool, vrd);
+          neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(uniform_buffer.get_buffer().get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+          // the memory allocation is destructed, but that isn't so important
+
+          uniform_buffer.get_buffer().bind_memory(*ma.mem(), ma.offset());
+
+          size_t offset = uniform_buffer.watch(time, 0);
+          offset = uniform_buffer.watch(screen_resolution, offset + sizeof(float));
 
           btransfers.start(); // We can transfer buffers while the other things initialize...
         }
@@ -134,6 +157,7 @@ namespace neam
 
         // update ds
         descriptor_set.write_descriptor_set(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {{ sampler, *hydra_logo_img_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }});
+        descriptor_set.write_descriptor_set(1, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, {{ uniform_buffer, uniform_buffer.get_buffer_offset(), uniform_buffer.get_area_size() }});
 
         //////////////////////////////////////////////////////////////////////////////
         // create the pipeline
@@ -155,6 +179,8 @@ namespace neam
         pcr.allow_derivate_pipelines(true);
 
         ppmgr.add_pipeline("hydra-logo", pcr);
+
+        rate_limit = 1. / 120.; // (120 fps max)
       }
 
     protected: // hooks
@@ -170,13 +196,15 @@ namespace neam
 
       virtual void render_loop_hook() override
       {
-        
+        time = cr::chrono::now_relative();
+        screen_resolution = window.get_framebuffer_size();
+
+        uniform_buffer.sync();
       }
 
     protected:
       neam::hydra::mesh mesh;
 
-      neam::hydra::vk::descriptor_set_layout_binding sampler_dslb;
       neam::hydra::vk::descriptor_set_layout sampler_ds_layout;
 
       neam::hydra::vk::descriptor_pool ds_pool;
@@ -190,6 +218,12 @@ namespace neam
       std::unique_ptr<neam::hydra::vk::image_view> hydra_logo_img_view;
 
       neam::hydra::vk::pipeline_creator pcr;
+
+      neam::hydra::auto_buffer uniform_buffer;
+
+      // uniforms
+      float time = 0.5f;
+      glm::vec2 screen_resolution = 900_vec2_xy;
   };
 } // namespace neam
 
