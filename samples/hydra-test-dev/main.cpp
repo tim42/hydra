@@ -88,7 +88,8 @@ int main(int, char **)
   neam::hydra::vk::command_pool transfer_cmd_pool = tqueue.create_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
   // create the batch transfer
-  neam::hydra::batch_transfers btransfers(device, tqueue, transfer_cmd_pool);
+  neam::hydra::vk_resource_destructor vrd;
+  neam::hydra::batch_transfers btransfers(device, tqueue, transfer_cmd_pool, vrd);
   btransfers.allocate_memory(mem_alloc);
 
   //////////////////////////////////////////////////////////////////////////////
