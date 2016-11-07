@@ -34,11 +34,13 @@
 
 #include "../hydra_exception.hpp"
 
+#include "../vulkan/device.hpp"
 #include "../vulkan/buffer.hpp"
 #include "../vulkan/command_pool.hpp"
 #include "../vulkan/command_buffer.hpp"
 #include "../vulkan/queue.hpp"
 #include "../vulkan/submit_info.hpp"
+#include "vk_resource_destructor.hpp"
 
 // If you define HYDRA_AUTO_BUFFER_NO_SMART_SYNC
 // it will make a full sync, and not search changes in small areas
@@ -69,8 +71,8 @@ namespace neam
         constexpr static size_t max_update_size = 4 * 1024;
 
       public:
-        auto_buffer(vk::buffer &&_buf, size_t offset = 0, size_t size = 0)
-          : buf(std::move(_buf))
+        auto_buffer(vk::device &_dev, vk::buffer &&_buf, size_t offset = 0, size_t size = 0)
+          : dev(_dev), buf(std::move(_buf))
         {
           offset_in_buf = offset;
           if (size > 0)
@@ -118,11 +120,12 @@ namespace neam
         }
 
         /// \brief Set some infromation about transfers
-        void set_transfer_info(batch_transfers &_btransfers, vk::queue &_subqueue, vk::command_pool &_cmd_pool)
+        void set_transfer_info(batch_transfers &_btransfers, vk::queue &_subqueue, vk::command_pool &_cmd_pool, vk_resource_destructor &_vrd)
         {
           btransfers = &_btransfers;
           subq = &_subqueue;
           cmd_pool = &_cmd_pool;
+          vrd = &_vrd;
         }
 
         /// \brief Set the semaphore to signal when the transfer is complete
@@ -135,17 +138,18 @@ namespace neam
         /// \brief Add a value to watch (should be a structure)
         /// \param offset is the position inside the buffer
         template<typename Type>
-        void watch(const Type &value, size_t offset)
+        size_t watch(const Type &value, size_t offset)
         {
-          watch((const void *)value, sizeof(value), offset);
+          return watch((const void *)&value, sizeof(value), offset);
         }
 
         /// \brief Add a value to watch (should be a structure)
         /// \param offset is the position inside the buffer
-        void watch(const void *data, size_t data_size, size_t offset)
+        size_t watch(const void *data, size_t data_size, size_t offset)
         {
           check::on_vulkan_error::n_assert(offset + data_size < size_of_buf, "watch: trying to write data out of bounds");
           watched_data.push_back({ data, data_size, offset });
+          return offset + data_size;
         }
 
         /// \brief Set the data at offset
@@ -210,15 +214,17 @@ namespace neam
             sync_end_offset = size_of_buf;
           }
 
+          apply();
+
 #ifndef HYDRA_AUTO_BUFFER_SMART_SYNC_FORCE_TRANSFER
-          if (sync_end_offset - sync_start_offset < max_update_size)
+          if (sync_end_offset - sync_start_offset < max_update_size || true)
           {
             sync_start_offset -= sync_start_offset % 4;
             size_t sz = sync_end_offset - sync_start_offset;
             if (sz % 4) sz += 4 - (sz % 4);
 
-            vk::command_buffer cmdb = cmd_pool->create_command_buffer();
-            auto rec = cmdb.begin_recording();
+            vk::command_buffer cmdb(cmd_pool->create_command_buffer());
+            auto rec = cmdb.begin_recording(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
             rec.update_buffer(buf, offset_in_buf + sync_start_offset, sz, (uint32_t *)(data_cpy + sync_start_offset));
             cmdb.end_recording();
 
@@ -226,15 +232,16 @@ namespace neam
             si << cmdb;
             if (sig_sema)
               si >> *sig_sema;
+            vk::fence end_fence(dev);
+            si >> end_fence;
             subq->submit(si);
+            vrd->postpone_destruction(std::move(end_fence), std::move(cmdb));
           }
           else
+#endif
           {
-#endif
             btransfers->add_transfer(buf, offset_in_buf + sync_start_offset, sync_end_offset - sync_start_offset, data_cpy + sync_start_offset, sig_sema);
-#ifndef HYDRA_AUTO_BUFFER_SMART_SYNC_FORCE_TRANSFER
           }
-#endif
 
           // reset ranges
           sync_start_offset = ~0;
@@ -242,6 +249,7 @@ namespace neam
 
 #else // no sync, only transfer
           (void)force_refresh;
+          apply();
           btransfers->add_transfer(buf, offset_in_buf, size_of_buf, data_cpy, sig_sema);
 #endif
         }
@@ -277,13 +285,25 @@ namespace neam
         void clear()
         {
           watched_data.clear();
+#ifndef HYDRA_AUTO_BUFFER_NO_SMART_SYNC
           sync_start_offset = 0;
           sync_end_offset = size_of_buf;
+#endif
           memset(data_cpy, 0, size_of_buf);
         }
 
       private:
+        void apply()
+        {
+          for (auto &it : watched_data)
+          {
+            memcpy(data_cpy + it.offset, it.data, it.size);
+          }
+        }
+
+      private:
         // the buffer
+        vk::device &dev;
         vk::buffer buf;
         size_t offset_in_buf = 0;
         size_t size_of_buf = 0;
@@ -293,6 +313,7 @@ namespace neam
         vk::queue *subq;
         vk::semaphore *sig_sema = nullptr;
         vk::command_pool *cmd_pool;
+        vk_resource_destructor *vrd;
 
         // the data
         int8_t *data_cpy = nullptr; // a copy of the data

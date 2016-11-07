@@ -41,6 +41,7 @@
 #include "../vulkan/vulkan.hpp"
 
 #include "memory_allocator.hpp"
+#include "vk_resource_destructor.hpp"
 
 namespace neam
 {
@@ -80,8 +81,8 @@ namespace neam
         };
 
       public:
-        batch_transfers(vk::device &_dev, vk::queue &_tqueue, vk::command_pool &_cmd_pool, size_t transfer_window_size = 20 * 1024 * 1024)
-          : dev(_dev), tqueue(_tqueue), cmd_pool(_cmd_pool), cmd_buf(cmd_pool.create_command_buffer()),
+        batch_transfers(vk::device &_dev, vk::queue &_tqueue, vk::command_pool &_cmd_pool, vk_resource_destructor &_vrd, size_t transfer_window_size = 20 * 1024 * 1024)
+          : dev(_dev), tqueue(_tqueue), cmd_pool(_cmd_pool), vrd(_vrd),
             staging_buffer(dev, transfer_window_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT),
             end_fence(dev)
         {
@@ -236,9 +237,10 @@ namespace neam
           // fill the memory, +create the command buffer
           std::vector<vk::semaphore *> semaphore_vct;
           std::vector<vk::fence *> fence_vct;
+          vk::command_buffer cmd_buf(cmd_pool.create_command_buffer());
           {
             int8_t *memory = (int8_t *)mem_area->map_memory(mem_offset, staging_buffer.size());
-            vk::command_buffer_recorder cbr = cmd_buf.begin_recording();
+            vk::command_buffer_recorder cbr = cmd_buf.begin_recording(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
             size_t current_offset = 0;
             int i;
 
@@ -345,7 +347,9 @@ namespace neam
             it->reset();
             si >> *it;
           }
-          si >> end_fence;
+          vk::fence transfer_end_fence(dev);
+          si >> end_fence >> transfer_end_fence;
+          vrd.postpone_destruction(std::move(transfer_end_fence), std::move(cmd_buf));
 
           // start the transfer: flush and unmap
           mem_area->flush();
@@ -380,12 +384,12 @@ namespace neam
         vk::device &dev;
         vk::queue &tqueue;
         vk::command_pool &cmd_pool;
+        vk_resource_destructor &vrd;
 
         const vk::device_memory *mem_area = nullptr;
         size_t mem_offset = 0;
         std::atomic_bool transfer_in_progress;
 
-        vk::command_buffer cmd_buf;
         vk::buffer staging_buffer;
         vk::fence end_fence;
 

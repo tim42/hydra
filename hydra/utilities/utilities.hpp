@@ -45,6 +45,8 @@
 // Avoid creating multiple time the same pipeline and improve pipeline re-use
 #include "pipeline_manager.hpp"
 
+#include "vk_resource_destructor.hpp"
+
 #include "image_loader.hpp"
 
 namespace neam
