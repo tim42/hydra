@@ -76,6 +76,7 @@ namespace neam
       sample_app(const glm::uvec2 &window_size, const std::string &window_name)
        : application(window_size, window_name),
          mesh(device),
+         transfer_sema(device),
          sampler_ds_layout(device,
          {
            neam::hydra::vk::descriptor_set_layout_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT),
@@ -99,7 +100,7 @@ namespace neam
              )
            )
          ),
-         sampler(device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f, 16.f),
+         sampler(device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f, 1.f),
          pipeline_layout(device, { &sampler_ds_layout }),
          uniform_buffer(device, neam::hydra::vk::buffer(device, 100, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
       {
@@ -135,7 +136,7 @@ namespace neam
 
           uint8_t *pixels = new uint8_t[logo_size * logo_size * 4];
           neam::hydra::generate_rgba_logo(pixels, logo_size, 5);
-          btransfers.add_transfer(hydra_logo_img, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, logo_size * logo_size * 4, pixels);
+          btransfers.add_transfer(hydra_logo_img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, logo_size * logo_size * 4, pixels);
           delete[] pixels;
         }
         //////////////////////////////////////////////////////////////////////////////
@@ -188,6 +189,7 @@ namespace neam
       {
         cbr.begin_render_pass(render_pass, fb, swapchain.get_full_rect2D(), VK_SUBPASS_CONTENTS_INLINE, { glm::vec4(0.0f, 0x89 / 255.f, 1.0f, 1.f) });
         cbr.bind_pipeline(ppmgr.get_pipeline("hydra-logo"));
+
         cbr.bind_descriptor_set(VK_PIPELINE_BIND_POINT_GRAPHICS, pcr.get_pipeline_layout(), 0, { &descriptor_set });
         mesh.bind(cbr);
         cbr.draw_indexed(indices.size(), 1, 0, 0, 0); // TODO: a draw state, like in YägGLer
@@ -204,6 +206,7 @@ namespace neam
 
     protected:
       neam::hydra::mesh mesh;
+      neam::hydra::vk::semaphore transfer_sema;
 
       neam::hydra::vk::descriptor_set_layout sampler_ds_layout;
 
