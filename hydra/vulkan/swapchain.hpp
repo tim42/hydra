@@ -108,6 +108,7 @@ namespace neam
 
             create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
             create_info.pNext = nullptr;
+            create_info.flags = 0;
             create_info.surface = _surf._get_vk_surface();
             create_info.minImageCount = image_count;
             create_info.imageFormat = image_format;
