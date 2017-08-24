@@ -148,8 +148,9 @@ namespace neam
 
           uniform_buffer.get_buffer().bind_memory(*ma.mem(), ma.offset());
 
-          size_t offset = uniform_buffer.watch(time, 0);
-          offset = uniform_buffer.watch(screen_resolution, offset + sizeof(float));
+          size_t offset = 0;
+          offset = uniform_buffer.watch(time, offset, neam::hydra::buffer_layout::std140);
+          offset = uniform_buffer.watch(screen_resolution, offset, neam::hydra::buffer_layout::std140);
 
           btransfers.start(); // We can transfer buffers while the other things initialize...
         }
@@ -191,7 +192,8 @@ namespace neam
 
         cbr.bind_descriptor_set(VK_PIPELINE_BIND_POINT_GRAPHICS, pcr.get_pipeline_layout(), 0, { &descriptor_set });
         mesh.bind(cbr);
-        cbr.draw_indexed(indices.size(), 1, 0, 0, 0); // TODO: a draw state, like in YägGLer
+        // TODO: a draw state, like in YägGLer
+        cbr.draw_indexed(indices.size(), 1, 0, 0, 0);
         cbr.end_render_pass();
       }
 

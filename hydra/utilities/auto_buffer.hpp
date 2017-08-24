@@ -31,6 +31,7 @@
 #define __N_13922229531440532597_2242118804_AUTO_BUFFER_HPP__
 
 #include <deque>
+#include <type_traits>
 
 #include "../hydra_exception.hpp"
 
@@ -41,6 +42,7 @@
 #include "../vulkan/queue.hpp"
 #include "../vulkan/submit_info.hpp"
 #include "vk_resource_destructor.hpp"
+#include "layout.hpp"
 
 // If you define HYDRA_AUTO_BUFFER_NO_SMART_SYNC
 // it will make a full sync, and not search changes in small areas
@@ -138,13 +140,14 @@ namespace neam
         /// \brief Add a value to watch (should be a structure)
         /// \param offset is the position inside the buffer
         template<typename Type>
-        size_t watch(const Type &value, size_t offset)
+        size_t watch(const Type &value, size_t offset, buffer_layout layout = buffer_layout::packed)
         {
-          return watch((const void *)&value, sizeof(value), offset);
+          return watch((const void *)&value, sizeof(value), align<Type>(layout, offset));
         }
 
         /// \brief Add a value to watch (should be a structure)
         /// \param offset is the position inside the buffer
+        /// \note no alignment performed
         size_t watch(const void *data, size_t data_size, size_t offset)
         {
           check::on_vulkan_error::n_assert(offset + data_size < size_of_buf, "watch: trying to write data out of bounds");
@@ -154,10 +157,11 @@ namespace neam
 
         /// \brief Set the data at offset
         /// \note The data is copied
+        /// \note alignment is done for vector/matrices types (for floats)
         template<typename Type>
-        void set_data(const Type &value, size_t offset)
+        void set_data(const Type &value, size_t offset, buffer_layout layout = buffer_layout::packed)
         {
-          set_data((const void *)value, sizeof(value), offset);
+          set_data((const void *)value, sizeof(value), align<Type>(layout, offset));
         }
 
         /// \brief Set the data at offset
@@ -281,7 +285,7 @@ namespace neam
           return std::move(buf);
         }
 
-        /// \brief
+        /// \brief clear the buffer
         void clear()
         {
           watched_data.clear();
@@ -290,6 +294,46 @@ namespace neam
           sync_end_offset = size_of_buf;
 #endif
           memset(data_cpy, 0, size_of_buf);
+        }
+
+        template<typename Type>
+        static size_t align(buffer_layout layout, size_t offset)
+        {
+          if (layout == buffer_layout::packed)
+            return offset;
+
+          size_t align = 1;
+          if (layout == buffer_layout::std140)
+          {
+            if constexpr (std::is_same_v<Type, glm::vec2> || std::is_same_v<Type, glm::uvec2> || std::is_same_v<Type, glm::ivec2>)
+              align = sizeof(Type);
+            else if constexpr (std::is_same_v<Type, glm::vec3> || std::is_same_v<Type, glm::vec4>
+              || std::is_same_v<Type, glm::uvec3> || std::is_same_v<Type, glm::uvec4>
+              || std::is_same_v<Type, glm::ivec3> || std::is_same_v<Type, glm::ivec4>)
+              align = sizeof(Type::value_type * 4);
+            else if constexpr (std::is_same_v<Type, glm::mat3> || std::is_same_v<Type, glm::mat4>)
+              align = sizeof(Type::value_type * 4);
+            else
+              align = sizeof(Type);
+            return ((offset + align - 1) / align) * align;
+          }
+          else if (layout == buffer_layout::std430)
+          {
+            if constexpr (std::is_same_v<Type, glm::vec2> || std::is_same_v<Type, glm::uvec2> || std::is_same_v<Type, glm::ivec2>)
+              align = sizeof(Type);
+            else if constexpr (std::is_same_v<Type, glm::vec3> || std::is_same_v<Type, glm::vec4>
+              || std::is_same_v<Type, glm::uvec3> || std::is_same_v<Type, glm::uvec4>
+              || std::is_same_v<Type, glm::ivec3> || std::is_same_v<Type, glm::ivec4>)
+              align = sizeof(Type);
+            else if constexpr (std::is_same_v<Type, glm::mat3>)
+              align = sizeof(Type::value_type * 3);
+            else if constexpr (std::is_same_v<Type, glm::mat4>)
+              align = sizeof(Type::value_type * 4);
+            else
+              align = sizeof(Type);
+            return ((offset + align - 1) / align) * align;
+          }
+          return offset;
         }
 
       private:
