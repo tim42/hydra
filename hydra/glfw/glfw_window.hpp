@@ -268,6 +268,13 @@ namespace neam
             surface = new vk::surface(std::move(_surface));
           }
 
+          void _create_surface(vk::instance& instance)
+          {
+            VkSurfaceKHR surface;
+            neam::hydra::check::on_vulkan_error::n_throw_exception(glfwCreateWindowSurface(instance._get_vk_instance(), _get_glfw_handle(), nullptr, &surface));
+            _set_surface(vk::surface(instance, surface));
+          }
+
           /// \brief Create a swapchain (filled with default parameters).
           /// That should be good enough for most applications
           vk::swapchain _create_swapchain(vk::device &dev)
