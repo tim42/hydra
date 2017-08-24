@@ -166,7 +166,6 @@ namespace neam
           .add_shader(shmgr.load_shader("data/shaders/2d_plane.vert.spv"), VK_SHADER_STAGE_VERTEX_BIT)
           .add_shader(shmgr.load_shader("data/shaders/2d_plane.frag.spv"), VK_SHADER_STAGE_FRAGMENT_BIT);
 
-        // yep.
         mesh.setup_vertex_description(pcr);
 
         pcr.get_viewport_state().add_viewport(&swapchain.get_full_viewport())

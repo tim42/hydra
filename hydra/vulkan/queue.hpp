@@ -123,7 +123,7 @@ namespace neam
           }
 
           /// \brief Submit a request to present the image
-          void present(const swapchain &sw, uint32_t image_index, const std::vector<const semaphore *> &wait_semaphore)
+          void present(const swapchain &sw, uint32_t image_index, const std::vector<const semaphore *> &wait_semaphore, bool *out_of_date = nullptr)
           {
             std::vector<VkSemaphore> vk_wait_sema;
             vk_wait_sema.reserve(wait_semaphore.size());
@@ -141,7 +141,11 @@ namespace neam
               nullptr
             };
 
-            check::on_vulkan_error::n_throw_exception(vkQueuePresentKHR(vk_queue, &present_info));
+            auto result = vkQueuePresentKHR(vk_queue, &present_info);
+            if (result == VK_ERROR_OUT_OF_DATE_KHR && out_of_date)
+              *out_of_date = true;
+            else
+              check::on_vulkan_error::n_throw_exception(result);
           }
 
         public: // advanced

@@ -177,15 +177,26 @@ namespace neam
             swapchain_images.clear();
 
             create_info.oldSwapchain = vk_swapchain;
-            create_info.imageExtent.width = image_size.x;
-            create_info.imageExtent.height = image_size.y;
+
+            surf.reload_capabilities();
+
+            if (surf.get_current_size().x != ~0u)
+            {
+              create_info.imageExtent.width = surf.get_current_size().x;
+              create_info.imageExtent.height = surf.get_current_size().y;
+            }
+            else
+            {
+              create_info.imageExtent.width = glm::clamp(image_size.x, surf.get_minimum_size().x, surf.get_maximum_size().x);
+              create_info.imageExtent.height = glm::clamp(image_size.y, surf.get_minimum_size().y, surf.get_maximum_size().y);
+            }
             check::on_vulkan_error::n_throw_exception(vkCreateSwapchainKHR(dev._get_vk_device(), &create_info, nullptr, &vk_swapchain));
 
             vkDestroySwapchainKHR(dev._get_vk_device(), create_info.oldSwapchain, nullptr);
             create_info.oldSwapchain = nullptr;
 
-            sw_viewport.set_size(glm::vec2(image_size.x, image_size.y));
-            sw_rect.set_size(image_size);
+            sw_viewport.set_size({create_info.imageExtent.width, create_info.imageExtent.height});
+            sw_rect.set_size({create_info.imageExtent.width, create_info.imageExtent.height});
 
             populate_image_vector();
           }

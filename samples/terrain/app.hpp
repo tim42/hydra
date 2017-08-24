@@ -105,7 +105,8 @@ namespace neam
           }
 
           frame_submit_info.emplace_back();
-          frame_submit_info.back() << neam::hydra::vk::cmd_sema_pair {image_ready, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT} << frame_command_buffers.back() >> render_finished;
+          frame_submit_info.back() << neam::hydra::vk::cmd_sema_pair {image_ready, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT}
+                                   << frame_command_buffers.back() >> render_finished;
         }
       }
 
@@ -133,13 +134,14 @@ namespace neam
         neam::cr::out.log() << LOGGER_INFO << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
         btransfers.wait_end_transfer(); // can't really do much more here
 
-        bool recreate = false;
 
         pre_run_hook();
 
         cr.reset();
         while (!window.should_close())
         {
+          bool recreate = false;
+          bool out_of_date = false;
           neam::cr::chrono frame_cr;
 
           glfwPollEvents();
@@ -159,14 +161,12 @@ namespace neam
 
               frame_command_buffers[index].end_recording();
             }
-
             gqueue.submit(frame_submit_info[index]);
-            gqueue.present(swapchain, index, { &render_finished });
+            gqueue.present(swapchain, index, { &render_finished }, &out_of_date);
 
-            if (recreate)
-            {
+
+            if (recreate || out_of_date)
               refresh();
-            }
           }
 
           vrd.update();
@@ -219,7 +219,7 @@ namespace neam
 
         neam::hydra::vk::instance temp_instance = hydra_init.create_instance("hydra-test-dev");
         temp_instance.install_default_debug_callback(VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT | VK_DEBUG_REPORT_ERROR_BIT_EXT);
-        // temp_instance.install_default_debug_callback(VK_DEBUG_REPORT_FLAG_BITS_MAX_ENUM_EXT); // We want all the reports (maximum debug)
+//         temp_instance.install_default_debug_callback(VK_DEBUG_REPORT_FLAG_BITS_MAX_ENUM_EXT); // We want all the reports (maximum debug)
         return temp_instance;
       }
 
