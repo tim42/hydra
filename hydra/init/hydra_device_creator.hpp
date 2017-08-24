@@ -64,7 +64,7 @@ namespace neam
         };
 
       public: // advanced
-        hydra_device_creator(const vk::instance &_instance) : instance(_instance) {}
+        hydra_device_creator(vk::instance &_instance) : instance(_instance) {}
 
       public:
         /// \brief Check if a device is compatible with the requirements of the
@@ -303,7 +303,7 @@ namespace neam
         }
 
         /// \brief Create the device wrapper
-        vk::device create_device(vk::physical_device &gpu) const
+        vk::device create_device(vk::physical_device &gpu)
         {
           // please use a device from filter_devices
           check::on_vulkan_error::n_assert(check_device(gpu) == true, "the selected device does not fulfill the requirements of the application");
@@ -402,11 +402,11 @@ namespace neam
           VkDevice device;
           check::on_vulkan_error::n_throw_exception(vkCreateDevice(gpu._get_vk_physical_device(), &device_info, nullptr, &device));
 
-          return vk::device(device, gpu, id_to_fq);
+          return vk::device(instance, device, gpu, id_to_fq);
         }
 
       private:
-        const vk::instance &instance;
+        vk::instance &instance;
 
         std::set<std::string> device_layers;
         std::set<std::string> device_extensions;
@@ -421,7 +421,7 @@ namespace neam
 
 
     // implementation of the method from hydra_vulkan_instance
-    hydra_device_creator vk::instance::get_device_creator() const
+    hydra_device_creator vk::instance::get_device_creator()
     {
       return hydra_device_creator(*this);
     }

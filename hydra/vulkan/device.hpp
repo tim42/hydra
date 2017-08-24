@@ -54,8 +54,8 @@ namespace neam
         public: // advanced
           /// \brief You shouldn't have to call this directly, but instead you should
           /// ask the hydra_device_creator class a new device
-          device(VkDevice _vk_device, const physical_device &_phys_dev, std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> _id_to_familly_queue)
-          : vk_device(_vk_device), phys_dev(_phys_dev), id_to_familly_queue(_id_to_familly_queue)
+          device(instance& _instance, VkDevice _vk_device, const physical_device &_phys_dev, std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> _id_to_familly_queue)
+          : vk_instance(_instance), vk_device(_vk_device), phys_dev(_phys_dev), id_to_familly_queue(_id_to_familly_queue)
           {
             _load_functions();
           }
@@ -63,7 +63,7 @@ namespace neam
         public:
           /// \brief Move constructor
           device(device &&o)
-            : vk_device(o.vk_device), phys_dev(o.phys_dev), id_to_familly_queue(o.id_to_familly_queue)
+            : vk_instance(o.vk_instance), vk_device(o.vk_device), phys_dev(o.phys_dev), id_to_familly_queue(o.id_to_familly_queue)
           {
             memcpy(&_st_offset, &o._st_offset, (size_t)(&_end_offset) - (size_t)(&_st_offset));
           }
@@ -116,7 +116,19 @@ namespace neam
             return vk_device;
           }
 
+          /// \brief return the vulkan instance that created that device
+          instance& _get_instance()
+          {
+            return vk_instance;
+          }
+          /// \brief return the vulkan instance that created that device
+          const instance& _get_instance() const
+          {
+            return vk_instance;
+          }
+
         private:
+          instance& vk_instance;
           VkDevice vk_device;
           physical_device phys_dev;
           std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> id_to_familly_queue;

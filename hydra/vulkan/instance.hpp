@@ -94,7 +94,7 @@ namespace neam
           ///       instance that created it
           ///
           /// implementation is in hydra_device_creator.hpp
-          hydra_device_creator get_device_creator() const;
+          hydra_device_creator get_device_creator();
 
           /// \brief Setup/install a debug callback that will print validation layers messages to stdout/stderr
           /// \note For this to work, you'll need the VK_EXT_DEBUG_REPORT_EXTENSION_NAME extension
@@ -203,6 +203,15 @@ namespace neam
                 _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_EXT)
                 _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_RANGE_SIZE_EXT)
                 _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_MAX_ENUM_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_KHR_EXT)
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_MODE_KHR_EXT)
+
+//               case VK_DEBUG_REPORT_OBJECT_TYPE_OBJECT_TABLE_NVX_EXT:
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_END_RANGE_EXT)
+
+//               case VK_DEBUG_REPORT_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NVX_EXT:
+                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_KHR_EXT)
+              default:break;
             }
 #undef _HYDRA_CASE
 
