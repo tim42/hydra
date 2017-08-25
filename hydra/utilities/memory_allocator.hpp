@@ -77,7 +77,7 @@ namespace neam
           // but having separate chains (when needed) will result in better memory compaction
           //
           // Having more chains won't consume much memory (only chunks of 8Mio, but only if used)
-          if (dev.get_physical_device().get_limits().bufferImageGranularity > memory_allocator_chunk<>::chunk_allocation_size)
+          if (dev.get_physical_device().get_limits().bufferImageGranularity > memory_allocator_chunk<>::granularity)
           {
             separate_chains = true;
             bits_to_skip = 0;
@@ -121,14 +121,12 @@ namespace neam
         }
 
         /// \brief Allocate some memory (throw on error)
-        /// \note currently, alignment is unused as everything is allocated on a 512-byte boundary.
-        /// \param short_lived Indicate whether or not the memory will be freed soon.
         /// \param short_lived Indicate whether or not the memory will be freed soon.
         ///                    You may gain performance (and have less fragmentation) in the long term
         ///                    if you correctly set this flag
         memory_allocation allocate_memory(size_t size, uint32_t alignment, uint32_t memory_type_index, allocation_type at = allocation_type::normal)
         {
-          if (size > memory_allocator_chunk<>::chunk_allocation_size)
+          if (size >= memory_allocator_chunk<>::chunk_allocation_size)
           {
             // non-shared allocation, we have a requested size too big to fit in a chunk
             non_shared_list.emplace_back(vk::device_memory::allocate(dev, size, memory_type_index));
@@ -184,7 +182,47 @@ namespace neam
             check::on_vulkan_error::n_assert(alltype_idx < allocator_chains.size(), "allocate_memory(): invalid allocation type");
             check::on_vulkan_error::n_assert(mem._type_index() < allocator_chains[alltype_idx].size(), "allocate_memory(): invalid memory type index");
             allocator_chains[alltype_idx][mem._type_index()].free_memory(mem);
+            allocation_count -= 1;
+            used_memory -= mem.size();
           }
+        }
+
+        /// \brief print memory stats for the different kind of pools
+        void print_stats() const
+        {
+          cr::out.log() << LOGGER_INFO_TPL("memory_allocator", __LINE__) << "-- [GPU memory stats] --" << cr::newline
+                        << "total used memory: " << (used_memory / (1024.f * 1024.f)) << "Mio" << cr::newline
+                        << "total allocation count: " << allocation_count << std::endl;
+
+          std::string base_name[] =
+          {
+            "default",
+            "optimal_image",
+            "default/transiant",
+            "optimal_image/transiant",
+          };
+          for (size_t i = 0; i < allocator_chains.size(); ++i)
+          {
+            for (size_t j = 0; j < allocator_chains[i].size(); ++j)
+            {
+              const std::string name = base_name[i << bits_to_skip] + "[memory-index[" + std::to_string(j) + "]]";
+              allocator_chains[i][j].print_stats(name);
+            }
+          }
+
+          {
+            size_t size = 0;
+            for (const auto& it : non_shared_list)
+              size += it.get_size();
+
+            if (non_shared_list.size() && size)
+            {
+              cr::out.log() << LOGGER_INFO_TPL("memory_allocator", __LINE__)
+                            << "non-shared allocations: " << non_shared_list.size() << " allocations for " << (size / (1024.f * 1024.f)) << "Mio" << std::endl;
+            }
+          }
+
+          cr::out.log() << LOGGER_INFO_TPL("memory_allocator", __LINE__) << "-- [GPU memory stats] --" << std::endl;
         }
 
       private:
