@@ -203,6 +203,41 @@ namespace neam
         screen_resolution = window.get_framebuffer_size();
 
         uniform_buffer.sync();
+        const uint32_t mti = neam::hydra::vk::device_memory::get_memory_type_index(device, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, uniform_buffer.get_buffer().get_memory_requirements().memoryTypeBits);
+
+        // test memory allocation to see sub-optimal things and bugs (we waste 6.8[1-3]ms per frame in average)
+        if (true)
+        {
+          for (size_t itcount = 0; itcount < 512; ++itcount)
+          {
+            // NOTE: I really don't care if the randomness is bad in that method. Really.
+            //       for every intended purpose it's ok.
+            const double rnd = (double)rand() / (double)RAND_MAX;
+
+            switch ((int)(rnd * 6))
+            {
+              case 0 ... 1: // free some memory
+              {
+                if (memory_allocation_tests.size())
+                {
+                  size_t idx = rand() % memory_allocation_tests.size();
+                  memory_allocation_tests[idx].free();
+                  memory_allocation_tests.erase(memory_allocation_tests.begin() + idx);
+                }
+                break;
+              }
+              case 2 ... 5: // allocate some memory
+              {
+                const size_t sz = (rand() & 0xFFFF) + 1;
+                if (memory_allocation_tests.size() < 4096 * 2) // limit the number of allocations
+                  memory_allocation_tests.emplace_back(mem_alloc.allocate_memory(sz, 1, mti));
+                break;
+              }
+              default: // exit the loop
+                return;
+            }
+          }
+        }
       }
 
     protected:
@@ -228,6 +263,9 @@ namespace neam
       // uniforms
       float time = 0.5f;
       glm::vec2 screen_resolution = 900_vec2_xy;
+
+      // memory testing
+      std::deque<neam::hydra::memory_allocation> memory_allocation_tests;
   };
 } // namespace neam
 
