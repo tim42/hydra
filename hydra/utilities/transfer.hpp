@@ -51,7 +51,10 @@ namespace neam
     /// It can transfer buffers and images
     class batch_transfers
     {
-      private:
+      public:
+        using transfer_func = void (*)(vk::command_buffer_recorder&);
+
+    private:
         // buffer stuff
         struct _data_transfer
         {
@@ -63,6 +66,9 @@ namespace neam
 
           vk::semaphore *signal_semaphore;
           vk::fence *signal_fence;
+
+          transfer_func pre_transfert_func = nullptr;
+          transfer_func post_transfert_func = nullptr;
         };
 
         struct _img_data_transfer
@@ -78,6 +84,9 @@ namespace neam
           vk::semaphore *signal_semaphore;
           vk::fence *signal_fence;
           VkImageLayout final_layout;
+
+          transfer_func pre_transfert_func = nullptr;
+          transfer_func post_transfert_func = nullptr;
         };
 
       public:
@@ -122,7 +131,8 @@ namespace neam
         /// \note the data will be copied, so you can either free it or modify it without any risk
         /// \param signal_semaphore will be signaled when the whole buffer has been transfered
         /// \param signal_fence will be signaled when the whole buffer has been transfered
-        void add_transfer(vk::buffer &buf, size_t buf_offset, size_t data_size, const void *_data, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
+        void add_transfer(vk::buffer &buf, size_t buf_offset, size_t data_size, const void *_data, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr,
+                          transfer_func pre = nullptr, transfer_func post = nullptr)
         {
           void *data = operator new(data_size);
           memcpy(data, _data, data_size);
@@ -133,7 +143,8 @@ namespace neam
           transfer_list.push_back(_data_transfer
           {
             &buf, buf_offset, (int8_t *)data, data_size, 0,
-            signal_semaphore, signal_fence
+            signal_semaphore, signal_fence,
+            pre, post,
           });
         }
 
@@ -143,8 +154,15 @@ namespace neam
         /// \param final_layout Is the layout the image will be transitionned to after the transfer
         /// \param signal_semaphore will be signaled when the whole buffer has been transfered
         /// \param signal_fence will be signaled when the whole buffer has been transfered
+        /// \param pre For images where initial layout isn't VK_IMAGE_LAYOUT_UNDEFINED or VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        ///            this function is mandatory and will be called before issuing the transfer command.
+        ///            It must change the image layout to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL by issuing a pipeline_barrier()
+        /// \param post For images where final_layout isn't VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL or VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        ///            this function is mandatory and will be called before issuing the transfer command.
+        ///            It should change the image layout to final_layout by issuing a pipeline_barrier()
         void add_transfer(vk::image &img, VkImageLayout img_layout, VkImageLayout final_layout, size_t data_size, const void *_data,
-                          vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
+                          vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr,
+                          transfer_func pre = nullptr, transfer_func post = nullptr)
         {
           void *data = operator new(data_size);
           memcpy(data, _data, data_size);
@@ -158,7 +176,8 @@ namespace neam
             glm::ivec3(0, 0, 0), img.get_size(),
             (int8_t *)data, data_size,
             signal_semaphore, signal_fence,
-            final_layout
+            final_layout,
+            pre, post,
           });
         }
 
@@ -168,8 +187,15 @@ namespace neam
         /// \param final_layout Is the layout the image will be transitionned to after the transfer
         /// \param signal_semaphore will be signaled when the whole buffer has been transfered
         /// \param signal_fence will be signaled when the whole buffer has been transfered
+        /// \param pre For images where initial layout isn't VK_IMAGE_LAYOUT_UNDEFINED or VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        ///            this function is mandatory and will be called before issuing the transfer command.
+        ///            It must change the image layout to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL by issuing a pipeline_barrier()
+        /// \param post For images where final_layout isn't VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL or VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        ///            this function is mandatory and will be called before issuing the transfer command.
+        ///            It should change the image layout to final_layout by issuing a pipeline_barrier()
         void add_transfer(vk::image &img, VkImageLayout img_layout, VkImageLayout final_layout, const glm::ivec3 &offset, const glm::uvec3 &size,
-                          size_t data_size, const void *_data, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
+                          size_t data_size, const void *_data, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr,
+                          transfer_func pre = nullptr, transfer_func post = nullptr)
         {
           void *data = operator new(data_size);
           memcpy(data, _data, data_size);
@@ -183,7 +209,8 @@ namespace neam
             offset, size,
             (int8_t *)data, data_size,
             signal_semaphore, signal_fence,
-            final_layout
+            final_layout,
+            pre, post,
           });
         }
 
@@ -254,7 +281,14 @@ namespace neam
               if (max_sz >= cp_sz)
               {
                 memcpy(memory + current_offset, transfer_list[i].data + transfer_list[i].data_offset, cp_sz);
+
+                if (transfer_list[i].pre_transfert_func)
+                  transfer_list[i].pre_transfert_func(cbr);
+
                 cbr.copy_buffer(staging_buffer, *transfer_list[i].buf, {{ current_offset, transfer_list[i].buf_offset, cp_sz }});
+
+                if (transfer_list[i].post_transfert_func)
+                  transfer_list[i].post_transfert_func(cbr);
 
                 operator delete(transfer_list[i].data);
 
@@ -273,7 +307,14 @@ namespace neam
                 if (max_sz > 100) // is there enough space ?
                 {
                   memcpy(memory + current_offset, transfer_list[i].data + transfer_list[i].data_offset, max_sz);
+
+                  if (transfer_list[i].pre_transfert_func)
+                    transfer_list[i].pre_transfert_func(cbr);
+
                   cbr.copy_buffer(staging_buffer, *transfer_list[i].buf, {{ current_offset, transfer_list[i].buf_offset, max_sz }});
+
+                  if (transfer_list[i].post_transfert_func)
+                    transfer_list[i].post_transfert_func(cbr);
 
                   transfer_list[i].data_offset += max_sz;
                   transfer_list[i].buf_offset += max_sz;
@@ -298,17 +339,37 @@ namespace neam
               if (max_sz >= cp_sz)
               {
                 memcpy(memory + current_offset, img_transfer_list[i].data, cp_sz);
-                if (img_transfer_list[i].layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+                if (img_transfer_list[i].pre_transfert_func)
                 {
-                  cbr.pipeline_barrier(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
-                                       { vk::image_memory_barrier(*img_transfer_list[i].img, img_transfer_list[i].layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) });
+                  img_transfer_list[i].pre_transfert_func(cbr);
                 }
+                else if (img_transfer_list[i].layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+                {
+                  if (img_transfer_list[i].layout == VK_IMAGE_LAYOUT_UNDEFINED)
+                  {
+                    cbr.pipeline_barrier(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                                         {
+                                           vk::image_memory_barrier(*img_transfer_list[i].img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                           0, VK_ACCESS_TRANSFER_WRITE_BIT)
+                                         });
+                  }
+                }
+
                 cbr.copy_buffer_to_image(staging_buffer, *img_transfer_list[i].img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                          { current_offset, img_transfer_list[i].offset, img_transfer_list[i].size });
-                if (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL != img_transfer_list[i].final_layout)
+
+                if (img_transfer_list[i].post_transfert_func)
                 {
-                  cbr.pipeline_barrier(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
-                                       { vk::image_memory_barrier(*img_transfer_list[i].img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, img_transfer_list[i].final_layout) });
+                  img_transfer_list[i].post_transfert_func(cbr);
+                }
+                else if (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL != img_transfer_list[i].final_layout)
+                {
+                  if (img_transfer_list[i].final_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+                  {
+                    cbr.pipeline_barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0,
+                                        { vk::image_memory_barrier(*img_transfer_list[i].img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                          VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT) });
+                  }
                 }
 
                 operator delete(img_transfer_list[i].data);

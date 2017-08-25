@@ -95,7 +95,7 @@ namespace neam
       {
         public:
           /// \brief Initialize the memory_barrier
-          image_memory_barrier(const ::neam::hydra::vk::image &_image, VkImageLayout old_layout, VkImageLayout new_layout, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT)
+          image_memory_barrier(const ::neam::hydra::vk::image &_image, VkImageLayout old_layout, VkImageLayout new_layout, VkAccessFlags src_access_mask, VkAccessFlags dest_access_mask, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT)
           {
             sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             pNext = nullptr;
@@ -115,7 +115,7 @@ namespace neam
             subresourceRange.baseArrayLayer = 0;
             subresourceRange.layerCount = 1;
 
-            autoset_access_masks();
+            set_access_masks(src_access_mask, dest_access_mask);
           }
 
           /// \brief Set both source and destination access masks
@@ -140,27 +140,6 @@ namespace neam
             subresourceRange.baseMipLevel = isr.baseMipLevel;
             subresourceRange.layerCount = isr.layerCount;
             subresourceRange.levelCount = isr.levelCount;
-          }
-
-          /// \brief Autoset the access masks from the layout member
-          /// \note I have no idea if this will work in most of the cases.
-          void autoset_access_masks()
-          {
-            if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
-            {
-              srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-              dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            }
-            else if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
-            {
-              srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-              dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            }
-            else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-            {
-              srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-              dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            }
           }
       };
       static_assert(sizeof(image_memory_barrier) == sizeof(VkImageMemoryBarrier), "compiler is not compatible with hydra");
