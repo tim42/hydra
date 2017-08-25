@@ -46,8 +46,8 @@ namespace neam
     enum class allocation_type : int
     {
       normal        =      0,
-      optimal_image = 1 << 1,
-      short_lived   = 1 << 2,
+      optimal_image = 1 << 0,
+      short_lived   = 1 << 1,
 
       short_lived_optimal_image = short_lived | optimal_image,
     };
@@ -80,10 +80,15 @@ namespace neam
           : type_index(o.type_index), non_shared(o.non_shared), alltype(o.alltype), _offset(o._offset), _size(o._size),
             _mem(o._mem), _allocator(o._allocator)
         {
-//           o._allocator = nullptr;
-//           o._mem = nullptr;
-//           o._size = 0;
-//           o._offset = (size_t)-1;
+        }
+        memory_allocation(memory_allocation &&o)
+          : type_index(o.type_index), non_shared(o.non_shared), alltype(o.alltype), _offset(o._offset), _size(o._size),
+            _mem(o._mem), _allocator(o._allocator)
+        {
+          o._allocator = nullptr;
+          o._mem = nullptr;
+          o._size = 0;
+          o._offset = (size_t)-1;
         }
 
         memory_allocation &operator = (const memory_allocation &o)
