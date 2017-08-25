@@ -138,6 +138,8 @@ namespace neam
         pre_run_hook();
 
         cr.reset();
+        size_t count_since_mem_stats = 0;
+
         while (!window.should_close())
         {
           bool recreate = false;
@@ -178,6 +180,12 @@ namespace neam
           if (cr.get_accumulated_time() > 2.)
           {
             neam::cr::out.log() << (cr.get_accumulated_time() / frame_cnt) * 1000.f << "ms/frame [wasted: " << (wasted / frame_cnt) * 1000.f << "ms/frame]\t(" << (int)(frame_cnt / cr.get_accumulated_time()) << "fps)" << std::endl;
+            ++count_since_mem_stats;
+            if (count_since_mem_stats == 4)
+            {
+              count_since_mem_stats = 0;
+              mem_alloc.print_stats();
+            }
             cr.reset();
             frame_cnt = 0.f;
             wasted = 0.f;
