@@ -172,7 +172,7 @@ namespace neam
 
 #ifndef HYDRA_ALLOCATOR_FAST_FREE
           // super-fast search (using black levels) //
-          if (size >= second_level_granularity * 2)
+          /*if (size >= second_level_granularity * 2)
           {
             aoffset = fast_free_space_search(0, size, alignment);
             if (aoffset == -1) // not found !
@@ -183,7 +183,7 @@ namespace neam
             if (asize % granularity) size += granularity - (asize % granularity);
             mark_space_as_used(offset, asize);
             return aoffset;
-          }
+          }*/
 #endif
           // fastidious search
           while (offset + size < chunk_allocation_size)
@@ -206,6 +206,9 @@ namespace neam
               break;
             offset += avail_free_space;
           }
+
+          if (offset + asize > chunk_allocation_size)
+            return -1; // there's isn't anything we can do :/
 
           mark_space_as_used(offset, asize);
           return aoffset;
@@ -293,10 +296,15 @@ namespace neam
           bool from_first_level = false;
           bool from_second_level = false;
 
+          if (offset >= chunk_allocation_size)
+            return chunk_allocation_size;
+
           // first level (512kio discard)
           if (offset % first_level_granularity == 0)
           {
           _first_level_search:
+            if (offset >= chunk_allocation_size)
+              return chunk_allocation_size;
             from_first_level = true;
             unsigned fl_bidx = offset / first_level_granularity;
             for (; fl_bidx < first_level_bits && (((first_level_wh >> fl_bidx) & 1) != 0); ++fl_bidx, offset += first_level_granularity)
@@ -307,13 +315,16 @@ namespace neam
           if (offset % second_level_granularity == 0)
           {
           _second_level_search:
+            if (offset >= chunk_allocation_size)
+              return chunk_allocation_size;
+
             from_second_level = true;
             unsigned sl_idx = offset / (second_level_granularity * 64);
             unsigned sl_bidx = 0;
             uint64_t tmp = second_level_wh[sl_idx];
-            for (; ((tmp >> sl_bidx) & 1) != 0; sl_bidx = (sl_bidx + 1) % 64, offset += second_level_granularity)
+            for (; ((tmp >> sl_bidx) & 1) != 0; sl_bidx = (sl_bidx + 1) % 64)
             {
-              if (offset % first_level_granularity == 0 && !from_first_level) goto _first_level_search;
+              offset += second_level_granularity;
               from_first_level = false;
               if (sl_bidx == 63)
               {
@@ -321,18 +332,21 @@ namespace neam
                   break;
                 tmp = second_level_wh[++sl_idx];
               }
+              if (offset % first_level_granularity == 0 && !from_first_level) goto _first_level_search;
             }
           }
 
           // slower discard (bitmap-based, 512o) //
           {
+            if (offset >= chunk_allocation_size)
+              return chunk_allocation_size;
+
             unsigned bm_idx = offset / (granularity * 64);
             unsigned bm_bidx = (offset / granularity) % 64;
             uint64_t tmp = bitmap[bm_idx];
-            for (; ((tmp >> bm_bidx) & 1) != 0; bm_bidx = (bm_bidx + 1) % 64, offset += granularity)
+            for (; ((tmp >> bm_bidx) & 1) != 0; bm_bidx = (bm_bidx + 1) % 64)
             {
-              if (offset % first_level_granularity == 0 && !from_first_level) goto _first_level_search;
-              if (offset % second_level_granularity == 0 && !from_second_level) goto _second_level_search;
+              offset += granularity;
               from_first_level = false;
               from_second_level = false;
               if (bm_bidx == 63)
@@ -341,6 +355,8 @@ namespace neam
                   break;
                 tmp = bitmap[++bm_idx];
               }
+              if (offset % first_level_granularity == 0 && !from_first_level) goto _first_level_search;
+              if (offset % second_level_granularity == 0 && !from_second_level) goto _second_level_search;
             }
           }
 #else // FAST_FREE / SLOW_ALLOC
@@ -389,17 +405,18 @@ namespace neam
             unsigned sl_idx = offset / (second_level_granularity * 64);
             unsigned sl_bidx = (offset / second_level_granularity) % 64;
             uint64_t tmp = second_level_bl[sl_idx];
-            for (; ((tmp >> sl_bidx) & 1) == 0; sl_bidx = (sl_bidx + 1) % 64, offset += second_level_granularity)
+            for (; ((tmp >> sl_bidx) & 1) == 0; sl_bidx = (sl_bidx + 1) % 64)
             {
+              offset += second_level_granularity;
               if (offset - orig_offset > size)
                 return offset - orig_offset;
-              if (offset % first_level_granularity == 0) goto _first_level_search;
               if (sl_bidx == 63)
               {
                 if (sl_idx + 1 == second_level_entries)
                   break;
                 tmp = second_level_bl[++sl_idx];
               }
+              if (offset % first_level_granularity == 0) goto _first_level_search;
             }
           }
 
@@ -408,10 +425,9 @@ namespace neam
             unsigned bm_idx = offset / (granularity * 64);
             unsigned bm_bidx = (offset / granularity) % 64;
             uint64_t tmp = bitmap[bm_idx];
-            for (; ((tmp >> bm_bidx) & 1) == 0; bm_bidx = (bm_bidx + 1) % 64, offset += granularity)
+            for (; ((tmp >> bm_bidx) & 1) == 0; bm_bidx = (bm_bidx + 1) % 64)
             {
-              if (offset % first_level_granularity == 0) goto _first_level_search;
-              if (offset % second_level_granularity == 0) goto _second_level_search;
+              offset += granularity;
               if (bm_bidx == 63)
               {
                 if (offset - orig_offset > size)
@@ -420,6 +436,8 @@ namespace neam
                   break;
                 tmp = bitmap[++bm_idx];
               }
+              if (offset % first_level_granularity == 0) goto _first_level_search;
+              if (offset % second_level_granularity == 0) goto _second_level_search;
             }
           }
 
@@ -445,7 +463,7 @@ namespace neam
             return offset - orig_offset;
           }
 #endif
-          return offset;
+          return 0;
         }
 
         /// \brief Used to find big chunks of free space (> 32kio)
