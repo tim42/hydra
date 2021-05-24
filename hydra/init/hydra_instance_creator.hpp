@@ -152,7 +152,7 @@ namespace neam
         void require_extension(const std::string &extension_name)
         {
           if (!have_extension(extension_name))
-            throw exception_tpl<hydra_instance_creator>("Required extension is not provided by vulkan", __FILE__, __LINE__);
+            throw exception_tpl<hydra_instance_creator>("Required extension is not provided by vulkan");
           if (!instance_extensions.count(extension_name))
             instance_extensions.emplace(extension_name);
         }
@@ -169,7 +169,7 @@ namespace neam
         void require_layer(const std::string &layer_name)
         {
           if (!have_layer(layer_name))
-            throw exception_tpl<hydra_instance_creator>("Required layer is not provided by vulkan", __FILE__, __LINE__);
+            throw exception_tpl<hydra_instance_creator>("Required layer is not provided by vulkan");
           if (!instance_layers.count(layer_name))
             instance_layers.emplace(layer_name);
         }

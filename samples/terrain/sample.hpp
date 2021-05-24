@@ -100,7 +100,7 @@ namespace neam
              )
            )
          ),
-         sampler(device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f, 1.f),
+         sampler(device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f),
          pipeline_layout(device, { &sampler_ds_layout }),
          uniform_buffer(device, neam::hydra::vk::buffer(device, 100, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
       {
@@ -121,7 +121,7 @@ namespace neam
         // setup the mesh
         mesh.add_buffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
         mesh.add_buffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-        mesh.get_vertex_input_state() = dummy_vertex::get_vertex_input_state();
+        mesh.vertex_input_state() = dummy_vertex::get_vertex_input_state();
         mesh.allocate_memory(mem_alloc);
 
         mesh.transfer_data(btransfers, 0, sizeof(indices[0]) * indices.size(), indices.data());
@@ -206,7 +206,7 @@ namespace neam
         const uint32_t mti = neam::hydra::vk::device_memory::get_memory_type_index(device, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, uniform_buffer.get_buffer().get_memory_requirements().memoryTypeBits);
 
         // test memory allocation to see sub-optimal things and bugs (we waste 6.8[1-3]ms per frame in average)
-        if (true)
+        if (false)
         {
           for (size_t itcount = 0; itcount < 512; ++itcount)
           {

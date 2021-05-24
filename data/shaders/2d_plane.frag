@@ -2,7 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 
 // raymarcher defines
-#define RM_MAX_STEPS                    22.
+#define RM_MAX_STEPS                    12.
 #define INTO_STEP_DST                   0.35
 
 // prog defines

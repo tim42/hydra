@@ -171,7 +171,7 @@ namespace neam
             HYDRA_LOAD_FNC(vkGetBufferMemoryRequirements);
             HYDRA_LOAD_FNC(vkGetImageMemoryRequirements);
             HYDRA_LOAD_FNC(vkGetImageSparseMemoryRequirements);
-            HYDRA_LOAD_FNC(vkGetPhysicalDeviceSparseImageFormatProperties);
+//             HYDRA_LOAD_FNC(vkGetPhysicalDeviceSparseImageFormatProperties);
             HYDRA_LOAD_FNC(vkCreateFence);
             HYDRA_LOAD_FNC(vkDestroyFence);
             HYDRA_LOAD_FNC(vkResetFences);

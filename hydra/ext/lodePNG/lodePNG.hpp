@@ -66,7 +66,7 @@ namespace neam
           uint8_t *temp_ret = nullptr;
           unsigned lode_ret_code = lodepng_decode_file(&temp_ret, &image_size.x, &image_size.y, file.c_str(), lode_formats[format_index], bpp[format_index]);
           if (lode_ret_code)
-            neam::cr::out.error() << LOGGER_INFO << file << ": lodePNG error: " << lodepng_error_text(lode_ret_code) << std::endl;
+            neam::cr::out.error() << file << ": lodePNG error: " << lodepng_error_text(lode_ret_code) << std::endl;
           check::on_vulkan_error::n_assert(lode_ret_code == 0, file + ": lodePNG returned an error code (see the logs)");
 
           // copy, 'cause we need to use delete to free the memory (not 'free()')

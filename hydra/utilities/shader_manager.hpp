@@ -65,7 +65,7 @@ namespace neam
           // load the module from disk
           auto ret = module_map.emplace(filename, vk::spirv_shader::load_from_file(dev, filename));
 #ifndef HYDRA_NO_MESSAGES
-          neam::cr::out.info() << LOGGER_INFO << "loaded SPIRV shader '" << filename << "'" << std::endl;
+          neam::cr::out.info() << "loaded SPIRV shader '" << filename << "'" << std::endl;
 #endif
 
           return ret.first->second;

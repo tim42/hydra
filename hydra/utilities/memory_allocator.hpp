@@ -190,7 +190,7 @@ namespace neam
         /// \brief print memory stats for the different kind of pools
         void print_stats() const
         {
-          cr::out.log() << LOGGER_INFO_TPL("memory_allocator", __LINE__) << "-- [GPU memory stats] --" << cr::newline
+          cr::out.log() << "-- [GPU memory stats] --" << cr::newline
                         << "total used memory: " << (used_memory / (1024.f * 1024.f)) << "Mio" << cr::newline
                         << "total allocation count: " << allocation_count << std::endl;
 
@@ -217,12 +217,11 @@ namespace neam
 
             if (non_shared_list.size() && size)
             {
-              cr::out.log() << LOGGER_INFO_TPL("memory_allocator", __LINE__)
-                            << "non-shared allocations: " << non_shared_list.size() << " allocations for " << (size / (1024.f * 1024.f)) << "Mio" << std::endl;
+              cr::out.log() << "non-shared allocations: " << non_shared_list.size() << " allocations for " << (size / (1024.f * 1024.f)) << "Mio" << std::endl;
             }
           }
 
-          cr::out.log() << LOGGER_INFO_TPL("memory_allocator", __LINE__) << "-- [GPU memory stats] --" << std::endl;
+          cr::out.log() << "-- [GPU memory stats] --" << std::endl;
         }
 
       private:

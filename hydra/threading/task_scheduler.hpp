@@ -31,7 +31,7 @@
 #include <mutex>
 #include <algorithm>
 #include <vector>
-#include <bits/inf.h>
+// #include <bits/inf.h>
 
 #include "../tools/chrono.hpp"
 #include "../tools/logger/logger.hpp"
@@ -260,7 +260,7 @@ namespace neam
 
                   if (!no_critical_messages_about_wait)
                   {
-                    neam::cr::out.critical() << LOGGER_INFO << "task::scheduler::end_frame(): scheduler is late of "
+                    neam::cr::out.critical()  << "task::scheduler::end_frame(): scheduler is late of "
                                               << frame_chrono.get_accumulated_time() - maximum_run_duration << "s waiting for " << active_thread_count
                                               << " threads to terminate." << neam::cr::newline
                                               << "Please report: this is a bug." << neam::cr::newline
@@ -325,7 +325,7 @@ namespace neam
             if (frame_sync_lock < 0) // wait... just one thread we've said !!
             {
               NHR_FAIL(scheduler_critical_reason(N_REASON_INFO, "multiple call of end_frame detected"));
-              neam::cr::out.critical() << LOGGER_INFO << "task::scheduler::end_frame(): more than one thread is trying to call end_frame" << cr::newline
+              neam::cr::out.critical() << "task::scheduler::end_frame(): more than one thread is trying to call end_frame" << cr::newline
                                                       << "> this will increment the critical hit counter as this may be a critical fault" << std::endl;
               ++critical_hit; // this may endanger the safety of that class
               return;
@@ -346,7 +346,7 @@ namespace neam
                   if (!no_critical_messages_about_wait)
                   {
                     NHR_FAIL(scheduler_lateness_reason(N_REASON_INFO, "task scheduler is TOO LATE waiting some thread to terminate"));
-                    neam::cr::out.critical() << LOGGER_INFO << "task::scheduler::end_frame(): scheduler is late of "
+                    neam::cr::out.critical()  << "task::scheduler::end_frame(): scheduler is late of "
                                               << frame_chrono.get_accumulated_time() - maximum_run_duration << "s waiting for " << active_thread_count
                                               << " threads to terminate." << neam::cr::newline
                                               << "Please report: this is a bug." << neam::cr::newline
@@ -385,7 +385,7 @@ namespace neam
 #ifndef HYDRA_SCHEDULER_NO_DEBUG_MESSAGES
               // We print a nice debug message on whether or not we should spawn some more threads.
               if (last_second_lateness > 0.95)
-                neam::cr::out.debug() << LOGGER_INFO << "WARNING: task::scheduler: Lateness factor for the last second: " << last_second_lateness << std::endl;
+                neam::cr::out.debug() << "WARNING: task::scheduler: Lateness factor for the last second: " << last_second_lateness << std::endl;
 #endif /*HYDRA_SCHEDULER_NO_DEBUG_MESSAGES*/
 #endif /*HYDRA_NO_MESSAGES*/
             }
@@ -542,12 +542,12 @@ namespace neam
             catch (std::exception &e)
             {
               NHR_FAIL(neam::r::exception_reason(N_REASON_INFO, "task::scheduler::run_some(): caught exception"));
-              neam::cr::out.error() << LOGGER_INFO << "task::scheduler::run_some(): caught exception: " << e.what() << std::endl;
+              neam::cr::out.error() << "task::scheduler::run_some(): caught exception: " << e.what() << std::endl;
             }
             catch (...)
             {
               NHR_FAIL(neam::r::exception_reason(N_REASON_INFO, "task::scheduler::run_some(): caught exception"));
-              neam::cr::out.error() << LOGGER_INFO << "task::scheduler::run_some(): caught unknown exception" << std::endl;
+              neam::cr::out.error() << "task::scheduler::run_some(): caught unknown exception" << std::endl;
             }
 
             if (active_thread_count == 1)
@@ -607,12 +607,12 @@ namespace neam
               catch (std::exception &e)
               {
                 NHR_IND_FAIL(neam::r::exception_reason(N_REASON_INFO, "task::scheduler::run_some(): caught exception"));
-                neam::cr::out.error() << LOGGER_INFO << "task::scheduler::run_some(): caught exception: " << e.what() << std::endl;
+                neam::cr::out.error() << "task::scheduler::run_some(): caught exception: " << e.what() << std::endl;
               }
               catch (...)
               {
                 NHR_IND_FAIL(neam::r::exception_reason(N_REASON_INFO, "task::scheduler::run_some(): caught exception"));
-                neam::cr::out.error() << LOGGER_INFO << "task::scheduler::run_some(): caught unknown exception" << std::endl;
+                neam::cr::out.error() << "task::scheduler::run_some(): caught unknown exception" << std::endl;
               }
             }
           }

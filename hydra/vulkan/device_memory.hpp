@@ -182,7 +182,7 @@ namespace neam
             check::on_vulkan_error::n_throw_exception(dev._vkAllocateMemory(&mem_alloc, nullptr, &vk_memory));
 
 #ifndef HYDRA_NO_MESSAGES
-            neam::cr::out.info() << LOGGER_INFO << "allocating a chunk of " << _size << " bytes on the GPU..." << std::endl;
+            neam::cr::out.info() << "allocating a chunk of " << _size << " bytes on the GPU..." << std::endl;
 #endif
             size = _size;
           }

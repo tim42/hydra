@@ -121,7 +121,7 @@ namespace neam
           if (chunk_count == 0)
             return;
 
-          cr::out.log() << LOGGER_INFO_TPL("memory_allocator_chunk_chain", __LINE__) << "chain@" << this << "[" << name << "]:" << cr::newline
+          cr::out.log() << "chain@" << this << "[" << name << "]:" << cr::newline
                              << "  free memory:           " << (free_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
                              << "  allocated memory:      " << ((total_memory - free_memory) / (1024.f * 1024.f)) << " Mio" << cr::newline
                              << "  total memory:          " << (total_memory / (1024.f * 1024.f)) << " Mio" << cr::newline

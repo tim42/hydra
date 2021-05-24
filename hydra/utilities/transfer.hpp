@@ -345,14 +345,11 @@ namespace neam
                 }
                 else if (img_transfer_list[i].layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
                 {
-                  if (img_transfer_list[i].layout == VK_IMAGE_LAYOUT_UNDEFINED)
-                  {
-                    cbr.pipeline_barrier(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-                                         {
-                                           vk::image_memory_barrier(*img_transfer_list[i].img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                           0, VK_ACCESS_TRANSFER_WRITE_BIT)
-                                         });
-                  }
+                  cbr.pipeline_barrier(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                                        {
+                                          vk::image_memory_barrier(*img_transfer_list[i].img, img_transfer_list[i].layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                          0, VK_ACCESS_TRANSFER_WRITE_BIT)
+                                        });
                 }
 
                 cbr.copy_buffer_to_image(staging_buffer, *img_transfer_list[i].img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

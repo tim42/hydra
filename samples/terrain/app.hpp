@@ -131,7 +131,7 @@ namespace neam
         float frame_cnt = 0.f;
         float wasted = 0.f;
 
-        neam::cr::out.log() << LOGGER_INFO << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
+        neam::cr::out.log() << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
         btransfers.wait_end_transfer(); // can't really do much more here
 
 
@@ -214,7 +214,7 @@ namespace neam
 
         // debug extensions / layers:
         gfr.require_instance_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-        gfr.require_instance_layer("VK_LAYER_LUNARG_standard_validation");
+        gfr.require_instance_layer("VK_LAYER_KHRONOS_validation");
 
         temp_transfer_queue = gfr.require_queue_capacity(VK_QUEUE_TRANSFER_BIT, false);
 

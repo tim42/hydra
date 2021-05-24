@@ -65,7 +65,7 @@ namespace neam
               glfwWindowHint(it.first, it.second);
 
             if (!(win = glfwCreateWindow(window_size.x, window_size.y, title.data(), 0, 0)))
-              throw neam::hydra::exception_tpl<window>("GLFW: glfwCreateWindow call failed", __FILE__, __LINE__);
+              throw neam::hydra::exception_tpl<window>("GLFW: glfwCreateWindow call failed");
 
             select();
             _set_hydra_icon();
@@ -87,7 +87,7 @@ namespace neam
             const GLFWvidmode *vmode = glfwGetVideoMode(glfwGetPrimaryMonitor());
 
             if (!(win = glfwCreateWindow(vmode->width, vmode->height, title.data(), glfwGetPrimaryMonitor(), 0)))
-              throw neam::hydra::exception_tpl<window>("GLFW: glfwCreateWindow call failed", __FILE__, __LINE__);
+              throw neam::hydra::exception_tpl<window>("GLFW: glfwCreateWindow call failed");
 
             select();
             _set_hydra_icon();
@@ -285,7 +285,7 @@ namespace neam
           /// \brief Set the hydra icon (bonus function)
           /// \note icon_sz must be a power of 2
           /// \note glyph_count can't be more than 5, and more than 4 if icon_sz is 16
-          void _set_hydra_icon(size_t icon_sz = 256, size_t glyph_count = 4)
+          void _set_hydra_icon(size_t icon_sz = 256, size_t glyph_count = 1)
           {
             uint8_t pixels[icon_sz * icon_sz * 4];
             set_icon(glm::uvec2(icon_sz, icon_sz), generate_rgba_logo(pixels, icon_sz, glyph_count));

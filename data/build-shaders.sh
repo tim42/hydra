@@ -18,5 +18,3 @@ do
   find . -name '*'$extension -exec bash -c "echo '    -- {}' && glslangValidator -V -t -o '{}'.spv '{}'" ';' | filter_ouput $quiet
 done
 
-
-

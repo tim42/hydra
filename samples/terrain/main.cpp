@@ -9,8 +9,8 @@
 int main(int, char **)
 {
   // I want all these debug information to be printed:
-//    neam::cr::out.log_level = neam::cr::stream_logger::verbosity_level::debug;
- neam::cr::out.log_level = neam::cr::stream_logger::verbosity_level::log;
+//   neam::cr::out.log_level = neam::cr::stream_logger::verbosity_level::debug;
+  neam::cr::out.log_level = neam::cr::stream_logger::verbosity_level::log;
 
   neam::sample_app app(900_uvec2_xy, "HYDRA");
   app.init_and_run();

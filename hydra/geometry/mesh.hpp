@@ -102,7 +102,7 @@ namespace neam
           {
 // #ifndef HYDRA_NO_MESSAGES
 //             if ((usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT))
-//               neam::cr::out.info() << LOGGER_INFO << "adding a buffer with VK_BUFFER_USAGE_INDEX_BUFFER_BIT as a vertex buffer" << neam::cr::newline
+//               neam::cr::out.info() << "adding a buffer with VK_BUFFER_USAGE_INDEX_BUFFER_BIT as a vertex buffer" << neam::cr::newline
 //                                    << "'cause an index buffer is already present and this buffer has another usage bit enabled";
 // #endif
             buffers.emplace_back(dev, size, usage, flags);
@@ -132,10 +132,10 @@ namespace neam
         void has_primitive_restart(bool restart) { primitive_restart = restart; }
 
         /// \brief A nice way to describe binding & attributes of the mesh
-        vk::pipeline_vertex_input_state &get_vertex_input_state() { return pvis; }
+        vk::pipeline_vertex_input_state &vertex_input_state() { return pvis; }
 
         /// \brief Clear the buffers (destroy them, but keep the same state)
-        void clear_buffer() { buffers.clear(); index_buffer_present = false; }
+        void clear_buffers() { buffers.clear(); index_buffer_present = false; }
 
         /// \brief Return the memory needed for all the buffers of the mesh
         /// \note If you want a number to allocate memory, use get_memory_requirements()

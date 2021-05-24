@@ -59,7 +59,7 @@ int main(int, char **)
 
   // debug extensions / layers:
   gfr.require_instance_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-  gfr.require_instance_layer("VK_LAYER_LUNARG_standard_validation");
+  gfr.require_instance_layer("VK_LAYER_KHRONOS_validation");
   auto temp_transfer_queue = gfr.require_queue_capacity(VK_QUEUE_TRANSFER_BIT, false);
 
   // initialize vulkan/hydra
@@ -114,7 +114,7 @@ int main(int, char **)
 
   mesh.add_buffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
   mesh.add_buffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-  mesh.get_vertex_input_state() = dummy_vertex::get_vertex_input_state();
+  mesh.vertex_input_state() = dummy_vertex::get_vertex_input_state();
   mesh.allocate_memory(mem_alloc);
 
   mesh.transfer_data(btransfers, 0, sizeof(indices[0]) * indices.size(), indices.data());
@@ -123,7 +123,8 @@ int main(int, char **)
   //////////////////////////////////////////////////////////////////////////////
   // setup the descriptors/...
   neam::hydra::vk::descriptor_set_layout_binding sampler_dslb(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
-  neam::hydra::vk::descriptor_set_layout sampler_ds_layout(device, {sampler_dslb});
+  neam::hydra::vk::descriptor_set_layout_binding ubuffer_dslb(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+  neam::hydra::vk::descriptor_set_layout sampler_ds_layout(device, {sampler_dslb, ubuffer_dslb});
 
   neam::hydra::vk::descriptor_pool ds_pool(device, 1, {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}});
   neam::hydra::vk::descriptor_set descriptor_set = ds_pool.allocate_descriptor_set(sampler_ds_layout);
@@ -134,7 +135,7 @@ int main(int, char **)
      neam::hydra::vk::image_2d({logo_size, logo_size}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
   );
 
-  neam::hydra::vk::sampler sampler(device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f, 16.f);
+  neam::hydra::vk::sampler sampler(device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f);
 
   // allocate memory for the image (+ transfer data to it)
   {
@@ -219,7 +220,7 @@ int main(int, char **)
   neam::cr::chrono cr;
   float frame_cnt = 0;
 
-  neam::cr::out.log() << LOGGER_INFO << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
+  neam::cr::out.log() << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
   end_transfer.wait(); // can't really do much more here
 
   cr.reset();

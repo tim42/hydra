@@ -101,7 +101,7 @@ namespace neam
           vk::device device = hdc.create_device(compatible_gpu_list[0]);
           new_device_created(device);
 
-          cr::out.log() << LOGGER_INFO << "vulkan device created on " << compatible_gpu_list[0].get_name() << std::endl;
+          cr::out.log() << "vulkan device created on " << compatible_gpu_list[0].get_name() << std::endl;
 
           return device;
         }

@@ -47,11 +47,11 @@ namespace neam
       const uint8_t hydra_logo[] = {0x7D, 0x3D, 0xEB, 0x5F, 0x7B};
 
       if (icon_sz < 16) return pixels; // not possible
-      if (glyph_count <= 1 || glyph_count > sizeof(hydra_logo)) glyph_count = 4;
+      if (glyph_count < 1 || glyph_count > sizeof(hydra_logo)) glyph_count = 4;
       if (icon_sz == 16 && glyph_count > 4) glyph_count = 4;
 
-      const size_t sq_sz = icon_sz / (glyph_count * 4);
-      const size_t y_pos = icon_sz / 2 - (sq_sz / 2 + 1);
+      const size_t sq_sz = icon_sz / (glyph_count * 4) ;
+      const size_t y_pos = (glyph_count == 1 ? (sq_sz / 2) : (icon_sz / 2 - (sq_sz / 2 + 1)));
       const size_t x_pos = sq_sz / 2;
       memset(pixels, 0, icon_sz * icon_sz * 4);
 

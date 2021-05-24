@@ -33,8 +33,8 @@
 #ifndef HYDRA_NO_MESSAGES
 #include "tools/logger/logger.hpp"
 
-#define HYDRA_LOG(type, ...)   neam::cr::out.type() << LOGGER_INFO << __VA_ARGS__;
-#define HYDRA_LOG_TPL(type, file, line, ...)   neam::cr::out.type() << LOGGER_INFO_TPL(file, line) << __VA_ARGS__;
+#define HYDRA_LOG(type, ...)   neam::cr::out.type() << __VA_ARGS__;
+#define HYDRA_LOG_TPL(type, sloc, ...)   neam::cr::out.type(sloc) << __VA_ARGS__;
 
 #else
 #define HYDRA_LOG(type, ...) // NO LOGS

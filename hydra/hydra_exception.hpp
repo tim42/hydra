@@ -44,23 +44,17 @@ namespace neam
     class exception : public std::exception
     {
       public:
-        exception(const std::string &s, const std::string &file, size_t line) noexcept
+        exception(const std::string &s, const std::experimental::source_location& sloc = std::experimental::source_location::current()) noexcept
          : str(s)
         {
           NHR_FAIL(neam::r::exception_reason(N_REASON_INFO, strdup(s.data())));
-          HYDRA_LOG_TPL(error, file, line, "[EXCEPTION]: " << s << std::endl);
+          HYDRA_LOG_TPL(error, sloc, "[EXCEPTION]: " << s << std::endl);
         }
-        exception(const std::string &s) noexcept
+        exception(std::string &&s, const std::experimental::source_location& sloc = std::experimental::source_location::current()) noexcept
          : str(s)
         {
           NHR_FAIL(neam::r::exception_reason(N_REASON_INFO, strdup(s.data())));
-          HYDRA_LOG(error, "[EXCEPTION]: " << s << std::endl);
-        }
-        exception(std::string &&s, const std::string &file, size_t line) noexcept
-         : str(s)
-        {
-          NHR_FAIL(neam::r::exception_reason(N_REASON_INFO, strdup(s.data())));
-          HYDRA_LOG_TPL(error, file, line, "[EXCEPTION]: " << s << std::endl);
+          HYDRA_LOG_TPL(error, sloc, "[EXCEPTION]: " << s << std::endl);
         }
         exception(const std::string &&s) noexcept
          : str(s)
@@ -87,20 +81,12 @@ namespace neam
     class exception_tpl : public exception
     {
       public:
-        exception_tpl(const std::string &s, const std::string &file, size_t line) noexcept
-         : exception(neam::demangle<ExceptionType>() + ": " + s, file, line)
+        exception_tpl(const std::string &s, const std::experimental::source_location& sloc = std::experimental::source_location::current()) noexcept
+         : exception(neam::demangle<ExceptionType>() + ": " + s, sloc)
         {
         }
-        exception_tpl(const std::string &s) noexcept
-         : exception(neam::demangle<ExceptionType>() + ": " + s)
-        {
-        }
-        exception_tpl(std::string &&s, const std::string &file, size_t line) noexcept
-         : exception(neam::demangle<ExceptionType>() + ": " + (s), file, line)
-        {
-        }
-        exception_tpl(const std::string &&s) noexcept
-         : exception(neam::demangle<ExceptionType>() + ": " + s)
+        exception_tpl(std::string &&s, const std::experimental::source_location& sloc = std::experimental::source_location::current()) noexcept
+         : exception(neam::demangle<ExceptionType>() + ": " + (s), sloc)
         {
         }
 
