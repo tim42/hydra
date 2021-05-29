@@ -107,9 +107,19 @@ namespace neam
               mlisteners.insert(ml);
             }
 
+            void register_mouse_listener(events::raw_mouse_listener *ml)
+            {
+              raw_mlisteners.insert(ml);
+            }
+
             void unregister_mouse_listener(events::mouse_listener *ml)
             {
               mlisteners.erase(ml);
+            }
+
+            void unregister_mouse_listener(events::raw_mouse_listener *ml)
+            {
+              raw_mlisteners.erase(ml);
             }
 
             void register_keyboard_listener(events::keyboard_listener *kl)
@@ -117,9 +127,19 @@ namespace neam
               klisteners.insert(kl);
             }
 
+            void register_keyboard_listener(events::raw_keyboard_listener *kl)
+            {
+              raw_klisteners.insert(kl);
+            }
+
             void unregister_keyboard_listener(events::keyboard_listener *kl)
             {
               klisteners.erase(kl);
+            }
+
+            void unregister_keyboard_listener(events::raw_keyboard_listener *kl)
+            {
+              raw_klisteners.erase(kl);
             }
 
             void register_window_listener(events::window_listener *wl)
@@ -153,10 +173,10 @@ namespace neam
             manager &operator = (manager &&) = delete;
 
           private: // trampos
-            static void _t_mouse_button(GLFWwindow *glfw_win, int button, int action, int modifers)
+            static void _t_mouse_button(GLFWwindow *glfw_win, int button, int action, int modifiers)
             {
               manager *emgr = reinterpret_cast<manager *>(glfwGetWindowUserPointer(glfw_win));
-              emgr->_mouse_button(glfw_win, button, action, modifers);
+              emgr->_mouse_button(glfw_win, button, action, modifiers);
             }
 
             static void _t_mouse_wheel(GLFWwindow *glfw_win, double x, double y)
@@ -171,10 +191,10 @@ namespace neam
               emgr->_mouse_move(glfw_win, x, y);
             }
 
-            static void _t_key(GLFWwindow *glfw_win, int key, int scancode, int action, int modifers)
+            static void _t_key(GLFWwindow *glfw_win, int key, int scancode, int action, int modifiers)
             {
               manager *emgr = reinterpret_cast<manager *>(glfwGetWindowUserPointer(glfw_win));
-              emgr->_key(glfw_win, key, scancode, action, modifers);
+              emgr->_key(glfw_win, key, scancode, action, modifiers);
             }
 
             static void _t_unicode_input(GLFWwindow *glfw_win, unsigned int code)
@@ -226,8 +246,11 @@ namespace neam
             }
 
           private: // called by the trampos
-            void _mouse_button(GLFWwindow *, int button, int action, int modifers)
+            void _mouse_button(GLFWwindow *, int button, int action, int modifiers)
             {
+              for (events::raw_mouse_listener* ml : raw_mlisteners)
+                ml->on_mouse_button(button, action, modifiers);
+
               events::mouse_status current_mouse_status = last_mouse_status;
 
               current_mouse_status.delta.normalized_position = glm::vec2(0, 0);
@@ -238,7 +261,7 @@ namespace neam
                 current_mouse_status.delta.active_buttons = static_cast<events::mouse_buttons::mouse_buttons>(1 << button);
 
 
-              current_mouse_status.modifiers = static_cast<events::modifier_keys::modifier_keys>(modifers);
+              current_mouse_status.modifiers = static_cast<events::modifier_keys::modifier_keys>(modifiers);
               if (action == GLFW_PRESS)
                 current_mouse_status.buttons =  static_cast<events::mouse_buttons::mouse_buttons>(current_mouse_status.buttons | (1 << button));
               else if (action == GLFW_RELEASE)
@@ -257,6 +280,9 @@ namespace neam
 
             void _mouse_wheel(GLFWwindow *, double x, double y)
             {
+              for (events::raw_mouse_listener* ml : raw_mlisteners)
+                ml->on_mouse_wheel(x, y);
+
               events::mouse_status current_mouse_status = last_mouse_status;
 
               current_mouse_status.delta.normalized_position = glm::vec2(0, 0);
@@ -269,7 +295,7 @@ namespace neam
 
               for (events::mouse_listener * ml : mlisteners)
               {
-                ml->mouse_moved(current_mouse_status);
+                ml->mouse_scrolled(current_mouse_status);
               }
 
               last_mouse_status = current_mouse_status;
@@ -277,6 +303,9 @@ namespace neam
 
             void _mouse_move(GLFWwindow *glfw_win, double x, double y)
             {
+              for (events::raw_mouse_listener* ml : raw_mlisteners)
+                ml->on_mouse_move(x, y);
+
               int _wsz[2];
               glfwGetWindowSize(glfw_win, _wsz, _wsz + 1);
               glm::vec2 wsz(_wsz[0], _wsz[1]);
@@ -300,11 +329,14 @@ namespace neam
               last_mouse_status = current_mouse_status;
             }
 
-            void _key(GLFWwindow *, int key, int , int action, int modifers)
+            void _key(GLFWwindow *, int key, int scancode, int action, int modifiers)
             {
+              for (events::raw_keyboard_listener * kl : raw_klisteners)
+                kl->on_key(key, scancode, action, modifiers);
+
               events::keyboard_status ks;
 
-              ks.modifiers = static_cast<events::modifier_keys::modifier_keys>(modifers);
+              ks.modifiers = static_cast<events::modifier_keys::modifier_keys>(modifiers);
               last_mouse_status.modifiers = ks.modifiers;
 
               events::key_code::key_code key_code = static_cast<events::key_code::key_code>(key);
@@ -356,6 +388,9 @@ namespace neam
 
             void _unicode_input(GLFWwindow *, unsigned int code)
             {
+              for (events::raw_keyboard_listener * kl : raw_klisteners)
+                kl->on_unicode_input(code);
+
               for (events::keyboard_listener * kl : klisteners)
               {
                 kl->on_input(last_keyboard_status, code);
@@ -411,6 +446,8 @@ namespace neam
             window &win;
             std::set<events::keyboard_listener *> klisteners;
             std::set<events::mouse_listener *> mlisteners;
+            std::set<events::raw_keyboard_listener *> raw_klisteners;
+            std::set<events::raw_mouse_listener *> raw_mlisteners;
             std::set<events::window_listener *> wlisteners;
 
             events::mouse_status last_mouse_status;

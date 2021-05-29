@@ -331,6 +331,11 @@ namespace neam
             return pipeline_viewport_state({&get_full_viewport()}, {&get_full_rect2D()});
           }
 
+          surface& _get_surface()
+          {
+            return surf;
+          }
+
         private: // helper
           void populate_image_vector()
           {

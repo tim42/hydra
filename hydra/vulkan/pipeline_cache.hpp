@@ -92,7 +92,7 @@ namespace neam
           }
 
           /// \brief Merge two caches
-          void merge_with(const pipeline_cache &o) { merge_with({o}); }
+          void merge_with(const pipeline_cache &o) { merge_with({&o,}); }
 
           /// \brief Merge multiple caches
           void merge_with(std::initializer_list<const pipeline_cache *> caches)

@@ -140,6 +140,11 @@ namespace neam
           }
         }
 
+        size_t get_pipeline_count() const
+        {
+          return pipelines_map.size();
+        }
+
       private:
         vk::device &dev;
         std::map<std::string, pipeline_holder> pipelines_map;

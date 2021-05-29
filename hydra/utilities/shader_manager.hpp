@@ -84,6 +84,11 @@ namespace neam
           module_map.clear();
         }
 
+        size_t get_shader_count() const
+        {
+          return module_map.size();
+        }
+
       private:
         vk::device &dev;
         std::map<std::string, vk::shader_module> module_map;

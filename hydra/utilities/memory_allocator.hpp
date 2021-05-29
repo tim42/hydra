@@ -187,6 +187,16 @@ namespace neam
           }
         }
 
+        size_t get_used_memory() const
+        {
+          return used_memory;
+        }
+
+        size_t get_allocation_count() const
+        {
+          return allocation_count;
+        }
+
         /// \brief print memory stats for the different kind of pools
         void print_stats() const
         {

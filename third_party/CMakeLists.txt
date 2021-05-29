@@ -17,7 +17,17 @@ set(LODEPNG_LIBRARY ${LODEPNG_NAME} PARENT_SCOPE)
 get_filename_component(LODEPNG_DIR "./lodePNG/" ABSOLUTE)
 set(LODEPNG_INCLUDE_DIR ${LODEPNG_DIR} PARENT_SCOPE)
 set(LODEPNG_SOURCES "./lodePNG/lodepng.cpp")
-add_library(${LODEPNG_NAME} STATIC ${LODEPNG_SOURCES})
+
+include("./lodePNG.cmake")
+
+# build imgui (create a static library)
+set(IMGUI_NAME "imgui")
+set(IMGUI_LIBRARY ${IMGUI_NAME} PARENT_SCOPE)
+get_filename_component(IMGUI_DIR "./imgui/" ABSOLUTE)
+set(IMGUI_INCLUDE_DIR ${IMGUI_DIR} PARENT_SCOPE)
+set(IMGUI_BACKEND_INCLUDE_DIR ${IMGUI_DIR}/backend PARENT_SCOPE)
+
+include("./imgui.cmake")
 
 # GLM
 get_filename_component(GLM_DIR "./glm/" ABSOLUTE)

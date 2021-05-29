@@ -36,11 +36,29 @@ namespace neam
     {
       namespace events
       {
+        struct raw_mouse_listener
+        {
+          virtual ~raw_mouse_listener() {}
+
+          virtual void on_mouse_button(int /*button*/, int /*action*/, int /*modifiers*/) {}
+          virtual void on_mouse_wheel(double /*x*/, double /*y*/) {}
+          virtual void on_mouse_move(double /*x*/, double /*y*/) {}
+        };
+
+        struct raw_keyboard_listener
+        {
+          virtual ~raw_keyboard_listener() {}
+
+          virtual void on_key(int /*key*/, int /*scancode*/, int /*action*/, int /*modifiers*/) {}
+          virtual void on_unicode_input(unsigned int /*code*/) {}
+        };
+
         struct mouse_listener
         {
           virtual ~mouse_listener() {}
 
           virtual void mouse_moved(const mouse_status &/*ms*/) {}
+          virtual void mouse_scrolled(const mouse_status &/*ms*/) {}
           virtual void button_pressed(const mouse_status &/*ms*/, mouse_buttons::mouse_buttons /*mb*/) {}
           virtual void button_released(const mouse_status &/*ms*/, mouse_buttons::mouse_buttons /*mb*/) {}
         };
