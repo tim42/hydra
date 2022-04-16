@@ -16,3 +16,6 @@
 [submodule "third_party/ntools"]
 	path = third_party/ntools
 	url = git@github.com:tim42/tools.git
+[submodule "third_party/enfield"]
+	path = third_party/enfield
+	url = git@github.com:tim42/enfield.git
