@@ -7,9 +7,12 @@
 [submodule "third_party/lodePNG"]
 	path = third_party/lodePNG
 	url = https://github.com/lvandeve/lodepng.git
-[submodule "hydra/tools"]
-	path = hydra/tools
-	url = https://github.com/tim42/tools.git
 [submodule "third_party/imgui"]
 	path = third_party/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "third_party/fmt"]
+	path = third_party/fmt
+	url = https://github.com/fmtlib/fmt.git
+[submodule "third_party/ntools"]
+	path = third_party/ntools
+	url = git@github.com:tim42/tools.git
