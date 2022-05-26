@@ -33,7 +33,7 @@
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 #include "render_pass.hpp"
 #include "image_view.hpp"
 #include "swapchain.hpp"
@@ -126,7 +126,7 @@ namespace neam
             create_info.pAttachments = vk_image_view_vector.data();
             create_info.attachmentCount = vk_image_view_vector.size();
 
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateFramebuffer(&create_info, nullptr, &vk_framebuffer));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateFramebuffer(&create_info, nullptr, &vk_framebuffer));
           }
 
           /// \brief Set the framebuffer dimensions

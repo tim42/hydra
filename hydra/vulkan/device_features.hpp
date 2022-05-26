@@ -215,7 +215,7 @@ namespace neam
       };
 
       /// \brief | operator overload
-      device_features operator | (const device_features &d1, const device_features &d2)
+      inline device_features operator | (const device_features &d1, const device_features &d2)
       {
         device_features r = d1;
         r |= d2;
@@ -223,7 +223,7 @@ namespace neam
       }
 
       /// \brief & operator overload
-      device_features operator & (const device_features &d1, const device_features &d2)
+      inline device_features operator & (const device_features &d1, const device_features &d2)
       {
         device_features r = d1;
         r &= d2;

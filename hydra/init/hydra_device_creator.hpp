@@ -59,7 +59,7 @@ namespace neam
         struct queue_caps
         {
           VkQueueFlagBits flags;
-          std::function<bool(size_t, const vk::physical_device &)> checker;
+          std::function<bool(vk::instance& instance, size_t, const vk::physical_device &)> checker;
           temp_queue_familly_id_t id;
         };
 
@@ -69,7 +69,7 @@ namespace neam
       public:
         /// \brief Check if a device is compatible with the requirements of the
         /// aplication
-        bool check_device(const vk::physical_device &gpu) const
+        bool check_device(vk::instance& instance, const vk::physical_device &gpu) const
         {
           // check features
           if (requested_features.check_against(gpu.get_features()) == false)
@@ -127,7 +127,7 @@ namespace neam
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
-              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu)
+              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(instance, i, gpu)
                   && qfp.queueCount > queue_consumption[i])
               {
                 ++queue_consumption[i];
@@ -145,7 +145,7 @@ namespace neam
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
-              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu)
+              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(instance, i, gpu)
                   && qfp.queueCount > queue_consumption[i])
               {
                 ++queue_consumption[i];
@@ -172,7 +172,7 @@ namespace neam
           for (size_t i = 0; i < instance.get_device_count(); ++i)
           {
             const vk::physical_device &gpu = instance.get_device(i);
-            if (check_device(gpu) == true)
+            if (check_device(instance, gpu) == true)
               result.push_back(gpu);
           }
 
@@ -227,7 +227,7 @@ namespace neam
         /// solution
         temp_queue_familly_id_t require_queue_capacity(VkQueueFlagBits flags, bool can_be_shared)
         {
-          return require_queue_capacity(flags, [](size_t, const vk::physical_device &) {return true;}, can_be_shared);
+          return require_queue_capacity(flags, [](vk::instance&, size_t, const vk::physical_device &) {return true;}, can_be_shared);
         }
 
         /// \brief Require a device with some queue capacities (like graphic, compute, transfer, ...)
@@ -238,7 +238,7 @@ namespace neam
         ///                       and there's a queue with both capabilities).
         /// The solver is pretty dumb. So if you request a lot of non-shared queues it will probably not find the ideal
         /// solution
-        temp_queue_familly_id_t require_queue_capacity(VkQueueFlagBits flags, const std::function<bool(size_t, const vk::physical_device &)> &queue_checker, bool can_be_shared)
+        temp_queue_familly_id_t require_queue_capacity(VkQueueFlagBits flags, const std::function<bool(vk::instance& instance, size_t, const vk::physical_device &)> &queue_checker, bool can_be_shared)
         {
           temp_queue_familly_id_t id = unique_queue_caps.size() + shared_queue_caps.size(); // this is a unique ID
 
@@ -303,10 +303,10 @@ namespace neam
         }
 
         /// \brief Create the device wrapper
-        vk::device create_device(vk::physical_device &gpu)
+        vk::device create_device(vk::instance& instance, vk::physical_device &gpu)
         {
           // please use a device from filter_devices
-          check::on_vulkan_error::n_assert(check_device(gpu) == true, "the selected device does not fulfill the requirements of the application");
+          check::on_vulkan_error::n_assert(check_device(instance, gpu) == true, "the selected device does not fulfill the requirements of the application");
 
           // init queues
           std::vector<size_t> queue_consumption;
@@ -322,7 +322,7 @@ namespace neam
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
-              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu)
+              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(instance, i, gpu)
                   && qfp.queueCount > queue_consumption[i])
               {
                 id_to_fq[it.id] = std::make_pair(i, queue_consumption[i]);
@@ -337,7 +337,7 @@ namespace neam
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
-              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(i, gpu)
+              if ((qfp.queueFlags & it.flags) == it.flags && it.checker(instance, i, gpu)
                   && qfp.queueCount > queue_consumption[i])
               {
                 id_to_fq[it.id] = std::make_pair(i, queue_consumption[i]);
@@ -400,7 +400,7 @@ namespace neam
           device_info.pEnabledFeatures = &features;
 
           VkDevice device;
-          check::on_vulkan_error::n_throw_exception(vkCreateDevice(gpu._get_vk_physical_device(), &device_info, nullptr, &device));
+          check::on_vulkan_error::n_assert_success(vkCreateDevice(gpu._get_vk_physical_device(), &device_info, nullptr, &device));
 
           return vk::device(instance, device, gpu, id_to_fq);
         }
@@ -421,7 +421,7 @@ namespace neam
 
 
     // implementation of the method from hydra_vulkan_instance
-    hydra_device_creator vk::instance::get_device_creator()
+    inline hydra_device_creator vk::instance::get_device_creator()
     {
       return hydra_device_creator(*this);
     }

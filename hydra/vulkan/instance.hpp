@@ -34,7 +34,9 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include <ntools/backtrace.hpp>
+
+#include "../hydra_debug.hpp"
 #include "physical_device.hpp"
 
 namespace neam
@@ -42,6 +44,7 @@ namespace neam
   namespace hydra
   {
     class hydra_device_creator;
+    class physical_device;
     namespace vk
     {
       /// \brief Wrap a vulkan instance
@@ -62,17 +65,21 @@ namespace neam
           /// Allow move semantics
           instance(instance &&o)
           : vulkan_instance(o.vulkan_instance), app_name(o.app_name),
-              gpu_list(std::move(o.gpu_list))
+              gpu_list(std::move(o.gpu_list)),
+              default_debug_callback(o.default_debug_callback)
           {
             o.vulkan_instance = nullptr;
+            o.default_debug_callback = nullptr;
           }
 
           /// \brief Destructor
           ~instance()
           {
-            remove_default_debug_callback();
             if (vulkan_instance != nullptr)
+            {
+              remove_default_debug_callback();
               vkDestroyInstance(vulkan_instance, nullptr);
+            }
           }
 
           /// \brief Return the number of GPU the system has
@@ -102,7 +109,8 @@ namespace neam
           void install_default_debug_callback(VkDebugReportFlagsEXT report_flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT)
           {
             auto vkCreateDebugReportCallbackEXT = (PFN_vkCreateDebugReportCallbackEXT) vkGetInstanceProcAddr(vulkan_instance, "vkCreateDebugReportCallbackEXT");
-            check::on_vulkan_error::n_assert(vkCreateDebugReportCallbackEXT != nullptr, "vk::instance : extension VK_EXT_DEBUG_REPORT_EXTENSION_NAME not activated");
+            check::on_vulkan_error::n_check(vkCreateDebugReportCallbackEXT != nullptr, "vk::instance : extension VK_EXT_DEBUG_REPORT_EXTENSION_NAME not activated");
+            if (vkCreateDebugReportCallbackEXT == nullptr) return;
 
             VkDebugReportCallbackCreateInfoEXT rcci
             {
@@ -112,7 +120,7 @@ namespace neam
               (PFN_vkDebugReportCallbackEXT)(&instance::debug_callback),
               nullptr
             };
-            check::on_vulkan_error::n_throw_exception(vkCreateDebugReportCallbackEXT(vulkan_instance, &rcci, nullptr, &default_debug_callback));
+            check::on_vulkan_error::n_check_success(vkCreateDebugReportCallbackEXT(vulkan_instance, &rcci, nullptr, &default_debug_callback));
           }
 
           /// \brief Remove the default debug callback, if installed
@@ -121,7 +129,8 @@ namespace neam
             if (default_debug_callback == nullptr)
               return;
             auto vkDestroyDebugReportCallbackEXT = (PFN_vkDestroyDebugReportCallbackEXT) vkGetInstanceProcAddr(vulkan_instance, "vkDestroyDebugReportCallbackEXT");
-            check::on_vulkan_error::n_assert(vkDestroyDebugReportCallbackEXT != nullptr, "vk::instance : extension VK_EXT_DEBUG_REPORT_EXTENSION_NAME not activated");
+            check::on_vulkan_error::n_check(vkDestroyDebugReportCallbackEXT != nullptr, "vk::instance : extension VK_EXT_DEBUG_REPORT_EXTENSION_NAME not activated");
+            if (vkDestroyDebugReportCallbackEXT == nullptr) return;
 
             vkDestroyDebugReportCallbackEXT(vulkan_instance, default_debug_callback, nullptr);
           }
@@ -138,13 +147,13 @@ namespace neam
           void enumerate_devices()
           {
             uint32_t gpu_count = 0;
-            check::on_vulkan_error::n_throw_exception(vkEnumeratePhysicalDevices(vulkan_instance, &gpu_count, nullptr));
+            check::on_vulkan_error::n_assert_success(vkEnumeratePhysicalDevices(vulkan_instance, &gpu_count, nullptr));
             check::on_vulkan_error::n_assert(gpu_count > 0, "no compatible GPU found");
 
             std::vector<VkPhysicalDevice> vk_gpu_list;
 
             vk_gpu_list.resize(gpu_count);
-            check::on_vulkan_error::n_throw_exception(vkEnumeratePhysicalDevices(vulkan_instance, &gpu_count, vk_gpu_list.data()));
+            check::on_vulkan_error::n_assert_success(vkEnumeratePhysicalDevices(vulkan_instance, &gpu_count, vk_gpu_list.data()));
 
             for (const VkPhysicalDevice &it : vk_gpu_list)
               gpu_list.emplace_back(physical_device(it));
@@ -154,22 +163,23 @@ namespace neam
           {
             (void)userData;
 
-            neam::cr::multiplexed_stream *ms = nullptr;
+            neam::cr::logger::severity s;
             switch (flags)
             {
-              case VK_DEBUG_REPORT_INFORMATION_BIT_EXT: ms = &neam::cr::out.info();
+              case VK_DEBUG_REPORT_INFORMATION_BIT_EXT: s = neam::cr::logger::severity::message;
                 break;
               case VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT:
-              case VK_DEBUG_REPORT_WARNING_BIT_EXT: ms = &neam::cr::out.warning();
+              case VK_DEBUG_REPORT_WARNING_BIT_EXT: s = neam::cr::logger::severity::warning;
                 break;
-              case VK_DEBUG_REPORT_ERROR_BIT_EXT: ms = &neam::cr::out.error();
+              case VK_DEBUG_REPORT_ERROR_BIT_EXT: s = neam::cr::logger::severity::error;
                 break;
-              case VK_DEBUG_REPORT_DEBUG_BIT_EXT: ms = &neam::cr::out.debug();
+              case VK_DEBUG_REPORT_DEBUG_BIT_EXT: s = neam::cr::logger::severity::debug;
                 break;
-              default: ms = &neam::cr::out.info();
+              default: s = neam::cr::logger::severity::message;
                 break;
             }
-#define _HYDRA_CASE(cs)     case cs: (*ms) << #cs; break;
+            const char* object_type = nullptr;
+#define _HYDRA_CASE(cs)     case cs: object_type = #cs; break;
             switch (objType)
             {
                 _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT)
@@ -216,8 +226,15 @@ namespace neam
 #undef _HYDRA_CASE
 
             // finally print the message:
-            (*ms) << " [" << obj << '/' << location << '/' << code << "]: " << layerPrefix << ": " << msg << std::endl;
+            neam::cr::out.log_fmt(s, std::source_location::current(),
+                                  "VULKAN VALIDATION LAYER MESSAGE: {0}:\n"
+                                  "[{1} / {2} / {3} ]: {4}:\n"
+                                  "{5}",
+                                  object_type,
+                                  obj, location, code, layerPrefix,
+                                  msg);
 
+            neam::cr::print_callstack();
             return VK_FALSE;
           }
 

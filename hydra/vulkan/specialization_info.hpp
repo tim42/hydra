@@ -33,8 +33,8 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 
-#include "../tools/memory_allocator.hpp" // used to get a fast-growing yet contiguous memory area
-#include "../hydra_exception.hpp" // for check::
+#include <ntools/memory_allocator.hpp> // used to get a fast-growing yet contiguous memory area
+#include "../hydra_debug.hpp" // for check::
 
 namespace neam
 {

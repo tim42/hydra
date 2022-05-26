@@ -33,7 +33,7 @@
 #include <vulkan/vulkan.h>
 
 #include "device.hpp"
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 namespace neam
 {
@@ -63,7 +63,7 @@ namespace neam
             sci.pNext = nullptr;
             sci.flags = 0;
 
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateSemaphore(&sci, nullptr, &vk_semaphore));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateSemaphore(&sci, nullptr, &vk_semaphore));
           }
 
           /// \brief Move constructor

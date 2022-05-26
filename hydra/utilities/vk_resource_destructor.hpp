@@ -31,6 +31,7 @@
 #define __N_154279271610614026_190128118_VK_RESOURCE_DESTRUCTOR_HPP__
 
 #include "../vulkan/fence.hpp"
+#include "memory_allocator.hpp"
 
 namespace neam
 {
@@ -38,23 +39,40 @@ namespace neam
   {
     /// \brief Destruct a list of resource when a fence becomes signaled
     /// It can also delete the fence
+    /// FIXME: optimize.
     class vk_resource_destructor
     {
       private:
         struct wrapper
         {
-          wrapper(const vk::fence *_fence) : fence(_fence) {}
+          wrapper(const vk::fence *_fence, size_t _queue_familly) : fence(_fence), queue_familly(_queue_familly) {}
           virtual ~wrapper() {}
+
           const vk::fence *fence;
+          size_t queue_familly;
+          std::list<wrapper *> sublist;
         };
         template<typename... ResourceTypes>
         struct spec_wrapper : public wrapper
         {
-          spec_wrapper(const vk::fence *_fence, ResourceTypes &&... res)
-            : wrapper {_fence}, resources(std::move(res)...)
+          spec_wrapper(const vk::fence *_fence, size_t _queue_familly, ResourceTypes &&... res)
+            : wrapper {_fence, _queue_familly}, resources(std::move(res)...)
           {}
 
           std::tuple<ResourceTypes...> resources;
+        };
+        struct frame_allocator_wrapper : public wrapper
+        {
+          frame_allocator_wrapper(size_t _queue_familly, memory_allocator& _allocator)
+            : wrapper {nullptr, _queue_familly}, allocator(_allocator)
+          {}
+
+          virtual ~frame_allocator_wrapper()
+          {
+            allocator.flush_empty_allocations();
+          }
+
+          memory_allocator& allocator;
         };
 
       public:
@@ -65,45 +83,84 @@ namespace neam
         vk_resource_destructor &operator = (vk_resource_destructor &&) = default;
         ~vk_resource_destructor()
         {
-          for (auto it = res_list.begin(); it != res_list.end(); ++it)
-            delete *it;
+          for (auto* it : res_list)
+            delete it;
+          for (auto* it : to_add)
+            delete it;
+        }
+
+        /// \brief Postpone the frame-end cleanup of the allocator, the fence is the next valid fence supplied
+        void postpone_end_frame_cleanup(const vk::queue& queue, memory_allocator& allocator)
+        {
+          to_add.push_back(new frame_allocator_wrapper{queue.get_queue_familly_index(), allocator});
+        }
+
+        /// \brief Postpone the destruction of n elements when the fence becomes signaled
+        /// \note The fence is the next valid fence
+        template<typename... ResourceTypes>
+        void postpone_destruction_to_next_fence(const vk::queue& queue, ResourceTypes&& ... resources)
+        {
+          to_add.push_back(new spec_wrapper<ResourceTypes...>{nullptr, queue.get_queue_familly_index(), std::move(resources)...});
         }
 
         /// \brief Postpone the destruction of n elements when the fence becomes signaled
         /// \note it also destroys the fence
         template<typename... ResourceTypes>
-        void postpone_destruction(vk::fence &&fence, ResourceTypes &&... resources)
+        void postpone_destruction(const vk::queue& queue, vk::fence&& fence, ResourceTypes&& ... resources)
         {
-          spec_wrapper<vk::fence, ResourceTypes...> *ptr = new spec_wrapper<vk::fence, ResourceTypes...>{nullptr, std::move(fence), std::move(resources)...};
+          auto* ptr = new spec_wrapper<vk::fence, ResourceTypes...> {nullptr, queue.get_queue_familly_index(), std::move(fence), std::move(resources)...};
           ptr->fence = &std::get<0>(ptr->resources);
+
+          for (auto it = to_add.begin(); it != to_add.end(); ++it)
+          {
+            if ((*it)->queue_familly == queue.get_queue_familly_index())
+            {
+              ptr->sublist.push_back(*it);
+              it = to_add.erase(it);
+            }
+          }
+
           res_list.push_back(ptr);
         }
 
         /// \brief Postpone the destruction of n elements when the semaphore becomes signaled
         /// \note does not destroy the fence: it must be kept alive until resources are destructed
         template<typename... ResourceTypes>
-        void postpone_destruction(const vk::fence &fence, ResourceTypes &&... resources)
+        void postpone_destruction(const vk::queue& queue, const vk::fence& fence, ResourceTypes&& ... resources)
         {
-          res_list.push_back(new spec_wrapper<ResourceTypes...>{&fence, std::move(resources)...});
+          auto* ptr = new spec_wrapper<ResourceTypes...>{&fence, queue.get_queue_familly_index(), std::move(resources)...};
+          for (auto it = to_add.begin(); it != to_add.end(); ++it)
+          {
+            if ((*it)->queue_familly == queue.get_queue_familly_index())
+            {
+              ptr->sublist.push_back(*it);
+              it = to_add.erase(it);
+            }
+          }
+          res_list.push_back(ptr);
         }
 
         /// \brief Perform the check
         void update()
         {
-          size_t cnt = 0;
           for (auto it = res_list.begin(); it != res_list.end(); ++it)
           {
             if ((*it)->fence->is_signaled())
             {
+              // clean the sublit:
+              for (auto* sub_it : (*it)->sublist)
+                delete sub_it;
+
               delete *it;
+
               it = res_list.erase(it);
-              ++cnt;
             }
           }
         }
 
       private:
         std::list<wrapper *> res_list;
+        std::list<wrapper *> to_add;
     };
   } // namespace hydra
 } // namespace neam

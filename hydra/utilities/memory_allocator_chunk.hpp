@@ -35,14 +35,121 @@
 #include <cstring>
 #include <bitset>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 #include "../vulkan/device.hpp"
 #include "../vulkan/device_memory.hpp"
 
+// #define HYDRA_ALLOCATOR_FAST_FREE
+
+#if 0
 namespace neam
 {
   namespace hydra
   {
+    /// \brief Dumb but fast allocator.
+    /// The chunk has two modes:
+    ///  - When it gets created, it first start as a 'append' allocator, where new allocation are placed right after the last allocation
+    ///  - If there's not enough free space, it then goes on a 'please destroy me' mode if the chain is transient (refusing new allocations). This keep transient allocation as fast as possible.
+    ///  - If the chain is not transient, then
+    /// \note Expect fragmentation.
+    template<unsigned ChunkAllocationSize = 32 * 1024 * 1024>
+    class memory_allocator_chunk
+    {
+      private:
+        unsigned align(unsigned alignment, unsigned value)
+        {
+          // Magic from glibc++
+          return (value - 1u + alignment) & -alignment;
+        }
+
+      public:
+        constexpr static unsigned chunk_allocation_size = ChunkAllocationSize;       // must be a power of 2
+        constexpr static unsigned invalid_allocation = ~0u;
+
+        /// \brief Should be set before any allocation has been performed. Will disable calls to free and memory tracking.
+        /// If set to true, he resulting allocator will be extremly fast but will expect elements to be very short lived as the way
+        /// it has to avoid fragmentation it to free the whole block. (only fast allocation will work).
+        bool fast_allocation_only = true;
+
+        /// \brief Return the free memory (beware of memory fragmentation)
+        unsigned get_total_free_memory() const { return free_space; }
+
+        /// \brief A fast check to see if the chunk can perform a fast allocation of said size+alignment
+        /// \note Is as slow as doing the fast allocation. So it may preferable to simply call fast_allocate instead.
+        bool can_fast_allocate(unsigned size, unsigned alignment) const
+        {
+          const unsigned aligned_offset = align(alignment, fast_allocation_offset);
+          if (aligned_offset + size <= chunk_allocation_size)
+            return true;
+          return false;
+        }
+
+        /// \brief Try to fast allocate an element of size+alignment
+        /// \return invalid_allocation on failure, otherwise return the offset within the chunk.
+        /// \note It will not try to perform a slow allocation
+        unsigned fast_allocate(unsigned size, unsigned alignment)
+        {
+          const unsigned aligned_offset = align(alignment, fast_allocation_offset);
+          if (aligned_offset + size > chunk_allocation_size)
+            return invalid_allocation;
+          free_space -= (aligned_offset + size) - fast_allocation_offset;
+          fast_allocation_offset = aligned_offset + size;
+          ++allocation_count;
+          return aligned_offset;
+        }
+
+
+        unsigned allocate(unsigned size, unsigned alignment)
+        {
+          if (size > free_space)
+            return invalid_allocation;
+
+          // deals with the fast allocation first:
+          {
+            const unsigned alloc = fast_allocate(size, alignment);
+            if (alloc != invalid_allocation || fast_allocation_only)
+              return alloc;
+          }
+
+          // slow allocation
+          return invalid_allocation;
+        }
+
+        void free(size_t offset, size_t size)
+        {
+#ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
+          check::on_vulkan_error::n_assert(allocation_count > 0, "m_a_c::free(): invalid free (no allocation remaining)");
+#endif
+
+          --allocation_count;
+          if (!allocation_count)
+          {
+            fast_allocation_offset = 0;
+            free_space = chunk_allocation_size;
+          }
+
+          // fast allocation does not supports deallocation.
+          if (fast_allocation_only)
+            return;
+        }
+
+        bool is_empty() const { return allocation_count == 0; }
+
+      private:
+        unsigned fast_allocation_offset = 0;
+        unsigned free_space = chunk_allocation_size;
+
+        unsigned allocation_count = 0;
+    };
+    
+    
+    
+    
+    
+    
+    
+    
+    
     /// \brief Manage a chunk of memory (it does not perform anything by itself,
     /// if you plan to use it, it is just a tool to manage some memory)
     /// \note Not intended to be used directly. Instead please use a
@@ -50,8 +157,8 @@ namespace neam
     /// \see class memory_allocator
     /// \note Reducing bitmap_entries may improve performance but will reduce the
     ///       granularity of the allocation (the default is to have a granularity of 512byte)
-    template<size_t ChunkAllocationSize = 8 * 1024 * 1024, size_t BitmapEntries = 256>
-    class memory_allocator_chunk
+    template<size_t ChunkAllocationSize = 16 * 1024 * 1024, size_t BitmapEntries = 256>
+    class __memory_allocator_chunk
     {
       public:
         constexpr static size_t chunk_allocation_size = ChunkAllocationSize;       // must be a power of 2
@@ -70,28 +177,28 @@ namespace neam
         /// \brief Print information about the chunk
         static void print_nfo()
         {
-          cr::out.log() << "chunk size: " << (chunk_allocation_size / (1024.f * 1024.f)) << " Mio with " << bitmap_entries << " bitmap entries" << cr::newline
-                        << "first level bits: " << first_level_bits << ", second level entries: " << second_level_entries << " (" << second_level_entries * 64 << " bits)" << cr::newline
-                        << "first_level_granularity: " << (first_level_granularity / 1024.f) << "Kio, second_level_granularity: " << (second_level_granularity / 1024.f) << "Kio" << cr::newline
-                        << "granularity: " << granularity << " bytes" << std::endl;
+//           cr::out.log() << "chunk size: " << (chunk_allocation_size / (1024.f * 1024.f)) << " Mio with " << bitmap_entries << " bitmap entries" << cr::newline
+//                         << "first level bits: " << first_level_bits << ", second level entries: " << second_level_entries << " (" << second_level_entries * 64 << " bits)" << cr::newline
+//                         << "first_level_granularity: " << (first_level_granularity / 1024.f) << "Kio, second_level_granularity: " << (second_level_granularity / 1024.f) << "Kio" << cr::newline
+//                         << "granularity: " << granularity << " bytes" << std::endl;
         }
 
         /// \brief Print some stats about the current chunk
         void print_stats()
         {
-          auto &x = cr::out.log() << "chunk@" << this << ":" << cr::newline
-                   << "free memory:      " << (free_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
-                   << "1st lvl bl:       " << std::bitset<first_level_bits>(first_level_bl) << cr::newline
-                   << "1st lvl wh:       " << std::bitset<first_level_bits>(first_level_wh) << cr::newline;
-
-          for (size_t i = 0; i < second_level_entries; i += 2)
-          {
-            x << cr::newline;
-            x << "2nd lvl bl[" << i+1 << '/' << i << "]:  " << std::bitset<64>(second_level_bl[1 + i]) << ' ' << std::bitset<64>(second_level_bl[0 + i]) << cr::newline;
-            x << "2nd lvl wh[" << i+1 << '/' << i << "]:  " << std::bitset<64>(second_level_wh[1 + i]) << ' ' << std::bitset<64>(second_level_wh[0 + i]) << cr::newline;
-          }
-
-          x << " -- --" << std::endl;
+//           auto &x = cr::out.log() << "chunk@" << this << ":" << cr::newline
+//                    << "free memory:      " << (free_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
+//                    << "1st lvl bl:       " << std::bitset<first_level_bits>(first_level_bl) << cr::newline
+//                    << "1st lvl wh:       " << std::bitset<first_level_bits>(first_level_wh) << cr::newline;
+// 
+//           for (size_t i = 0; i < second_level_entries; i += 2)
+//           {
+//             x << cr::newline;
+//             x << "2nd lvl bl[" << i+1 << '/' << i << "]:  " << std::bitset<64>(second_level_bl[1 + i]) << ' ' << std::bitset<64>(second_level_bl[0 + i]) << cr::newline;
+//             x << "2nd lvl wh[" << i+1 << '/' << i << "]:  " << std::bitset<64>(second_level_wh[1 + i]) << ' ' << std::bitset<64>(second_level_wh[0 + i]) << cr::newline;
+//           }
+// 
+//           x << " -- --" << std::endl;
         }
 
         /// \brief Check if the chunk is fully empty
@@ -158,11 +265,11 @@ namespace neam
         {
           check::on_vulkan_error::n_assert(size <= chunk_allocation_size, "m_a_c::allocate(): size is greater than the chunk");
 
-          if (size > free_memory || size == 0) // fast exit
-            return -1;
-
           // re-align size
           if (size % granularity) size += granularity - (size % granularity);
+
+          if (size > free_memory || size == 0) // fast exit
+            return -1;
 
           int offset = 0; // base offset
           int aoffset = 0; // aligned offset
@@ -171,7 +278,7 @@ namespace neam
 
 #ifndef HYDRA_ALLOCATOR_FAST_FREE
           // super-fast search (using black levels) //
-          /*if (size >= second_level_granularity * 2)
+          if (size >= second_level_granularity * 2)
           {
             aoffset = fast_free_space_search(0, size, alignment);
             if (aoffset == -1) // not found !
@@ -182,7 +289,7 @@ namespace neam
             if (asize % granularity) size += granularity - (asize % granularity);
             mark_space_as_used(offset, asize);
             return aoffset;
-          }*/
+          }
 #endif
           // fastidious search
           while (offset + size < chunk_allocation_size)
@@ -364,13 +471,13 @@ namespace neam
             unsigned bm_idx = offset / (granularity * 64);
             unsigned bm_bidx = (offset / granularity) % 64;
             uint64_t tmp = bitmap[bm_idx];
-            for (; ((tmp >> bm_bidx) & 1) != 0; bm_bdix = (bm_bdix + 1) % 64, offset += granularity)
+            for (; ((tmp >> bm_bidx) & 1) != 0; bm_bidx = (bm_bidx + 1) % 64, offset += granularity)
             {
               if (bm_bidx == 63)
               {
                 if (bm_idx + 1 == bitmap_entries)
                   break;
-                tmp = bitmap_entries[++bm_idx];
+                tmp = bitmap[++bm_idx];
               }
             }
           }
@@ -447,7 +554,7 @@ namespace neam
             unsigned bm_idx = offset / (granularity * 64);
             unsigned bm_bidx = (offset / granularity) % 64;
             uint64_t tmp = bitmap[bm_idx];
-            for (; ((tmp >> bm_bidx) & 1) == 0; bm_bdix = (bm_bdix + 1) % 64, offset += granularity)
+            for (; ((tmp >> bm_bidx) & 1) == 0; bm_bidx = (bm_bidx + 1) % 64, offset += granularity)
             {
               if (offset - orig_offset > size)
                 break;
@@ -455,7 +562,7 @@ namespace neam
               {
                 if (bm_idx + 1 == bitmap_entries)
                   break;
-                tmp = bitmap_entries[++bm_idx];
+                tmp = bitmap[++bm_idx];
               }
             }
 
@@ -474,7 +581,7 @@ namespace neam
           if (size >= first_level_granularity * 2)
           {
             // We should find at least bit_count unmarked bit
-            unsigned bit_count = size / (first_level_granularity * 2) - 1;
+            unsigned bit_count = size / (first_level_granularity * 1) - 1;
             unsigned fl_bidx = offset / first_level_granularity;
             if (offset % first_level_granularity != 0)
               ++fl_bidx;
@@ -671,6 +778,6 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-
+#endif
 #endif // __N_25333212431235330807_348316347_MEMORY_ALLOCATOR_CHUNK_HPP__
 

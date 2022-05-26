@@ -53,6 +53,12 @@ namespace neam
 
       struct image_info
       {
+        const image_view &imgv;
+        VkImageLayout layout;
+      };
+
+      struct image_sampler_info
+      {
         const sampler &splr;
         const image_view &imgv;
         VkImageLayout layout;
@@ -108,15 +114,39 @@ namespace neam
 
           /// \brief  Update the contents of a descriptor set object.
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkUpdateDescriptorSets.html">vulkan khr doc</a>
-          void write_descriptor_set(uint32_t dst_binding, uint32_t dst_array, VkDescriptorType dtype, const std::vector<image_info> &img_info)
+          void write_descriptor_set(uint32_t dst_binding, uint32_t dst_array, VkDescriptorType dtype, const std::vector<image_sampler_info> &img_info)
           {
             std::vector<VkDescriptorImageInfo> dii;
             dii.reserve(img_info.size());
-            for (const image_info &it : img_info)
+            for (const auto &it : img_info)
             {
               dii.push_back(VkDescriptorImageInfo
               {
                 it.splr._get_vk_sampler(),
+                it.imgv.get_vk_image_view(),
+                it.layout
+              });
+            }
+            VkWriteDescriptorSet vk_wds
+            {
+              VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, vk_ds,
+              dst_binding, dst_array, (uint32_t)dii.size(), dtype,
+              dii.data(), nullptr, nullptr
+            };
+            dev._vkUpdateDescriptorSets(1, &vk_wds, 0, nullptr);
+          }
+          
+          /// \brief  Update the contents of a descriptor set object.
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkUpdateDescriptorSets.html">vulkan khr doc</a>
+          void write_descriptor_set(uint32_t dst_binding, uint32_t dst_array, VkDescriptorType dtype, const std::vector<image_info> &img_info)
+          {
+            std::vector<VkDescriptorImageInfo> dii;
+            dii.reserve(img_info.size());
+            for (const auto &it : img_info)
+            {
+              dii.push_back(VkDescriptorImageInfo
+              {
+                nullptr,
                 it.imgv.get_vk_image_view(),
                 it.layout
               });

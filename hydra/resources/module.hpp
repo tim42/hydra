@@ -1,12 +1,9 @@
 //
-// file : threading.hpp
-// in : file:///home/tim/projects/hydra/hydra/threading/threading.hpp
-//
 // created by : Timothée Feuillet
-// date: Sat Apr 23 2016 16:53:14 GMT+0200 (CEST)
+// date: 2021-11-26
 //
 //
-// Copyright (c) 2016 Timothée Feuillet
+// Copyright (c) 2021 Timothée Feuillet
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,17 +24,35 @@
 // SOFTWARE.
 //
 
-#ifndef __N_199128927904014722_105516436_THREADING_HPP__
-#define __N_199128927904014722_105516436_THREADING_HPP__
+#pragma once
 
-#include "task_scheduler.hpp"
+#include <resources/asset.hpp>
 
-namespace neam
+namespace neam::resources
 {
-  namespace hydra
+  /// \brief represent a chunk of code (a .so object) with a resource_id.
+  ///        Modules can be packed with the other resources.
+  ///        Resource accessor is : [module:/path/to/module](target)
+  ///        (`target` being the target (like `linux` for a linux target))
+  class exe_module : public asset<"module", exe_module>
   {
-  } // namespace hydra
-} // namespace neam
+    public: // api:
+      void load();
+      void unload();
 
-#endif // __N_199128927904014722_105516436_THREADING_HPP__
+    public: // resource stuff:
+      static exe_module from_raw_data(const raw_data& data, status& st);
 
+      /// \brief Saves the asset to packed data
+      static raw_data to_raw_data(const exe_module& data, status& st);
+
+      /// \brief Pack a resource to the raw data
+      static exe_module from_resource_data(raw_data&& data, status& st)
+      {
+        // we don't have a different resource from raw / packed
+        return from_raw_data(data, st);
+      }
+
+    private:
+  };
+}

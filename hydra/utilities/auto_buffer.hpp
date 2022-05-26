@@ -33,7 +33,7 @@
 #include <deque>
 #include <type_traits>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "../vulkan/device.hpp"
 #include "../vulkan/buffer.hpp"
@@ -57,6 +57,7 @@ namespace neam
   {
     /// \brief Manage a buffer
     /// \todo Use persistence for that. That would awesome (and not so slow)
+    /// \fixme: it's broken. fix it. >:(
     class auto_buffer
     {
       private:
@@ -122,11 +123,10 @@ namespace neam
         }
 
         /// \brief Set some infromation about transfers
-        void set_transfer_info(batch_transfers &_btransfers, vk::queue &_subqueue, vk::command_pool &_cmd_pool, vk_resource_destructor &_vrd)
+        void set_transfer_info(batch_transfers &_btransfers, vk::queue &_subqueue, vk_resource_destructor &_vrd)
         {
           btransfers = &_btransfers;
           subq = &_subqueue;
-          cmd_pool = &_cmd_pool;
           vrd = &_vrd;
         }
 
@@ -221,7 +221,7 @@ namespace neam
           apply();
 
 #ifndef HYDRA_AUTO_BUFFER_SMART_SYNC_FORCE_TRANSFER
-          if (sync_end_offset - sync_start_offset < max_update_size || true)
+          if (sync_end_offset - sync_start_offset < max_update_size/* || true*/)
           {
             sync_start_offset -= sync_start_offset % 4;
             size_t sz = sync_end_offset - sync_start_offset;
@@ -239,12 +239,12 @@ namespace neam
             vk::fence end_fence(dev);
             si >> end_fence;
             subq->submit(si);
-            vrd->postpone_destruction(std::move(end_fence), std::move(cmdb));
+            vrd->postpone_destruction(*subq, std::move(end_fence), std::move(cmdb));
           }
           else
 #endif
           {
-            btransfers->add_transfer(buf, offset_in_buf + sync_start_offset, sync_end_offset - sync_start_offset, data_cpy + sync_start_offset, sig_sema);
+            btransfers->add_transfer(buf, offset_in_buf + sync_start_offset, sync_end_offset - sync_start_offset, data_cpy + sync_start_offset, subq->get_queue_familly_index(), sig_sema);
           }
 
           // reset ranges
@@ -254,7 +254,7 @@ namespace neam
 #else // no sync, only transfer
           (void)force_refresh;
           apply();
-          btransfers->add_transfer(buf, offset_in_buf, size_of_buf, data_cpy, sig_sema);
+          btransfers->add_transfer(buf, offset_in_buf, size_of_buf, data_cpy, subq->get_queue_familly_index(), sig_sema);
 #endif
         }
 
@@ -356,7 +356,6 @@ namespace neam
         batch_transfers *btransfers;
         vk::queue *subq;
         vk::semaphore *sig_sema = nullptr;
-        vk::command_pool *cmd_pool;
         vk_resource_destructor *vrd;
 
         // the data

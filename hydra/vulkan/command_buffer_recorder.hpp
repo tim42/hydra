@@ -32,7 +32,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "device.hpp"
 #include "command_buffer.hpp"
@@ -71,6 +71,8 @@ namespace neam
           void bind_pipeline(const pipeline &p, VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS)
           {
             last_bound_pipeline = &p;
+            if (!last_bound_pipeline->is_valid())
+              return;
             dev._fn_vkCmdBindPipeline(cmd_buff._get_vk_command_buffer(), bind_point, p.get_vk_pipeline());
           }
 
@@ -170,6 +172,9 @@ namespace neam
           /// \todo maybe something that will encapsulate vertex count and first vertex
           void draw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance)
           {
+            if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
+              return;
+
             dev._fn_vkCmdDraw(cmd_buff._get_vk_command_buffer(), vertex_count, instance_count, first_vertex, first_instance);
           }
 
@@ -178,6 +183,9 @@ namespace neam
           /// \todo maybe something that will encapsulate vertex count and first vertex
           void draw_indirect(const buffer &buf, size_t offset, uint32_t draw_count, uint32_t stride)
           {
+            if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
+              return;
+
             dev._fn_vkCmdDrawIndirect(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, draw_count, stride);
           }
 
@@ -186,6 +194,9 @@ namespace neam
           /// \todo maybe something that will encapsulate index count, first index & vertex offset
           void draw_indexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance)
           {
+            if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
+              return;
+
             dev._fn_vkCmdDrawIndexed(cmd_buff._get_vk_command_buffer(), index_count, instance_count, first_index, vertex_offset, first_instance);
           }
 
@@ -194,6 +205,9 @@ namespace neam
           /// \todo maybe something that will encapsulate vertex count and first vertex
           void draw_indexed_indirect(const buffer &buf, size_t offset, uint32_t draw_count, uint32_t stride)
           {
+            if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
+              return;
+
             dev._fn_vkCmdDrawIndexedIndirect(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, draw_count, stride);
           }
 
@@ -201,6 +215,9 @@ namespace neam
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdDispatch.html">vulkan khr doc</a>
           void dispatch(uint32_t x, uint32_t y, uint32_t z)
           {
+            if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
+              return;
+
             dev._fn_vkCmdDispatch(cmd_buff._get_vk_command_buffer(), x, y, z);
           }
 
@@ -212,6 +229,9 @@ namespace neam
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdDispatchIndirect.html">vulkan khr doc</a>
           void dispatch_indirect(const buffer &buf, size_t offset = 0)
           {
+            if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
+              return;
+
             dev._fn_vkCmdDispatchIndirect(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset);
           }
 
@@ -556,7 +576,7 @@ namespace neam
       // // Implementation of the begin_recording thing // //
       // ////////////////////////////////////////////////////
 
-      command_buffer_recorder command_buffer::begin_recording(VkCommandBufferUsageFlagBits flags)
+      inline command_buffer_recorder command_buffer::begin_recording(VkCommandBufferUsageFlagBits flags)
       {
         VkCommandBufferBeginInfo vk_cbbi
         {
@@ -564,12 +584,12 @@ namespace neam
           flags, nullptr
         };
 
-        check::on_vulkan_error::n_throw_exception(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }
 
-      command_buffer_recorder command_buffer::begin_recording(bool occlusion_query_enable, VkQueryControlFlags query_flags, VkQueryPipelineStatisticFlags stat_flags,
+      inline command_buffer_recorder command_buffer::begin_recording(bool occlusion_query_enable, VkQueryControlFlags query_flags, VkQueryPipelineStatisticFlags stat_flags,
                                                               VkCommandBufferUsageFlagBits flags)
       {
         VkCommandBufferInheritanceInfo vk_cbii
@@ -585,12 +605,12 @@ namespace neam
           flags, &vk_cbii
         };
 
-        check::on_vulkan_error::n_throw_exception(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }
 
-      command_buffer_recorder command_buffer::begin_recording(const framebuffer &fb,
+      inline command_buffer_recorder command_buffer::begin_recording(const framebuffer &fb,
                                               bool occlusion_query_enable, VkQueryControlFlags query_flags, VkQueryPipelineStatisticFlags stat_flags,
                                               VkCommandBufferUsageFlagBits flags)
       {
@@ -607,12 +627,12 @@ namespace neam
           flags, &vk_cbii
         };
 
-        check::on_vulkan_error::n_throw_exception(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }
 
-      command_buffer_recorder command_buffer::begin_recording(const render_pass &rp, uint32_t subpass,
+      inline command_buffer_recorder command_buffer::begin_recording(const render_pass &rp, uint32_t subpass,
                                               bool occlusion_query_enable, VkQueryControlFlags query_flags, VkQueryPipelineStatisticFlags stat_flags,
                                               VkCommandBufferUsageFlagBits flags)
       {
@@ -629,12 +649,12 @@ namespace neam
           flags, &vk_cbii
         };
 
-        check::on_vulkan_error::n_throw_exception(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }
 
-      command_buffer_recorder command_buffer::begin_recording(const framebuffer &fb, const render_pass &rp, uint32_t subpass,
+      inline command_buffer_recorder command_buffer::begin_recording(const framebuffer &fb, const render_pass &rp, uint32_t subpass,
                                               bool occlusion_query_enable, VkQueryControlFlags query_flags, VkQueryPipelineStatisticFlags stat_flags,
                                               VkCommandBufferUsageFlagBits flags)
       {
@@ -651,7 +671,7 @@ namespace neam
           flags, &vk_cbii
         };
 
-        check::on_vulkan_error::n_throw_exception(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }

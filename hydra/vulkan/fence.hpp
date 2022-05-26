@@ -67,7 +67,7 @@ namespace neam
             fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
             fenceInfo.pNext = NULL;
             fenceInfo.flags = create_signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0;
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateFence(&fenceInfo, nullptr, &vk_fence));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateFence(&fenceInfo, nullptr, &vk_fence));
           }
 
           /// \brief Move constructor
@@ -93,7 +93,7 @@ namespace neam
             while (res == VK_TIMEOUT);
 
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
-            check::on_vulkan_error::n_throw_exception(forward_result(res) /* from vkWaitForFences() */);
+            check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkWaitForFences() */);
 #endif
           }
 
@@ -109,7 +109,7 @@ namespace neam
             if (res == VK_TIMEOUT)
               return false;
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
-            check::on_vulkan_error::n_throw_exception(forward_result(res) /* from vkWaitForFences() */);
+            check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkWaitForFences() */);
 #endif
             return res == VK_SUCCESS;
           }
@@ -120,7 +120,7 @@ namespace neam
             VkResult res;
             res = dev._vkResetFences(1, &vk_fence);
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
-            check::on_vulkan_error::n_throw_exception(forward_result(res) /* from vkResetFences() */);
+            check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkResetFences() */);
 #endif
           }
 
@@ -133,7 +133,7 @@ namespace neam
             if (res == VK_NOT_READY)
               return false;
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
-            check::on_vulkan_error::n_throw_exception(forward_result(res) /* from vkGetFenceStatus() */);
+            check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkGetFenceStatus() */);
 #endif
             return res == VK_SUCCESS;
           }
@@ -156,7 +156,7 @@ namespace neam
             while (res == VK_TIMEOUT);
 
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
-            check::on_vulkan_error::n_throw_exception(forward_result(res) /* from vkWaitForFences() */);
+            check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkWaitForFences() */);
 #endif
           }
 
@@ -184,7 +184,7 @@ namespace neam
             if (res == VK_TIMEOUT)
               return false;
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
-            check::on_vulkan_error::n_throw_exception(forward_result(res) /* from vkWaitForFences() */);
+            check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkWaitForFences() */);
 #endif
             return res == VK_SUCCESS;
           }

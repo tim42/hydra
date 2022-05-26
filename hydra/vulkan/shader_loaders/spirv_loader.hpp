@@ -34,7 +34,7 @@
 #include <fstream>
 
 #include "../shader_module.hpp"
-#include "../../hydra_exception.hpp"
+#include "../../hydra_debug.hpp"
 
 namespace neam
 {
@@ -49,9 +49,15 @@ namespace neam
           /// \brief Create a shader module from a SIPRV file
           static shader_module load_from_file(device &dev, const std::string &filename)
           {
+#ifndef HYDRA_NO_MESSAGES
+            neam::cr::out().log("loading SPIRV shader '{}'...", filename);
+#endif
             std::ifstream file(filename, std::ios::binary | std::ios::ate);
 
-            check::on_vulkan_error::n_assert(file.is_open(), "can't load spirv file: does not exists");
+            if (!check::on_vulkan_error::n_check(file.is_open() && file, "can't load spirv file '{}'", filename))
+            {
+              return shader_module(dev, nullptr, "main");
+            }
 
 
             size_t sz = file.tellg();
@@ -60,7 +66,7 @@ namespace neam
             std::vector<uint32_t> buffer(sz / sizeof(uint32_t) + 1);
             file.read((char *)buffer.data(), sz);
 
-            return shader_module(dev, buffer.data(), sz);
+            return shader_module(dev, buffer.data(), sz, "main");
           }
 
         private:

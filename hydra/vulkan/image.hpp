@@ -35,10 +35,10 @@
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
-#include "../tools/execute_pack.hpp"
+// #include "../tools/execute_pack.hpp"
 // #include "../tools/genseq.hpp"
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "device.hpp"
 #include "device_memory.hpp"
@@ -130,11 +130,11 @@ namespace neam
             ici.queueFamilyIndexCount = 0;
             ici.pQueueFamilyIndices = nullptr;
 
-            NEAM_EXECUTE_PACK(ImageCreators::update_image_create_info(ici));
+            (ImageCreators::update_image_create_info(ici), ...);
 
             VkImage vk_image;
 
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateImage(&ici, nullptr, &vk_image));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateImage(&ici, nullptr, &vk_image));
             return image(dev, vk_image, ici);
           }
 
@@ -176,14 +176,14 @@ namespace neam
             ici.queueFamilyIndexCount = 0;
             ici.pQueueFamilyIndices = nullptr;
 
-            NEAM_EXECUTE_PACK(ImageCreators::update_image_create_info(ici));
+            (ImageCreators::update_image_create_info(ici), ...);
 
             for (const auto &it : container)
               it.update_image_create_info(ici);
 
             VkImage vk_image;
 
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateImage(&ici, nullptr, &vk_image));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateImage(&ici, nullptr, &vk_image));
             return image(dev, vk_image, ici);
           }
 
@@ -219,20 +219,20 @@ namespace neam
             ici.queueFamilyIndexCount = 0;
             ici.pQueueFamilyIndices = nullptr;
 
-            NEAM_EXECUTE_PACK(ImageCreators::update_image_create_info(ici));
+            (ImageCreators::update_image_create_info(ici), ...);
 
-            NEAM_EXECUTE_PACK(args.update_image_create_info(ici));
+            (args.update_image_create_info(ici), ...);
 
             VkImage vk_image;
 
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateImage(&ici, nullptr, &vk_image));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateImage(&ici, nullptr, &vk_image));
             return image(dev, vk_image, ici);
           }
 
           /// \brief Bind some memory to the image
           void bind_memory(const device_memory &mem, size_t offset)
           {
-            check::on_vulkan_error::n_throw_exception(dev._vkBindImageMemory(vk_image, mem._get_vk_device_memory(), offset));
+            check::on_vulkan_error::n_assert_success(dev._vkBindImageMemory(vk_image, mem._get_vk_device_memory(), offset));
           }
 
           /// \brief Return a structure that describe the image resource

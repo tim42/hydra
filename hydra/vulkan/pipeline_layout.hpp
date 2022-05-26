@@ -31,7 +31,7 @@
 #define __N_4443230312283431824_1717216114_PIPELINE_LAYOUT_HPP__
 
 #include <vulkan/vulkan.h>
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "device.hpp"
 
@@ -59,7 +59,7 @@ namespace neam
               0, nullptr,
               0, nullptr
             };
-            check::on_vulkan_error::n_throw_exception(dev._vkCreatePipelineLayout(&plci, nullptr, &vk_playout));
+            check::on_vulkan_error::n_assert_success(dev._vkCreatePipelineLayout(&plci, nullptr, &vk_playout));
           }
 
           /// \brief Create a pipeline layout (without push constants)
@@ -76,7 +76,7 @@ namespace neam
               (uint32_t)vk_dsl_vct.size(), vk_dsl_vct.data(),
               (uint32_t)pc_range_vct.size(), pc_range_vct.data()
             };
-            check::on_vulkan_error::n_throw_exception(dev._vkCreatePipelineLayout(&plci, nullptr, &vk_playout));
+            check::on_vulkan_error::n_assert_success(dev._vkCreatePipelineLayout(&plci, nullptr, &vk_playout));
           }
 
           ~pipeline_layout()

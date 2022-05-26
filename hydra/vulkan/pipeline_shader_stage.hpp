@@ -27,106 +27,119 @@
 // SOFTWARE.
 //
 
-#ifndef __N_316313208783933411_2145825365_PIPELINE_SHADER_STAGE_HPP__
-#define __N_316313208783933411_2145825365_PIPELINE_SHADER_STAGE_HPP__
+#pragma once
 
 #include <vector>
 #include <deque>
 
 #include <vulkan/vulkan.h>
+#include <ntools/async/chain.hpp>
 
 #include "device.hpp"
 #include "shader_module.hpp"
 #include "specialization_info.hpp"
 
-namespace neam
+namespace neam::hydra::vk
 {
-  namespace hydra
+  class pipeline_creator;
+
+  /// \brief Hold some information about shaders of a given pipeline.
+  /// This is meant to be used in/with a pipeline object.
+  class pipeline_shader_stage
   {
-    namespace vk
-    {
-      /// \brief Hold some information about shaders of a given pipeline.
-      /// This is meant to be used in/with a pipeline object.
-      class pipeline_shader_stage
+    public:
+      pipeline_shader_stage(pipeline_creator& _creator) : creator(&_creator) {}
+
+      ~pipeline_shader_stage() {}
+
+      pipeline_shader_stage &add_shader(async::chain<shader_module &>&& shader_chain, VkShaderStageFlagBits stage)
       {
-        public:
-          pipeline_shader_stage() {}
-          pipeline_shader_stage(pipeline_shader_stage &&o) : vk_pssci(std::move(o.vk_pssci)), entry_points(std::move(o.entry_points)) {}
-          pipeline_shader_stage(const pipeline_shader_stage &o) : vk_pssci(o.vk_pssci), entry_points(o.entry_points)
+        unsigned current_version = version_count;
+        ++in_process;
+        shader_chain.then([this, current_version, stage](shader_module& shader)
+        {
+          if (version_count == current_version)
           {
-            for (size_t i = 0; i < entry_points.size(); ++i)
-              vk_pssci[i].pName = entry_points[i].data();
+            add_shader(shader, stage);
+            --in_process;
+            if (!in_process)
+              ask_pipeline_refresh();
           }
-          pipeline_shader_stage &operator = (pipeline_shader_stage &&o)
-          {
-            if (&o == this)
-              return *this;
-            vk_pssci = std::move(o.vk_pssci);
-            entry_points = std::move(o.entry_points);
-            return *this;
-          }
-          pipeline_shader_stage &operator = (const pipeline_shader_stage &o)
-          {
-            if (&o == this)
-              return *this;
-            vk_pssci = o.vk_pssci;
-            entry_points = o.entry_points;
-            for (size_t i = 0; i < entry_points.size(); ++i)
-              vk_pssci[i].pName = entry_points[i].data();
-            return *this;
-          }
+        });
+        return *this;
+      }
 
-          ~pipeline_shader_stage() {}
+      /// \brief Add a shader to the pipeline
+      /// \note It is your duty to maintain the shader_module & the specialization_info (if specified) alive.
+      ///       the entry_point parameter is kept alive by this class.
+      pipeline_shader_stage &add_shader(shader_module &shader, VkShaderStageFlagBits stage, specialization_info *nfo = nullptr)
+      {
+        shader_modules.push_back(&shader);
+        vk_pssci.push_back(VkPipelineShaderStageCreateInfo
+        {
+          VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+          nullptr,
+          0,
+          stage,
+          shader.get_vk_shader_module(),
+          shader.get_entry_point().c_str(),
+          (nfo ? & ((VkSpecializationInfo &)(*nfo)) : nullptr)
+        });
+        return *this;
+      }
 
-          /// \brief Add a shader to the pipeline
-          /// \note It is your duty to maintain the shader_module & the specialization_info (if specified) alive.
-          ///       the entry_point parameter is kept alive by this class.
-          pipeline_shader_stage &add_shader(shader_module &shader, VkShaderStageFlagBits stage, const std::string &entry_point = "main", specialization_info *nfo = nullptr)
-          {
-            entry_points.push_back(entry_point);
-            vk_pssci.push_back(VkPipelineShaderStageCreateInfo
-            {
-              VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-              nullptr,
-              0,
-              stage,
-              shader.get_vk_shader_module(),
-              entry_points.back().data(),
-              (nfo ? & ((VkSpecializationInfo &)(*nfo)) : nullptr)
-            });
-            return *this;
-          }
+      /// \brief For a better integration with the vulkan API
+      operator VkPipelineShaderStageCreateInfo *() { return vk_pssci.size() ? vk_pssci.data() : nullptr; }
+      /// \brief For a better integration with the vulkan API
+      operator const VkPipelineShaderStageCreateInfo *() const { return vk_pssci.size() ? vk_pssci.data() : nullptr; }
 
-          /// \brief Directly add a VkPipelineShaderStageCreateInfo structure into the array
-          /// \note advanced
-          pipeline_shader_stage &_add_shader(const VkPipelineShaderStageCreateInfo &pssci)
-          {
-            vk_pssci.push_back(pssci);
-            return *this;
-          }
+      /// \brief Return the number of shader stage specified in this pipeline_shader_stage object
+      size_t get_shader_stage_count() const { return vk_pssci.size(); }
 
-          /// \brief For a better integration with the vulkan API
-          operator VkPipelineShaderStageCreateInfo *() { return vk_pssci.size() ? vk_pssci.data() : nullptr; }
-          /// \brief For a better integration with the vulkan API
-          operator const VkPipelineShaderStageCreateInfo *() const { return vk_pssci.size() ? vk_pssci.data() : nullptr; }
+      /// \brief Clear the shader pipeline
+      void clear()
+      {
+        vk_pssci.clear();
+        shader_modules.clear();
+        ++version_count;
+        in_process = 0;
+      }
 
-          /// \brief Return the number of shader stage specified in this pipeline_shader_stage object
-          size_t get_shader_stage_count() const { return vk_pssci.size(); }
+      void refresh()
+      {
+        for (unsigned i = 0; i < vk_pssci.size(); ++i)
+        {
+          vk_pssci[i].pName = shader_modules[i]->get_entry_point().c_str();
+          vk_pssci[i].module = shader_modules[i]->get_vk_shader_module();
+        }
+      }
 
-          /// \brief Clear the shader pipeline
-          void clear()
-          {
-            vk_pssci.clear();
-            entry_points.clear();
-          }
+      bool is_valid() const
+      {
+        if (has_async_operations_in_process())
+          return false;
+        for (const auto& it : shader_modules)
+        {
+          if (!it->is_valid())
+            return false;
+        }
+        return true;
+      }
 
-        private:
-          std::vector<VkPipelineShaderStageCreateInfo> vk_pssci;
-          std::deque<std::string> entry_points;
-      };
-    } // namespace vk
-  } // namespace hydra
-} // namespace neam
+      bool has_async_operations_in_process() const
+      {
+        return in_process != 0;
+      }
 
-#endif // __N_316313208783933411_2145825365_PIPELINE_SHADER_STAGE_HPP__
+    private:
+      void ask_pipeline_refresh();
 
+    private:
+      pipeline_creator* creator;
+
+      std::vector<VkPipelineShaderStageCreateInfo> vk_pssci;
+      std::vector<shader_module*> shader_modules;
+      unsigned version_count = 0;
+      unsigned in_process = 0;
+  };
+}

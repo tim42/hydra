@@ -36,7 +36,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 namespace neam
 {

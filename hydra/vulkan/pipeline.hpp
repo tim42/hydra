@@ -33,7 +33,7 @@
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "pipeline_multisample_state.hpp"
 #include "pipeline_shader_stage.hpp"
@@ -81,6 +81,8 @@ namespace neam
               dev._vkDestroyPipeline(vk_pipeline, nullptr);
           }
 
+          bool is_valid() const { return vk_pipeline != nullptr; }
+
         public: // advanced
           /// \brief Return the VkPipeline
           VkPipeline get_vk_pipeline() const { return vk_pipeline; }
@@ -94,7 +96,7 @@ namespace neam
       class pipeline_creator
       {
         public:
-          // no default constructors / copy things / ... 'cause the compiler is able to do it for me
+          pipeline_creator(device& _dev) : dev(_dev), pss(*this), current(dev, nullptr) {}
 
           /// \brief Return the shader stages of the pipeline
           pipeline_shader_stage &get_pipeline_shader_stage() { return pss; }
@@ -168,19 +170,19 @@ namespace neam
           {
             base_pipeline = _base_pipeline;
 
-            if (base_pipeline)
-              create_info.flags |= VK_PIPELINE_CREATE_DERIVATIVE_BIT;
-            else
-              create_info.flags &= ~VK_PIPELINE_CREATE_DERIVATIVE_BIT;
+//             if (base_pipeline)
+//               create_info.flags |= VK_PIPELINE_CREATE_DERIVATIVE_BIT;
+//             else
+//               create_info.flags &= ~VK_PIPELINE_CREATE_DERIVATIVE_BIT;
           }
 
           /// \brief Allow (or disallow) the pipeline to be derived (default: false)
-          void allow_derivate_pipelines(bool allow)
+          void allow_derivate_pipelines(bool /*allow*/)
           {
-            if (allow)
-              create_info.flags |= VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
-            else
-              create_info.flags &= ~VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+//             if (allow)
+//               create_info.flags |= VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+//             else
+//               create_info.flags &= ~VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
           }
 
           /// \brief Get the allow derivate state
@@ -195,15 +197,34 @@ namespace neam
           VkPipelineCreateFlags get_flags() const { return create_info.flags; }
 
           /// \brief Create a new pipeline
-          pipeline create_pipeline(device &dev, pipeline_cache *cache = nullptr)
+          pipeline& create_pipeline(pipeline_cache *cache = nullptr)
           {
             // refresh structs
             pvs.refresh();
             pcb.refresh();
+            pss.refresh();
+
+            if (!pss.is_valid())
+            {
+              if (!pss.has_async_operations_in_process())
+                neam::cr::out().error("hydra::pipeline_creator: Trying to create a pipeline with invalid shader stages");
+              else
+                neam::cr::out().debug("hydra::pipeline_creator: Waiting for async operation to finish (yielding empty pipeline)");
+              current = pipeline(dev, nullptr);
+              return current;
+            }
 
             // update the create_info
             create_info.stageCount = pss.get_shader_stage_count();
             create_info.pStages = pss;
+
+            pds.remove(VK_DYNAMIC_STATE_VIEWPORT);
+            pds.remove(VK_DYNAMIC_STATE_SCISSOR);
+
+            if (pvs.uses_dynamic_viewports())
+              pds.add(VK_DYNAMIC_STATE_VIEWPORT);
+            if (pvs.uses_dynamic_scissors())
+              pds.add(VK_DYNAMIC_STATE_SCISSOR);
 
             create_info.pVertexInputState = &static_cast<const VkPipelineVertexInputStateCreateInfo &>(pvis);
             create_info.pInputAssemblyState = &static_cast<const VkPipelineInputAssemblyStateCreateInfo &>(pias);
@@ -223,9 +244,9 @@ namespace neam
 
             create_info.layout = layout->_get_vk_pipeline_layout();
             create_info.renderPass = rp->get_vk_render_pass();
-            if (base_pipeline)
-              create_info.basePipelineHandle = base_pipeline->get_vk_pipeline();
-            else
+//             if (base_pipeline)
+//               create_info.basePipelineHandle = base_pipeline->get_vk_pipeline();
+//             else
               create_info.basePipelineHandle = nullptr;
             create_info.basePipelineIndex = (int32_t)-1;
 
@@ -233,12 +254,17 @@ namespace neam
             VkPipelineCache pcache = nullptr;
             if (cache)
               pcache = cache->get_vk_pipeline_cache();
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateGraphicsPipelines(pcache, 1, &create_info, nullptr, &p));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateGraphicsPipelines(pcache, 1, &create_info, nullptr, &p));
 
-            return pipeline(dev, p);
+            current = pipeline(dev, p);
+            return current;
           }
 
+          pipeline& get_pipeline() { return current; }
+          const pipeline& get_pipeline() const { return current; }
+
         private:
+          device &dev;
           VkGraphicsPipelineCreateInfo create_info = VkGraphicsPipelineCreateInfo
           {
             VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, nullptr, 0,
@@ -263,7 +289,13 @@ namespace neam
           render_pass *rp = nullptr;
 
           pipeline *base_pipeline = nullptr;
+          pipeline current;
       };
+
+      inline void pipeline_shader_stage::ask_pipeline_refresh()
+      {
+        creator->create_pipeline();
+      }
     } // namespace vk
   } // namespace hydra
 } // namespace neam

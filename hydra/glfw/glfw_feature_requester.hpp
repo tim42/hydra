@@ -35,7 +35,7 @@
 #include "../init/feature_requester_interface.hpp"
 #include "../init/hydra_instance_creator.hpp"
 #include "../init/hydra_device_creator.hpp"
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "glfw_window.hpp"
 
@@ -66,30 +66,6 @@ namespace neam
             for (size_t i = 0; i < required_extension_count; ++i)
               hic.require_extension(required_extensions[i]);
           }
-
-          virtual void request_device_layers_extensions(const vk::instance &, hydra_device_creator &hdc) override
-          {
-            if (windows.size())
-            {
-              for (window *w : windows)
-              {
-                // We need one queue that support presenting, but we only have to request this if the user
-                // asked for a window creation
-                temp_queue_familly_id_t tid = hdc.require_queue_capacity(queue_flags, [w](size_t qindex, const neam::hydra::vk::physical_device &gpu) -> bool
-                {
-                  VkBool32 r = false;
-                  vkGetPhysicalDeviceSurfaceSupportKHR(gpu._get_vk_physical_device(), qindex, w->_get_surface()._get_vk_surface(), &r);
-                  return r;
-                }, false);
-
-                w->_set_win_queue(tid);
-              }
-            }
-          }
-
-        public: // advanced
-          std::list<window *> windows;
-          VkQueueFlagBits queue_flags = VK_QUEUE_GRAPHICS_BIT;
       };
     } // namespace glfw
   } // namespace hydra

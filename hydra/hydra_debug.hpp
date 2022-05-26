@@ -1,12 +1,5 @@
 //
-// file : hydra_exception.hpp
-// in : file:///home/tim/projects/hydra/hydra/hydra_exception.hpp
-//
-// created by : Timothée Feuillet
-// date: Sat Apr 23 2016 15:40:41 GMT+0200 (CEST)
-//
-//
-// Copyright (c) 2016 Timothée Feuillet
+// Copyright (c) 2021 Timothée Feuillet
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,81 +20,13 @@
 // SOFTWARE.
 //
 
-#ifndef __N_171722537216030995_2439329636_HYDRA_EXCEPTION_HPP__
-#define __N_171722537216030995_2439329636_HYDRA_EXCEPTION_HPP__
+#pragma once
 
-#include "tools/demangle.hpp"
-#include "tools/debug/vk_errors.hpp"
-#include "tools/debug/assert.hpp"
-
-#include "hydra_reflective.hpp"
+#include <ntools/debug/vk_errors.hpp>
+#include <ntools/debug/unix_errors.hpp>
+#include <ntools/debug/assert.hpp>
 
 namespace neam
 {
-  namespace hydra
-  {
-    /// \brief An exception class that log the exception/report to reflective on throw
-    class exception : public std::exception
-    {
-      public:
-        exception(const std::string &s, const std::experimental::source_location& sloc = std::experimental::source_location::current()) noexcept
-         : str(s)
-        {
-          NHR_FAIL(neam::r::exception_reason(N_REASON_INFO, strdup(s.data())));
-          HYDRA_LOG_TPL(error, sloc, "[EXCEPTION]: " << s << std::endl);
-        }
-        exception(std::string &&s, const std::experimental::source_location& sloc = std::experimental::source_location::current()) noexcept
-         : str(s)
-        {
-          NHR_FAIL(neam::r::exception_reason(N_REASON_INFO, strdup(s.data())));
-          HYDRA_LOG_TPL(error, sloc, "[EXCEPTION]: " << s << std::endl);
-        }
-        exception(const std::string &&s) noexcept
-         : str(s)
-        {
-          NHR_FAIL(neam::r::exception_reason(N_REASON_INFO, strdup(s.data())));
-          HYDRA_LOG(error, "[EXCEPTION]: " << s << std::endl);
-        }
-
-        virtual ~exception() noexcept
-        {
-        }
-
-        virtual const char *what() const noexcept
-        {
-          return str.data();
-        }
-
-      private:
-        std::string str;
-    };
-
-    /// \brief a generic exception class that appends the ExceptionType type name to the string
-    template<typename ExceptionType>
-    class exception_tpl : public exception
-    {
-      public:
-        exception_tpl(const std::string &s, const std::experimental::source_location& sloc = std::experimental::source_location::current()) noexcept
-         : exception(neam::demangle<ExceptionType>() + ": " + s, sloc)
-        {
-        }
-        exception_tpl(std::string &&s, const std::experimental::source_location& sloc = std::experimental::source_location::current()) noexcept
-         : exception(neam::demangle<ExceptionType>() + ": " + (s), sloc)
-        {
-        }
-
-        virtual ~exception_tpl() noexcept
-        {
-        }
-    };
-
-    namespace check
-    {
-      /// \brief a shorthand to throwing exceptions when vulkan make some errors
-      using on_vulkan_error = neam::debug::on_error<neam::debug::errors::vulkan_errors, neam::hydra::exception_tpl>;
-    } // namespace check
-  } // namespace hydra
 } // namespace neam
-
-#endif // __N_171722537216030995_2439329636_HYDRA_EXCEPTION_HPP__
 

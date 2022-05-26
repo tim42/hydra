@@ -39,7 +39,7 @@
 
 #include <hydra/tools/logger/logger.hpp>
 #include <hydra/tools/chrono.hpp>
-#include <hydra/tools/uninitialized.hpp>
+// #include <hydra/tools/uninitialized.hpp>
 
 namespace neam
 {
@@ -66,8 +66,6 @@ namespace neam
           ppmgr(device),
           render_pass(device)
       {
-        btransfers.allocate_memory(mem_alloc);
-
         emgr.register_window_listener(this);
       }
 
@@ -131,9 +129,7 @@ namespace neam
         float frame_cnt = 0.f;
         float wasted = 0.f;
 
-        neam::cr::out.log() << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
-        btransfers.wait_end_transfer(); // can't really do much more here
-
+        neam::cr::out().log("btransfer: remaining {0} bytes...", btransfers.get_total_size_to_transfer());
 
         pre_run_hook();
 
@@ -173,13 +169,16 @@ namespace neam
 
           vrd.update();
           render_loop_hook();
-          btransfers.start();
+          btransfers.transfer(mem_alloc);
 
           ++frame_cnt;
 
           if (cr.get_accumulated_time() > 2.)
           {
-            neam::cr::out.log() << (cr.get_accumulated_time() / frame_cnt) * 1000.f << "ms/frame [wasted: " << (wasted / frame_cnt) * 1000.f << "ms/frame]\t(" << (int)(frame_cnt / cr.get_accumulated_time()) << "fps)" << std::endl;
+            neam::cr::out().log("{0} ms/frame [wasted: {1} ms/frame]\t({2} fps)",
+                                (cr.get_accumulated_time() / frame_cnt) * 1000.f,
+                                (wasted / frame_cnt) * 1000.f,
+                                (int)(frame_cnt / cr.get_accumulated_time()));
             ++count_since_mem_stats;
             if (count_since_mem_stats == 4)
             {

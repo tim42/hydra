@@ -32,7 +32,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 #include "image.hpp"
 #include "rgba_swizzle.hpp"
 #include "image_subresource_range.hpp"
@@ -47,24 +47,47 @@ namespace neam
       /// ask an image instance for an image_view.
       class image_view
       {
+        private:
+          static VkImageViewType get_view_type_from_image(VkImageType t, glm::uvec3 img_sz)
+          {
+            switch (t)
+            {
+              case VK_IMAGE_TYPE_1D:
+                if (img_sz.y == 1)
+                  return VK_IMAGE_VIEW_TYPE_1D;
+                return VK_IMAGE_VIEW_TYPE_1D_ARRAY;
+
+              case VK_IMAGE_TYPE_2D:
+                if (img_sz.z == 1)
+                  return VK_IMAGE_VIEW_TYPE_2D;
+                return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+
+              case VK_IMAGE_TYPE_3D: return VK_IMAGE_VIEW_TYPE_3D;
+
+              case VK_IMAGE_TYPE_MAX_ENUM:
+              default:
+                check::debug::n_check(false, "invalid image format");
+            }
+            return VK_IMAGE_VIEW_TYPE_MAX_ENUM;
+          }
         public: // advanced
           /// \brief Construct an image_view from a vulkan create-info object
           image_view(device &_dev, const VkImageViewCreateInfo &vk_create_info, VkImageView _vk_image_view = nullptr)
            : dev(_dev), vk_image_view(_vk_image_view), view_create_info(vk_create_info)
           {
             if (!vk_image_view)
-              check::on_vulkan_error::n_throw_exception(dev._vkCreateImageView(&view_create_info, nullptr, &vk_image_view));
+              check::on_vulkan_error::n_assert_success(dev._vkCreateImageView(&view_create_info, nullptr, &vk_image_view));
           }
 
           /// \brief Create a VkImageViewCreateInfo from a set of 2+1+3 parameters
-          image_view(device &_dev, const image &img, VkImageViewType view_type, VkFormat view_format = VK_FORMAT_MAX_ENUM, const rgba_swizzle &comp_mapping = rgba_swizzle(), const image_subresource_range &isr = image_subresource_range())
+          image_view(device &_dev, const image &img, VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_MAX_ENUM, VkFormat view_format = VK_FORMAT_MAX_ENUM, const rgba_swizzle &comp_mapping = rgba_swizzle(), const image_subresource_range &isr = image_subresource_range())
            : image_view(_dev, VkImageViewCreateInfo
           {
             VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             nullptr,
             0,
             img.get_vk_image(),
-            view_type,
+            (view_type == VK_IMAGE_VIEW_TYPE_MAX_ENUM ? get_view_type_from_image(img.get_image_type(), img.get_size()) : view_type),
             (view_format == VK_FORMAT_MAX_ENUM ? img.get_image_format() : view_format),
             comp_mapping,
             isr

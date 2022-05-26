@@ -33,7 +33,9 @@
 #include <map>
 #include <string>
 
-#include "../hydra_exception.hpp"
+#include <ntools/id/string_id.hpp>
+#include <ntools/id/id.hpp>
+#include "../hydra_debug.hpp"
 
 #include "../vulkan/device.hpp"
 #include "../vulkan/pipeline.hpp"
@@ -63,79 +65,80 @@ namespace neam
         pipeline_manager(pipeline_manager &&o) : dev(o.dev), pipelines_map(std::move(o.pipelines_map)) {}
 
         /// \brief Add a new pipeline
-        void add_pipeline(const std::string &name, vk::pipeline_creator pc)
+        void _add_pipeline(const id_t id, vk::pipeline_creator&& pc)
         {
-          pipelines_map.emplace(name, pipeline_holder { pc, pc.create_pipeline(dev) });
+          pipelines_map.emplace(id, std::move(pc));
+        }
+
+        vk::pipeline_creator& add_pipeline(const id_t id)
+        {
+          pipelines_map.emplace(id, dev);
+          return pipelines_map.at(id);
         }
 
         /// \brief Return the pipeline creator of a given pipeline
         /// To then refresh the pipeline, call refresh(name);
-        vk::pipeline_creator &get_pipeline_creator(const std::string &name)
-        {
-          auto it = pipelines_map.find(name);
-          check::on_vulkan_error::n_assert(it != pipelines_map.end(), "could not find pipeline: " + name);
-          return it->second.pc;
-        }
-
-        /// \brief Return the pipeline creator of a given pipeline
-        /// To then refresh the pipeline, call refresh(name);
-        const vk::pipeline_creator &get_pipeline_creator(const std::string &name) const
-        {
-          auto it = pipelines_map.find(name);
-          check::on_vulkan_error::n_assert(it != pipelines_map.end(), "could not find pipeline: " + name);
-          return it->second.pc;
-        }
+        const vk::pipeline_creator& get_pipeline_creator(const id_t id) const { return find_pipeline(id)->second; }
+        vk::pipeline_creator& get_pipeline_creator(const id_t id) { return find_pipeline(id)->second; }
+        const vk::pipeline_creator& get_pipeline_creator(const string_id id) const { return find_pipeline(id)->second; }
+        vk::pipeline_creator& get_pipeline_creator(const string_id id) { return find_pipeline(id)->second; }
 
         /// \brief Return the pipeline named name
-        vk::pipeline &get_pipeline(const std::string &name)
-        {
-          auto it = pipelines_map.find(name);
-          check::on_vulkan_error::n_assert(it != pipelines_map.end(), "could not find pipeline: " + name);
-          return it->second.p;
-        }
-
-        /// \brief Return the pipeline named name
-        const vk::pipeline &get_pipeline(const std::string &name) const
-        {
-          auto it = pipelines_map.find(name);
-          check::on_vulkan_error::n_assert(it != pipelines_map.end(), "could not find pipeline: " + name);
-          return it->second.p;
-        }
+        const vk::pipeline& get_pipeline(const id_t id) const { return find_pipeline(id)->second.get_pipeline(); }
+        vk::pipeline& get_pipeline(const id_t id) { return find_pipeline(id)->second.get_pipeline(); }
+        const vk::pipeline& get_pipeline(const string_id id) const { return find_pipeline(id)->second.get_pipeline(); }
+        vk::pipeline& get_pipeline(const string_id id) { return find_pipeline(id)->second.get_pipeline(); }
 
         /// \brief Refresh a single pipeline
-        void refresh(const std::string &name)
+        void refresh(const string_id id)
         {
-          auto it = pipelines_map.find(name);
-          check::on_vulkan_error::n_assert(it != pipelines_map.end(), "could not find pipeline: " + name);
-
-          if (it->second.pc.allow_derivate_pipelines())
+          auto it = find_pipeline(id);
+          if (it->second.allow_derivate_pipelines())
           {
-            it->second.pc.set_base_pipeline(&it->second.p);
-            it->second.p = it->second.pc.create_pipeline(dev);
-            it->second.pc.set_base_pipeline(nullptr);
+            it->second.set_base_pipeline(&it->second.get_pipeline());
+            it->second.create_pipeline();
+            it->second.set_base_pipeline(nullptr);
           }
           else
           {
             // slow path
-            it->second.p = it->second.pc.create_pipeline(dev);
+            it->second.create_pipeline();
+          }
+        }
+
+        void refresh(const id_t id)
+        {
+          auto it = find_pipeline(id);
+
+          if (it->second.allow_derivate_pipelines())
+          {
+            it->second.set_base_pipeline(&it->second.get_pipeline());
+            it->second.set_base_pipeline(nullptr);
+          }
+          else
+          {
+            // slow path
+            it->second.create_pipeline();
           }
         }
 
         /// \brief Recreate all the pipelines
-        void refresh()
+        void refresh(vk_resource_destructor& vrd, vk::queue& queue)
         {
           for (auto &it : pipelines_map)
           {
-            if (it.second.pc.allow_derivate_pipelines())
+            if (it.second.allow_derivate_pipelines())
             {
-              it.second.pc.set_base_pipeline(&it.second.p);
-              it.second.p = it.second.pc.create_pipeline(dev);
-              it.second.pc.set_base_pipeline(nullptr);
+              vrd.postpone_destruction_to_next_fence(queue, std::move(it.second.get_pipeline()));
+//               it.second.set_base_pipeline(&it.second.get_pipeline());
+              it.second.create_pipeline();
+//               it.second.set_base_pipeline(nullptr);
             }
             else
             {
               // slow path
-              it.second.p = it.second.pc.create_pipeline(dev);
+              vrd.postpone_destruction_to_next_fence(queue, std::move(it.second.get_pipeline()));
+              it.second.create_pipeline();
             }
           }
         }
@@ -147,7 +150,35 @@ namespace neam
 
       private:
         vk::device &dev;
-        std::map<std::string, pipeline_holder> pipelines_map;
+        std::map<id_t, vk::pipeline_creator> pipelines_map;
+
+      private:
+        auto find_pipeline(id_t id) const -> decltype(pipelines_map.find(id))
+        {
+          auto it = pipelines_map.find(id);
+          check::on_vulkan_error::n_check(it != pipelines_map.end(), "could not find pipeline: {}", id);
+          return it;
+        }
+        auto find_pipeline(id_t id) -> decltype(pipelines_map.find(id))
+        {
+          auto it = pipelines_map.find(id);
+          check::on_vulkan_error::n_check(it != pipelines_map.end(), "could not find pipeline: {}", id);
+          return it;
+        }
+
+        auto find_pipeline(string_id id) const -> decltype(pipelines_map.find(id))
+        {
+          auto it = pipelines_map.find(id);
+          check::on_vulkan_error::n_check(it != pipelines_map.end(), "could not find pipeline: {}", id.get_string());
+          return it;
+        }
+
+        auto find_pipeline(string_id id) -> decltype(pipelines_map.find(id))
+        {
+          auto it = pipelines_map.find(id);
+          check::on_vulkan_error::n_check(it != pipelines_map.end(), "could not find pipeline: {}", id.get_string());
+          return it;
+        }
     };
   } // namespace hydra
 } // namespace neam

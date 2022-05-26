@@ -33,7 +33,7 @@
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "device.hpp"
 #include "device_memory.hpp"
@@ -51,7 +51,7 @@ namespace neam
           buffer(device &_dev, const VkBufferCreateInfo &create_info)
             : dev(_dev), buffer_size(create_info.size)
           {
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateBuffer(&create_info, nullptr, &vk_buffer));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateBuffer(&create_info, nullptr, &vk_buffer));
           }
 
           /// \brief Create from an already existing vulkan buffer object
@@ -100,7 +100,7 @@ namespace neam
           /// \brief Bind some memory to the buffer
           void bind_memory(const device_memory &mem, size_t offset)
           {
-            check::on_vulkan_error::n_throw_exception(dev._vkBindBufferMemory(vk_buffer, mem._get_vk_device_memory(), offset));
+            check::on_vulkan_error::n_assert_success(dev._vkBindBufferMemory(vk_buffer, mem._get_vk_device_memory(), offset));
           }
 
           /// \brief Return the buffer size (in byte)

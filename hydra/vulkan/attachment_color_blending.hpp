@@ -91,7 +91,7 @@ namespace neam
               VK_BLEND_OP_ADD,                      // op  (color)
 
               VK_BLEND_FACTOR_ONE,                  // src (alpha)
-              VK_BLEND_FACTOR_ZERO,                 // dst (alpha)
+              VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,  // dst (alpha)
               VK_BLEND_OP_ADD,                      // op  (alpha)
 
               // color write mask

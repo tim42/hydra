@@ -30,6 +30,7 @@
 #include <imgui.h>
 
 #include "imgui_context.hpp"
+#include "imgui_renderpass.hpp"
 
 namespace neam
 {

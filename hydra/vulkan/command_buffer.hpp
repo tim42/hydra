@@ -32,7 +32,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "device.hpp"
 #include "command_pool.hpp"
@@ -107,10 +107,10 @@ namespace neam
                                                   VkCommandBufferUsageFlagBits flags = (VkCommandBufferUsageFlagBits)0);
 
           /// \brief Reset the command buffer
-          void reset(VkCommandBufferResetFlags flags = 0) { check::on_vulkan_error::n_throw_exception(dev._fn_vkResetCommandBuffer(cmd_buf, flags)); }
+          void reset(VkCommandBufferResetFlags flags = 0) { check::on_vulkan_error::n_assert_success(dev._fn_vkResetCommandBuffer(cmd_buf, flags)); }
 
           /// \brief End the recording of the command buffer
-          void end_recording() { check::on_vulkan_error::n_throw_exception(dev._fn_vkEndCommandBuffer(cmd_buf)); }
+          void end_recording() { check::on_vulkan_error::n_assert_success(dev._fn_vkEndCommandBuffer(cmd_buf)); }
 
         public: // advanced
           /// \brief Return the vulkan command buffer
@@ -128,7 +128,7 @@ namespace neam
       // // Implementations // //
       // ////////////////////////
 
-      command_buffer command_pool::create_command_buffer(VkCommandBufferLevel level)
+      inline command_buffer command_pool::create_command_buffer(VkCommandBufferLevel level)
       {
         VkCommandBufferAllocateInfo cmd_cr;
         cmd_cr.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -138,12 +138,12 @@ namespace neam
         cmd_cr.commandBufferCount = 1;
 
         VkCommandBuffer cmd_buf;
-        check::on_vulkan_error::n_throw_exception(dev._vkAllocateCommandBuffers(&cmd_cr, &cmd_buf));
+        check::on_vulkan_error::n_assert_success(dev._vkAllocateCommandBuffers(&cmd_cr, &cmd_buf));
 
         return command_buffer(dev, *this, cmd_buf);
       }
 
-      std::vector<command_buffer> command_pool::create_command_buffers(size_t count, VkCommandBufferLevel level)
+      inline std::vector<command_buffer> command_pool::create_command_buffers(size_t count, VkCommandBufferLevel level)
       {
         VkCommandBufferAllocateInfo cmd_cr;
         cmd_cr.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -154,7 +154,7 @@ namespace neam
 
         std::vector<VkCommandBuffer> vk_cmd_bufs;
         vk_cmd_bufs.resize(count);
-        check::on_vulkan_error::n_throw_exception(dev._vkAllocateCommandBuffers(&cmd_cr, vk_cmd_bufs.data()));
+        check::on_vulkan_error::n_assert_success(dev._vkAllocateCommandBuffers(&cmd_cr, vk_cmd_bufs.data()));
 
         std::vector<command_buffer> cmd_bufs;
         cmd_bufs.reserve(count);

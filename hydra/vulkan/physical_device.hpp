@@ -33,8 +33,6 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 
-#include "../vulkan/instance.hpp"
-
 #include "device_features.hpp"
 #include "layer.hpp"
 #include "extension.hpp"
@@ -77,11 +75,11 @@ namespace neam
             std::vector<VkLayerProperties> vk_layers;
             do
             {
-              check::on_vulkan_error::n_throw_exception(vkEnumerateDeviceLayerProperties(gpu, &count, nullptr));
+              check::on_vulkan_error::n_assert_success(vkEnumerateDeviceLayerProperties(gpu, &count, nullptr));
               if (count == 0)
                 break;
               vk_layers.resize(count);
-              res = check::on_vulkan_error::n_throw_exception(vkEnumerateDeviceLayerProperties(gpu, &count, vk_layers.data()));
+              res = check::on_vulkan_error::n_assert_success(vkEnumerateDeviceLayerProperties(gpu, &count, vk_layers.data()));
             }
             while (res == VK_INCOMPLETE);
             for (const VkLayerProperties &it : vk_layers)
@@ -91,11 +89,11 @@ namespace neam
             std::vector<VkExtensionProperties> vk_extensions;
             do
             {
-              check::on_vulkan_error::n_throw_exception(vkEnumerateDeviceExtensionProperties(gpu, nullptr, &count, nullptr));
+              check::on_vulkan_error::n_assert_success(vkEnumerateDeviceExtensionProperties(gpu, nullptr, &count, nullptr));
               if (count == 0)
                 break;
               vk_extensions.resize(count);
-              res = check::on_vulkan_error::n_throw_exception(vkEnumerateDeviceExtensionProperties(gpu, nullptr, &count, vk_extensions.data()));
+              res = check::on_vulkan_error::n_assert_success(vkEnumerateDeviceExtensionProperties(gpu, nullptr, &count, vk_extensions.data()));
             }
             while (res == VK_INCOMPLETE);
             for (const VkExtensionProperties &it : vk_extensions)

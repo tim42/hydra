@@ -124,13 +124,13 @@ namespace neam
         mesh.vertex_input_state() = dummy_vertex::get_vertex_input_state();
         mesh.allocate_memory(mem_alloc);
 
-        mesh.transfer_data(btransfers, 0, sizeof(indices[0]) * indices.size(), indices.data());
-        mesh.transfer_data(btransfers, 1, sizeof(vertices[0]) * vertices.size(), vertices.data());
+        mesh.transfer_data(btransfers, 0, sizeof(indices[0]) * indices.size(), indices.data(), gqueue.get_queue_familly_index());
+        mesh.transfer_data(btransfers, 1, sizeof(vertices[0]) * vertices.size(), vertices.data(), gqueue.get_queue_familly_index());
 
         //////////////////////////////////////////////////////////////////////////////
         // allocate memory for the image (+ transfer data to it)
         {
-          neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::optimal_image);
+          neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::persistent_optimal_image);
           hydra_logo_img.bind_memory(*ma.mem(), ma.offset());
           // the memory allocation is destructed, but that isn't so important
 
@@ -143,7 +143,7 @@ namespace neam
         // allocate memory for the uniform buffer (+ transfer data to it)
         {
           uniform_buffer.set_transfer_info(btransfers, tqueue, transfer_cmd_pool, vrd);
-          neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(uniform_buffer.get_buffer().get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+          neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(uniform_buffer.get_buffer().get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::persistent);
           // the memory allocation is destructed, but that isn't so important
 
           uniform_buffer.get_buffer().bind_memory(*ma.mem(), ma.offset());
@@ -152,7 +152,7 @@ namespace neam
           offset = uniform_buffer.watch(time, offset, neam::hydra::buffer_layout::std140);
           offset = uniform_buffer.watch(screen_resolution, offset, neam::hydra::buffer_layout::std140);
 
-          btransfers.start(); // We can transfer buffers while the other things initialize...
+          btransfers.transfer(mem_alloc);
         }
 
         hydra_logo_img_view = decltype(hydra_logo_img_view)(new neam::hydra::vk::image_view(device, hydra_logo_img, VK_IMAGE_VIEW_TYPE_2D));
@@ -230,7 +230,7 @@ namespace neam
               {
                 const size_t sz = (rand() & 0xFFFF) + 1;
                 if (memory_allocation_tests.size() < 4096 * 2) // limit the number of allocations
-                  memory_allocation_tests.emplace_back(mem_alloc.allocate_memory(sz, 1, mti));
+                  memory_allocation_tests.emplace_back(mem_alloc.allocate_memory(sz, 1, mti, neam::hydra::allocation_type::short_lived));
                 break;
               }
               default: // exit the loop

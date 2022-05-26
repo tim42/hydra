@@ -60,12 +60,12 @@ namespace neam
           uint32_t instance_layer_count;
           do
           {
-            res = check::on_vulkan_error::n_throw_exception(vkEnumerateInstanceLayerProperties(&instance_layer_count, nullptr));
+            res = check::on_vulkan_error::n_assert_success(vkEnumerateInstanceLayerProperties(&instance_layer_count, nullptr));
 
             if (instance_layer_count == 0)
               break;
             vk_layer_list.resize(instance_layer_count);
-            res = check::on_vulkan_error::n_throw_exception(vkEnumerateInstanceLayerProperties(&instance_layer_count, vk_layer_list.data()));
+            res = check::on_vulkan_error::n_assert_success(vkEnumerateInstanceLayerProperties(&instance_layer_count, vk_layer_list.data()));
           }
           while (res == VK_INCOMPLETE);
 
@@ -86,12 +86,12 @@ namespace neam
           uint32_t instance_layer_count;
           do
           {
-            res = check::on_vulkan_error::n_throw_exception(vkEnumerateInstanceExtensionProperties(NULL, &instance_layer_count, nullptr));
+            res = check::on_vulkan_error::n_assert_success(vkEnumerateInstanceExtensionProperties(NULL, &instance_layer_count, nullptr));
 
             if (instance_layer_count == 0)
               break;
             vk_ext_list.resize(instance_layer_count);
-            res = check::on_vulkan_error::n_throw_exception(vkEnumerateInstanceExtensionProperties(NULL, &instance_layer_count, vk_ext_list.data()));
+            res = check::on_vulkan_error::n_assert_success(vkEnumerateInstanceExtensionProperties(NULL, &instance_layer_count, vk_ext_list.data()));
           }
           while (res == VK_INCOMPLETE);
 
@@ -143,16 +143,16 @@ namespace neam
         size_t get_engine_version() const { return engine_version; }
 
         /// \brief Check if a given extension is provided by vulkan
-        bool have_extension(const std::string &extension_name) const { return instance_extension_list.count(extension_name); }
+        bool has_extension(const std::string &extension_name) const { return instance_extension_list.count(extension_name); }
         /// \brief Check if a given layer is provided by vulkan
-        bool have_layer(const std::string &layer_name) const { return instance_layer_list.count(layer_name); }
+        bool has_layer(const std::string &layer_name) const { return instance_layer_list.count(layer_name); }
 
         /// \brief Require an extension for the instance
         /// \throw neam::hydra::exception if the extension does not exists
         void require_extension(const std::string &extension_name)
         {
-          if (!have_extension(extension_name))
-            throw exception_tpl<hydra_instance_creator>("Required extension is not provided by vulkan");
+          check::on_vulkan_error::n_assert(has_extension(extension_name), "Required extension is not provided by vulkan: {0}", extension_name);
+
           if (!instance_extensions.count(extension_name))
             instance_extensions.emplace(extension_name);
         }
@@ -168,8 +168,7 @@ namespace neam
         /// \throw neam::hydra::exception if the layer does not exists
         void require_layer(const std::string &layer_name)
         {
-          if (!have_layer(layer_name))
-            throw exception_tpl<hydra_instance_creator>("Required layer is not provided by vulkan");
+          check::on_vulkan_error::n_assert(has_layer(layer_name), "Required layer is not provided by vulkan: {0}", layer_name);
           if (!instance_layers.count(layer_name))
             instance_layers.emplace(layer_name);
         }
@@ -241,7 +240,7 @@ namespace neam
                                               : nullptr;
 
           VkInstance vk_inst;
-          check::on_vulkan_error::n_throw_exception(vkCreateInstance(&inst_info, nullptr, &vk_inst));
+          check::on_vulkan_error::n_assert_success(vkCreateInstance(&inst_info, nullptr, &vk_inst));
 
           return vk::instance(vk_inst, app_name);
         }
@@ -263,7 +262,7 @@ namespace neam
         size_t app_version;
         std::string engine_name;
         size_t engine_version;
-        uint32_t vulkan_api_version = VK_MAKE_VERSION(1, 0, 0);
+        uint32_t vulkan_api_version = VK_HEADER_VERSION_COMPLETE;
 
         std::set<std::string> instance_layers;
         std::set<std::string> instance_extensions;

@@ -36,7 +36,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 #include "device.hpp"
 #include "pipeline_cache_data.hpp"
 
@@ -64,7 +64,7 @@ namespace neam
               0, nullptr
             };
 
-            check::on_vulkan_error::n_throw_exception(dev._vkCreatePipelineCache(&create_info, nullptr, &vk_pcache));
+            check::on_vulkan_error::n_assert_success(dev._vkCreatePipelineCache(&create_info, nullptr, &vk_pcache));
           }
 
           /// \brief Create a cache with some data
@@ -79,7 +79,7 @@ namespace neam
               data_size, data
             };
 
-            check::on_vulkan_error::n_throw_exception(dev._vkCreatePipelineCache(&create_info, nullptr, &vk_pcache));
+            check::on_vulkan_error::n_assert_success(dev._vkCreatePipelineCache(&create_info, nullptr, &vk_pcache));
           }
 
           /// \brief Move constructor
@@ -101,16 +101,16 @@ namespace neam
             tmp_caches.reserve(caches.size());
             for (const pipeline_cache *it : caches)
               tmp_caches.push_back(it->get_vk_pipeline_cache());
-            check::on_vulkan_error::n_throw_exception(dev._vkMergePipelineCaches(vk_pcache, tmp_caches.size(), tmp_caches.data()));
+            check::on_vulkan_error::n_assert_success(dev._vkMergePipelineCaches(vk_pcache, tmp_caches.size(), tmp_caches.data()));
           }
 
           /// \brief Return the pipeline cache data
           pipeline_cache_data get_cache_data() const
           {
             size_t data_size = 0;
-            check::on_vulkan_error::n_throw_exception(dev._vkGetPipelineCacheData(vk_pcache, &data_size, nullptr));
+            check::on_vulkan_error::n_assert_success(dev._vkGetPipelineCacheData(vk_pcache, &data_size, nullptr));
             void *data = operator new(data_size, std::nothrow);
-            check::on_vulkan_error::n_throw_exception(dev._vkGetPipelineCacheData(vk_pcache, &data_size, data));
+            check::on_vulkan_error::n_assert_success(dev._vkGetPipelineCacheData(vk_pcache, &data_size, data));
 
             return pipeline_cache_data(data, data_size);
           }

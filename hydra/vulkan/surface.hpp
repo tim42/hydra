@@ -34,7 +34,7 @@
 
 #include <glm/glm.hpp>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "instance.hpp"
 #include "physical_device.hpp"
@@ -61,20 +61,20 @@ namespace neam
             reload_capabilities();
 
             uint32_t count = 0;
-            check::on_vulkan_error::n_throw_exception(
+            check::on_vulkan_error::n_assert_success(
               vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vk_physical_device(), vk_surface, &count, nullptr)
             );
             formats.resize(count);
-            check::on_vulkan_error::n_throw_exception(
+            check::on_vulkan_error::n_assert_success(
               vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vk_physical_device(), vk_surface, &count, formats.data())
             );
 
             count = 0;
-            check::on_vulkan_error::n_throw_exception(
+            check::on_vulkan_error::n_assert_success(
               vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vk_physical_device(), vk_surface, &count, nullptr)
             );
             modes.resize(count);
-            check::on_vulkan_error::n_throw_exception(
+            check::on_vulkan_error::n_assert_success(
               vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vk_physical_device(), vk_surface, &count, modes.data())
             );
           }
@@ -100,7 +100,7 @@ namespace neam
           {
             if (phydev._get_vk_physical_device() == nullptr)
               return;
-            check::on_vulkan_error::n_throw_exception(
+            check::on_vulkan_error::n_assert_success(
               vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phydev._get_vk_physical_device(), vk_surface, &capabilities)
             );
           }
@@ -112,20 +112,20 @@ namespace neam
 
             reload_capabilities();
             uint32_t count = 0;
-            check::on_vulkan_error::n_throw_exception(
+            check::on_vulkan_error::n_assert_success(
               vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vk_physical_device(), vk_surface, &count, nullptr)
             );
             formats.resize(count);
-            check::on_vulkan_error::n_throw_exception(
+            check::on_vulkan_error::n_assert_success(
               vkGetPhysicalDeviceSurfaceFormatsKHR(phydev._get_vk_physical_device(), vk_surface, &count, formats.data())
             );
 
             count = 0;
-            check::on_vulkan_error::n_throw_exception(
+            check::on_vulkan_error::n_assert_success(
               vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vk_physical_device(), vk_surface, &count, nullptr)
             );
             modes.resize(count);
-            check::on_vulkan_error::n_throw_exception(
+            check::on_vulkan_error::n_assert_success(
               vkGetPhysicalDeviceSurfacePresentModesKHR(phydev._get_vk_physical_device(), vk_surface, &count, modes.data())
             );
           }

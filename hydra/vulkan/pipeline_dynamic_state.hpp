@@ -89,6 +89,13 @@ namespace neam
             vk_pdsci.pDynamicStates = vk_dyn_states.data();
           }
 
+          void remove(VkDynamicState ds)
+          {
+            vk_dyn_states.erase(std::remove(vk_dyn_states.begin(), vk_dyn_states.end(), ds), vk_dyn_states.end());
+            vk_pdsci.dynamicStateCount = vk_dyn_states.size();
+            vk_pdsci.pDynamicStates = vk_dyn_states.data();
+          }
+
           /// \brief Remove every single dynamic states
           void clear()
           {

@@ -32,7 +32,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 #include "device.hpp"
 
 #include "descriptor_set_layout.hpp"
@@ -51,7 +51,7 @@ namespace neam
           descriptor_pool(device &_dev, const VkDescriptorPoolCreateInfo &create_info)
             : dev(_dev)
           {
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateDescriptorPool(&create_info, nullptr, &vk_dpool));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateDescriptorPool(&create_info, nullptr, &vk_dpool));
           }
 
           descriptor_pool(device &_dev, VkDescriptorPool _vk_dpool) : dev(_dev), vk_dpool(_vk_dpool) {}
@@ -79,7 +79,7 @@ namespace neam
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkResetDescriptorPool.html">vulkan khr doc</a>
           void reset()
           {
-            check::on_vulkan_error::n_throw_exception(dev._vkResetDescriptorPool(vk_dpool, 0));
+            check::on_vulkan_error::n_assert_success(dev._vkResetDescriptorPool(vk_dpool, 0));
           }
 
           /// \brief Allocate some new descriptors from to the pool
@@ -96,7 +96,7 @@ namespace neam
             };
             std::vector<VkDescriptorSet> ds_sets;
             ds_sets.resize(dsl_vct.size());
-            check::on_vulkan_error::n_throw_exception(dev._vkAllocateDescriptorSets(&ds_allocate, ds_sets.data()));
+            check::on_vulkan_error::n_assert_success(dev._vkAllocateDescriptorSets(&ds_allocate, ds_sets.data()));
 
             std::vector<descriptor_set> ret;
             ret.reserve(ds_sets.size());
@@ -121,7 +121,7 @@ namespace neam
               1, &vk_dsl
             };
             VkDescriptorSet rset;
-            check::on_vulkan_error::n_throw_exception(dev._vkAllocateDescriptorSets(&ds_allocate, &rset));
+            check::on_vulkan_error::n_assert_success(dev._vkAllocateDescriptorSets(&ds_allocate, &rset));
 
             if (allow_free)
               return descriptor_set(dev, this, rset);
@@ -133,7 +133,7 @@ namespace neam
           void free_descriptor_set(descriptor_set &dset)
           {
             VkDescriptorSet vk_dset = dset._get_vk_descritpor_set();
-            check::on_vulkan_error::n_throw_exception(dev._vkFreeDescriptorSets(vk_dpool, 1, &vk_dset));
+            check::on_vulkan_error::n_assert_success(dev._vkFreeDescriptorSets(vk_dpool, 1, &vk_dset));
           }
 
           /// \brief Return multiple descriptor set to the pool
@@ -143,7 +143,7 @@ namespace neam
             vk_dset.reserve(dset.size());
             for (descriptor_set *it : dset)
               vk_dset.push_back(it->_get_vk_descritpor_set());
-            check::on_vulkan_error::n_throw_exception(dev._vkFreeDescriptorSets(vk_dpool, vk_dset.size(), vk_dset.data()));
+            check::on_vulkan_error::n_assert_success(dev._vkFreeDescriptorSets(vk_dpool, vk_dset.size(), vk_dset.data()));
           }
 
         public: // advanced
@@ -157,7 +157,7 @@ namespace neam
 
       // //
 
-      descriptor_set::~descriptor_set()
+      inline descriptor_set::~descriptor_set()
       {
         if (dpool)
           dpool->free_descriptor_set(*this);

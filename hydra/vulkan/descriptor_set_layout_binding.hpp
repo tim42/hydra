@@ -33,7 +33,7 @@
 #include <vector>
 
 #include <vulkan/vulkan.h>
-
+#include "sampler.hpp"
 
 namespace neam
 {
@@ -53,6 +53,14 @@ namespace neam
             : vk_dslb
             {
               binding, descriptor_type, descriptor_count, stages, nullptr
+            }
+          {
+          }
+          /// \brief Construct the binding
+          descriptor_set_layout_binding(uint32_t binding, VkDescriptorType descriptor_type, uint32_t descriptor_count, VkShaderStageFlags stages, const sampler& immutable_sampler)
+            : vk_dslb
+            {
+              binding, descriptor_type, descriptor_count, stages, immutable_sampler._get_vk_sampler_ptr()
             }
           {
           }

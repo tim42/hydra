@@ -45,15 +45,15 @@ namespace neam
       {
         public: // advanced
           /// \brief Construct from a VkShaderModuleCreateInfo
-          shader_module(device &_dev, const VkShaderModuleCreateInfo &create_info)
-           : dev(_dev)
+          shader_module(device &_dev, const VkShaderModuleCreateInfo &create_info, std::string _entry_point)
+           : dev(_dev), entry_point(std::move(_entry_point))
           {
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateShaderModule(&create_info, nullptr, &vk_shader_module));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateShaderModule(&create_info, nullptr, &vk_shader_module));
           }
 
           /// \brief Construct from a VkShaderModule
-          shader_module(device &_dev, VkShaderModule _vk_shader_module)
-           : dev(_dev), vk_shader_module(_vk_shader_module)
+          shader_module(device &_dev, VkShaderModule _vk_shader_module, std::string _entry_point)
+           : dev(_dev), vk_shader_module(_vk_shader_module), entry_point(std::move(_entry_point))
           {
           }
 
@@ -61,7 +61,7 @@ namespace neam
           /// \brief Construct the shader module from a spirv buffer
           /// There's some "rules" about the spirv_data parameter to obey, see
           ///   https://www.khronos.org/registry/vulkan/specs/1.0/man/html/VkShaderModuleCreateInfo.html
-          shader_module(device &_dev, uint32_t *spirv_data, size_t data_length)
+          shader_module(device &_dev, const uint32_t *spirv_data, size_t data_length, std::string _entry_point)
            : shader_module(_dev, VkShaderModuleCreateInfo
              {
                VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -69,13 +69,13 @@ namespace neam
                0,
                data_length,
                spirv_data
-             })
+             }, std::move(_entry_point))
           {
           }
 
           /// \brief Move constructor
           shader_module(shader_module &&o)
-           : dev(o.dev), vk_shader_module(o.vk_shader_module)
+           : dev(o.dev), vk_shader_module(o.vk_shader_module), entry_point(std::move(o.entry_point))
           {
             o.vk_shader_module = nullptr;
           }
@@ -90,6 +90,7 @@ namespace neam
               dev._vkDestroyShaderModule(vk_shader_module, nullptr);
             vk_shader_module = o.vk_shader_module;
             o.vk_shader_module = nullptr;
+            entry_point = std::move(o.entry_point);
             return *this;
           }
 
@@ -100,6 +101,12 @@ namespace neam
               dev._vkDestroyShaderModule(vk_shader_module, nullptr);
           }
 
+          bool is_valid() const
+          {
+            return vk_shader_module != nullptr;
+          }
+
+          const std::string& get_entry_point() const { return entry_point; }
         public: // advanced
           VkShaderModule get_vk_shader_module()
           {
@@ -109,6 +116,7 @@ namespace neam
         private:
           device &dev;
           VkShaderModule vk_shader_module;
+          std::string entry_point = "main";
       };
     } // namespace vk
   } // namespace hydra

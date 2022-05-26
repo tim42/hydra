@@ -35,7 +35,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 #include "../hydra_types.hpp"
 #include "../hydra_logo.hpp"
 #include "../vulkan/surface.hpp"
@@ -51,6 +51,12 @@ namespace neam
       class window
       {
         public:
+          window(hydra_context& hctx, glm::uvec2 window_size, const std::string& title = "HYDRA")
+           : window(window_size, title)
+          {
+            _create_surface(hctx.instance);
+            _get_surface().set_physical_device(hctx.device.get_physical_device());
+          }
           /// \brief create a non-fullscreen window
           /// \param window_size the size of the window in pixel.
           /// \param w_hints is a list of additional window creation hints as handled by GLFW
@@ -65,7 +71,7 @@ namespace neam
               glfwWindowHint(it.first, it.second);
 
             if (!(win = glfwCreateWindow(window_size.x, window_size.y, title.data(), 0, 0)))
-              throw neam::hydra::exception_tpl<window>("GLFW: glfwCreateWindow call failed");
+              check::on_vulkan_error::n_assert(false, "GLFW: glfwCreateWindow call failed");
 
             select();
             _set_hydra_icon();
@@ -87,7 +93,7 @@ namespace neam
             const GLFWvidmode *vmode = glfwGetVideoMode(glfwGetPrimaryMonitor());
 
             if (!(win = glfwCreateWindow(vmode->width, vmode->height, title.data(), glfwGetPrimaryMonitor(), 0)))
-              throw neam::hydra::exception_tpl<window>("GLFW: glfwCreateWindow call failed");
+              check::on_vulkan_error::n_assert(false, "GLFW: glfwCreateWindow call failed");
 
             select();
             _set_hydra_icon();
@@ -95,7 +101,10 @@ namespace neam
 
           /// \brief Move constructor
           window(window &&o)
-            : win(o.win), surface(o.surface)
+            : win(o.win), surface(o.surface), pres_id(o.pres_id)
+            , is_window_fullscreen(o.is_window_fullscreen)
+            , last_position(o.last_position)
+            , last_size(o.last_size)
           {
             o.win = nullptr;
             o.surface = nullptr;
@@ -220,6 +229,41 @@ namespace neam
             return glfwWindowShouldClose(win);
           }
 
+          void fullscreen(bool fullscreen, unsigned /*monitor_idx*/ = 0)
+          {
+            if (fullscreen)
+            {
+              if (!is_window_fullscreen)
+              {
+                last_position = get_position();
+                last_size = get_size();
+              }
+
+              GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+              const  GLFWvidmode* mode = glfwGetVideoMode(monitor);
+              glfwSetWindowMonitor(win, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+            }
+            else
+            {
+              glfwSetWindowMonitor(win, nullptr, last_position.x, last_position.y, last_size.x, last_size.y, GLFW_DONT_CARE);
+            }
+            is_window_fullscreen = fullscreen;
+          }
+
+          bool is_fullscreen() const
+          {
+            return is_window_fullscreen;
+          }
+
+          /// \brief Returns the window content scale (as set by the OS)
+          /// May change over time
+          glm::vec2 get_content_scale() const
+          {
+            glm::vec2 scale;
+            glfwGetWindowContentScale(win, &scale.x, &scale.y);
+            return scale;
+          }
+
         public: // advanced
           /// \brief return the GLFW handle of the current window
           /// \note for an advanced usage
@@ -241,7 +285,7 @@ namespace neam
           }
 
           /// \brief Check if the window has a surface
-          bool _have_surface() const
+          bool _has_surface() const
           {
             return surface != nullptr;
           }
@@ -271,7 +315,7 @@ namespace neam
           void _create_surface(vk::instance& instance)
           {
             VkSurfaceKHR surface;
-            neam::hydra::check::on_vulkan_error::n_throw_exception(glfwCreateWindowSurface(instance._get_vk_instance(), _get_glfw_handle(), nullptr, &surface));
+            check::on_vulkan_error::n_assert_success(glfwCreateWindowSurface(instance._get_vk_instance(), _get_glfw_handle(), nullptr, &surface));
             _set_surface(vk::surface(instance, surface));
           }
 
@@ -279,6 +323,7 @@ namespace neam
           /// That should be good enough for most applications
           vk::swapchain _create_swapchain(vk::device &dev)
           {
+            check::debug::n_assert(_has_surface(), "Cannot create a swapchain without a surface. Call _create_surface first.");
             return vk::swapchain(dev, _get_surface(), get_size());
           }
 
@@ -291,10 +336,19 @@ namespace neam
             set_icon(glm::uvec2(icon_sz, icon_sz), generate_rgba_logo(pixels, icon_sz, glyph_count));
           }
 
+          void _set_hint(int hint, int value)
+          {
+            glfwWindowHint(hint, value);
+          }
+
         private:
           GLFWwindow *win;
           neam::hydra::vk::surface *surface = nullptr;
           temp_queue_familly_id_t pres_id;
+
+          bool is_window_fullscreen = false;
+          glm::uvec2 last_position;
+          glm::uvec2 last_size;
       };
     } // namespace glfw
   } // namespace hydra

@@ -35,7 +35,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 #include "extension.hpp"
 
 namespace neam
@@ -55,14 +55,14 @@ namespace neam
             uint32_t instance_extension_count;
             do
             {
-              res = check::on_vulkan_error::n_throw_exception(
+              res = check::on_vulkan_error::n_assert_success(
                 vkEnumerateInstanceExtensionProperties(properties.layerName, &instance_extension_count, nullptr));
 
               if (instance_extension_count == 0)
                 break;
 
               extensions.resize(instance_extension_count);
-              res = check::on_vulkan_error::n_throw_exception(
+              res = check::on_vulkan_error::n_assert_success(
                 vkEnumerateInstanceExtensionProperties(properties.layerName, &instance_extension_count, extensions.data()));
             }
             while (res == VK_INCOMPLETE);
@@ -75,14 +75,14 @@ namespace neam
             uint32_t instance_extension_count;
             do
             {
-              res = check::on_vulkan_error::n_throw_exception(
+              res = check::on_vulkan_error::n_assert_success(
                 vkEnumerateDeviceExtensionProperties(gpu, properties.layerName, &instance_extension_count, nullptr));
 
               if (instance_extension_count == 0)
                 break;
 
               extensions.resize(instance_extension_count);
-              res = check::on_vulkan_error::n_throw_exception(
+              res = check::on_vulkan_error::n_assert_success(
                 vkEnumerateDeviceExtensionProperties(gpu, properties.layerName, &instance_extension_count, extensions.data()));
             }
             while (res == VK_INCOMPLETE);

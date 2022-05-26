@@ -32,7 +32,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 #include "device.hpp"
 
 namespace neam
@@ -61,10 +61,11 @@ namespace neam
 
           /// \brief Move constructor
           device_memory(device_memory &&o)
-           : dev(o.dev), vk_memory(o.vk_memory), size(o.size)
+           : dev(o.dev), vk_memory(o.vk_memory), size(o.size), mapped_memory(o.mapped_memory)
           {
             o.vk_memory = nullptr;
             o.size = 0;
+            o.mapped_memory = nullptr;
           }
 
           /// \brief Move-assignment operator
@@ -77,8 +78,10 @@ namespace neam
 
               size = o.size;
               vk_memory = o.vk_memory;
+              mapped_memory = o.mapped_memory;
               o.vk_memory = nullptr;
               o.size = 0;
+              o.mapped_memory = nullptr;
             }
             return *this;
           }
@@ -179,10 +182,10 @@ namespace neam
             mem_alloc.allocationSize = _size;
             mem_alloc.memoryTypeIndex = memory_type_index;
 
-            check::on_vulkan_error::n_throw_exception(dev._vkAllocateMemory(&mem_alloc, nullptr, &vk_memory));
+            check::on_vulkan_error::n_assert_success(dev._vkAllocateMemory(&mem_alloc, nullptr, &vk_memory));
 
 #ifndef HYDRA_NO_MESSAGES
-            neam::cr::out.info() << "allocating a chunk of " << _size << " bytes on the GPU..." << std::endl;
+//             neam::cr::out().debug("allocating a chunk of {} bytes on the gpu", _size);
 #endif
             size = _size;
           }
@@ -200,25 +203,24 @@ namespace neam
           }
 
           /// \brief Map the device memory and return a pointer to that area
-          /// You can request only a specific area, setting respectively offset
-          /// and _size
-          void *map_memory(size_t offset = 0, size_t _size = 0) const
+          /// You can request only a specific area, setting  offset
+          void *map_memory(size_t offset = 0) const
           {
-            void *data;
-            _size = _size == 0 ? this->size : _size;
-            dev._vkMapMemory(vk_memory, offset, _size, 0, &data);
+            // search in the mapped areas:
+            if (mapped_memory != nullptr)
+              return (uint8_t*)mapped_memory + offset;
 
-            mapped_memories[data] = std::make_pair(offset, _size);
+            dev._vkMapMemory(vk_memory, 0, VK_WHOLE_SIZE, 0, &mapped_memory);
 
-            return data;
+            return (uint8_t*)mapped_memory + offset;
           }
 
           /// \brief Unmap the memory
           void unmap_memory() const
           {
-            if (mapped_memories.size() > 0)
+            if (mapped_memory != nullptr)
             {
-              mapped_memories.clear();
+              mapped_memory = nullptr;
               dev._vkUnmapMemory(vk_memory);
             }
           }
@@ -226,132 +228,61 @@ namespace neam
           /// \brief Write the changes of all mapped areas to the device
           void flush() const
           {
-            std::vector<VkMappedMemoryRange> mmrs;
-            mmrs.reserve(mapped_memories.size());
-
-            for (const auto &it : mapped_memories)
-            {
-              VkMappedMemoryRange mmr;
-              mmr.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-              mmr.pNext = nullptr;
-              mmr.memory = vk_memory;
-              mmr.offset = it.second.first;
-              mmr.size = it.second.second;
-              mmrs.push_back(mmr);
-            }
-            if (!mmrs.size())
-              return;
-            check::on_vulkan_error::n_throw_exception(dev._vkFlushMappedMemoryRanges(mmrs.size(), mmrs.data()));
-          }
-
-          /// \brief Write the changes to the device
-          void flush(void *memory) const
-          {
-            auto it = mapped_memories.find(memory);
-            if (it == mapped_memories.end())
-              return;
             VkMappedMemoryRange mmr;
             mmr.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
             mmr.pNext = nullptr;
             mmr.memory = vk_memory;
-            mmr.offset = it->second.first;
-            mmr.size = it->second.second;
-
-            check::on_vulkan_error::n_throw_exception(dev._vkFlushMappedMemoryRanges(1, &mmr));
+            mmr.offset = 0;
+            mmr.size = VK_WHOLE_SIZE;
+            check::on_vulkan_error::n_check_success(dev._vkFlushMappedMemoryRanges(1, &mmr));
           }
 
           /// \brief Write the changes to the device
-          template<typename ContainerT>
-          void flush(const ContainerT &_mapped_memories) const
+          void flush(void* memory, size_t mem_size = 0, bool invalidate = false) const
           {
-            std::vector<VkMappedMemoryRange> mmrs;
-            mmrs.reserve(mapped_memories.size());
-
-            for (void *mmit : _mapped_memories)
+            if (mapped_memory != nullptr)
             {
-              auto it = mapped_memories.find(mmit);
-              if (it == mapped_memories.end())
-                continue;
+              const size_t flush_to = dev.get_physical_device().get_limits().nonCoherentAtomSize;
+              // compute the offset:
+              size_t offset = (uint8_t*)memory - (uint8_t*)mapped_memory;
+              if (offset < flush_to)
+                offset = 0;
+              else if (offset % flush_to)
+                offset -= offset % flush_to;
+              // compute the size of the range:
+              size_t actual_size = ((uint8_t*)memory + mem_size) - ((uint8_t*)mapped_memory + offset);
+              if (actual_size % flush_to)
+                actual_size += flush_to - actual_size % flush_to;
+              if (offset + actual_size > size)
+                actual_size = size - offset;
+
               VkMappedMemoryRange mmr;
               mmr.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
               mmr.pNext = nullptr;
               mmr.memory = vk_memory;
-              mmr.offset = it->second.first;
-              mmr.size = it->second.second;
-              mmrs.push_back(mmr);
+              mmr.offset = offset;
+              mmr.size = actual_size;
+
+              check::on_vulkan_error::n_check_success(dev._vkFlushMappedMemoryRanges(1, &mmr));
+              if (invalidate)
+                check::on_vulkan_error::n_check_success(dev._vkInvalidateMappedMemoryRanges(1, &mmr));
+              return;
             }
-            if (!mmrs.size())
-              return;
-            check::on_vulkan_error::n_throw_exception(dev._vkFlushMappedMemoryRanges(mmrs.size(), mmrs.data()));
           }
 
-          /// \brief Invalidate a mapped area
-          /// After invalidating a mapped memory area, that area should
-          /// be considered stale
-          void invalidate(void *memory) const
-          {
-            auto it = mapped_memories.find(memory);
-            if (it == mapped_memories.end())
-              return;
-            VkMappedMemoryRange mmr;
-            mmr.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-            mmr.pNext = nullptr;
-            mmr.memory = vk_memory;
-            mmr.offset = it->second.first;
-            mmr.size = it->second.second;
-
-            check::on_vulkan_error::n_throw_exception(dev._vkInvalidateMappedMemoryRanges(1, &mmr));
-          }
-
-          /// \brief Invalidate a range of mapped areas
-          /// After invalidating a mapped memory area, that area should
-          /// be considered stale
-          /// \param _mapped_memories should be a container of < void * >
-          template<typename ContainerT>
-          void invalidate(const ContainerT &_mapped_memories) const
-          {
-            std::vector<VkMappedMemoryRange> mmrs;
-            mmrs.reserve(mapped_memories.size());
-
-            for (void *mmit : _mapped_memories)
-            {
-              auto it = mapped_memories.find(mmit);
-              if (it == mapped_memories.end())
-                continue;
-              VkMappedMemoryRange mmr;
-              mmr.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-              mmr.pNext = nullptr;
-              mmr.memory = vk_memory;
-              mmr.offset = it->second.first;
-              mmr.size = it->second.second;
-              mmrs.push_back(mmr);
-            }
-            if (!mmrs.size())
-              return;
-            check::on_vulkan_error::n_throw_exception(dev._vkInvalidateMappedMemoryRanges(mmrs.size(), mmrs.data()));
-          }
 
           /// \brief Invalidate all the mapped areas
           /// After invalidating a mapped memory area, that area should
           /// be considered stale
           void invalidate() const
           {
-            std::vector<VkMappedMemoryRange> mmrs;
-            mmrs.reserve(mapped_memories.size());
-
-            for (const auto &it : mapped_memories)
-            {
-              VkMappedMemoryRange mmr;
-              mmr.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-              mmr.pNext = nullptr;
-              mmr.memory = vk_memory;
-              mmr.offset = it.second.first;
-              mmr.size = it.second.second;
-              mmrs.push_back(mmr);
-            }
-            if (!mmrs.size())
-              return;
-            check::on_vulkan_error::n_throw_exception(dev._vkInvalidateMappedMemoryRanges(mmrs.size(), mmrs.data()));
+            VkMappedMemoryRange mmr;
+            mmr.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+            mmr.pNext = nullptr;
+            mmr.memory = vk_memory;
+            mmr.offset = 0;
+            mmr.size = VK_WHOLE_SIZE;
+            check::on_vulkan_error::n_check_success(dev._vkInvalidateMappedMemoryRanges(1, &mmr));
           }
 
 
@@ -367,7 +298,7 @@ namespace neam
           VkDeviceMemory vk_memory;
           size_t size;
 
-          mutable std::map<void *, std::pair<size_t /*offset*/, size_t/*size*/>> mapped_memories;
+          mutable void* mapped_memory = nullptr;
       };
     } // namespace vk
   } // namespace hydra

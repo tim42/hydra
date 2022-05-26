@@ -38,9 +38,9 @@
 #include <hydra/hydra_glfw_ext.hpp> // for the window creation / handling
 #include <hydra/hydra_imgui_ext.hpp> // for the window creation / handling
 
-#include <hydra/tools/logger/logger.hpp>
-#include <hydra/tools/chrono.hpp>
-#include <hydra/tools/uninitialized.hpp>
+#include <ntools/logger/logger.hpp>
+#include <ntools/chrono.hpp>
+// #include <ntools/uninitialized.hpp>
 
 #include "imgui_log_window.hpp"
 
@@ -55,37 +55,68 @@ namespace neam
           instance(create_instance()),
           window(glfw_ext.create_window(instance, window_size, window_name)),
           emgr(window),
-          device(hydra_init.create_device(instance)),
-          gqueue(device, window._get_win_queue()),
-          tqueue(device, *temp_transfer_queue),
-          mem_alloc(device),
-          swapchain(window._create_swapchain(device)),
-          cmd_pool(gqueue.create_command_pool()),
-          transient_cmd_pool(gqueue.create_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT)),
-          reset_cmd_pool(gqueue.create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)),
-          transfer_cmd_pool(tqueue.create_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)),
-          btransfers(device, tqueue, transfer_cmd_pool, vrd),
-          image_ready(device),
-          render_finished(device),
-          shmgr(device),
-          ppmgr(device),
-          imgui_ctx(window, instance, device, swapchain, emgr),
-          render_pass(device)
+          context(instance, hydra_init.create_device(instance),
+                  window._get_win_queue(), *temp_transfer_queue, *temp_compute_queue),
+          swapchain(window._create_swapchain(context.device)),
+          image_ready(context.device),
+          render_finished(context.device),
+          transfer_finished(context.device),
+          imgui_ctx(context, window, emgr),
+          render_pass(context.device)
       {
-        btransfers.allocate_memory(mem_alloc);
+        {
+          threading::task_group_dependency_tree tgd;
 
+          // pre-made groups:
+          tgd.add_task_group("init"_rid, "init");
+          tgd.add_task_group("io"_rid, "io");
+          tgd.add_task_group("render"_rid, "render");
+
+          tgd.add_dependency("io"_rid, "init"_rid);
+          tgd.add_dependency("render"_rid, "io"_rid);
+
+          // 
+
+          context.boot(tgd.compile_tree(), "caca"_rid);
+        }
+        {
+          // setup the task manager:
+          context.tm.set_start_task_group_callback("io"_rid, [this]
+          {
+            context.tm.get_task([this] { context.io.process(); });
+          });
+          context.tm.set_end_task_group_callback("render"_rid, [this]
+          {
+            // FIXME
+          });
+        }
+        // FIXME: remove
+        context.io._wait_for_submit_queries();
+        imgui_ctx.load_default_fonts();
         emgr.register_window_listener(this);
 
-        imgui_ctx.init(gqueue, transient_cmd_pool, vrd);
+        window.set_size((glm::uvec2)((glm::vec2)window_size * window.get_content_scale()));
+
+        render_pass.create_subpass().add_attachment(neam::hydra::vk::subpass::attachment_type::color,                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0);
+        render_pass.create_subpass_dependency(VK_SUBPASS_EXTERNAL, 0)
+          .dest_subpass_masks(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)
+          .source_subpass_masks(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0);
+
+        render_pass.create_attachment().set_swapchain(&swapchain).set_samples(VK_SAMPLE_COUNT_1_BIT)
+          .set_load_op(VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+          .set_store_op(VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_STORE_OP_DONT_CARE)
+          .set_layouts(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+        render_pass.refresh();
       }
 
       virtual ~application()
       {
-        device.wait_idle();
+        context.device.wait_idle();
       }
 
       void init_and_run()
       {
+        setup_hook();
         init();
         run();
       }
@@ -93,29 +124,25 @@ namespace neam
     protected:
       void init()
       {
-        pre_init_hook();
-
         // (re)create the framebuffers
         framebuffers.clear();
         for (size_t i = 0; i < swapchain.get_image_count(); ++i)
         {
-          framebuffers.emplace_back(neam::hydra::vk::framebuffer(device, render_pass, { &swapchain.get_image_view_vector()[i] }, swapchain));
+          framebuffers.emplace_back(neam::hydra::vk::framebuffer(context.device, render_pass, { &swapchain.get_image_view_vector()[i] }, swapchain));
         }
       }
 
       void refresh()
       {
-        device.wait_idle();
+        context.device.wait_idle();
 
         // refresh the swapchain + renderpass
         swapchain.recreate_swapchain(window.get_size());
+
         render_pass.refresh();
-
-        ppmgr.refresh();
-
-        imgui_ctx.refresh(swapchain);
-
         refresh_hook();
+
+        context.ppmgr.refresh();
 
         init();
       }
@@ -126,11 +153,8 @@ namespace neam
         float frame_cnt = 0.f;
         float wasted = 0.f;
 
-        if (btransfers.get_total_size_to_transfer() > 0)
-          neam::cr::out.log() << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
-        btransfers.wait_end_transfer(); // can't really do much more here
-
-        pre_run_hook();
+        if (context.transfers.get_total_size_to_transfer() > 0)
+          neam::cr::out().log("btransfer: remaining {} bytes...", context.transfers.get_total_size_to_transfer());
 
         cr.reset();
         size_t count_since_mem_stats = 0;
@@ -143,6 +167,8 @@ namespace neam
           bool out_of_date = false;
           neam::cr::chrono frame_cr;
 
+          size_t to_transfer = 0;
+
           {
             size_t index = swapchain.get_next_image_index(image_ready, std::numeric_limits<uint64_t>::max(), &recreate);
             if (index == ~size_t(0))
@@ -154,31 +180,40 @@ namespace neam
             render_loop_hook();
             log_window.show_log_window();
 
-            neam::hydra::vk::command_buffer frame_command_buffer = transient_cmd_pool.create_command_buffer();
+            prepare_hook();
+            to_transfer = context.transfers.get_total_size_to_transfer();
+            const bool has_transfers = context.transfers.transfer(context.allocator, { &transfer_finished });
+
+            neam::hydra::vk::command_buffer frame_command_buffer = context.graphic_transient_cmd_pool.create_command_buffer();
             {
               neam::hydra::vk::command_buffer_recorder cbr = frame_command_buffer.begin_recording(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-              init_command_buffer(cbr, framebuffers[index], index);
+              submit_hook(cbr, framebuffers[index]);
+
+              cbr.begin_render_pass(render_pass, framebuffers[index], swapchain.get_full_rect2D(), VK_SUBPASS_CONTENTS_INLINE, {});
+              cbr.end_render_pass();
               frame_command_buffer.end_recording();
             }
 
-            neam::hydra::vk::command_buffer imgui_command_buffer = transient_cmd_pool.create_command_buffer();
-            {
-              neam::hydra::vk::command_buffer_recorder cbr = imgui_command_buffer.begin_recording(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-              imgui_ctx.draw(imgui_command_buffer, cbr, framebuffers[index]);
-              imgui_command_buffer.end_recording();
-            }
-
-            neam::hydra::vk::fence frame_done{device};
+            neam::hydra::vk::fence frame_done{context.device};
             neam::hydra::vk::submit_info si;
+
+            if (has_transfers)
+              si << neam::hydra::vk::cmd_sema_pair {transfer_finished, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
+
             si << neam::hydra::vk::cmd_sema_pair {image_ready, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT}
-               << frame_command_buffer << imgui_command_buffer >> frame_done >> render_finished;
+               << frame_command_buffer >> render_finished >> frame_done;
+
+            context.gqueue.submit(si);
+
+            cleanup_hook();
 
             // delete the transient resources at the right time:
-            vrd.postpone_destruction(std::move(frame_done), std::move(imgui_command_buffer), std::move(frame_command_buffer));
+            context.vrd.postpone_end_frame_cleanup(context.gqueue, context.allocator);
+            context.vrd.postpone_destruction(context.gqueue, std::move(frame_done),  std::move(frame_command_buffer));
 
-            gqueue.submit(si);
-            gqueue.present(swapchain, index, { &render_finished }, &out_of_date);
+            context.gqueue.present(swapchain, index, { &render_finished }, &out_of_date);
 
+            context.io.process(); // process queued IO operations
             if (recreate || out_of_date)
               refresh();
           }
@@ -186,9 +221,6 @@ namespace neam
           glfwPollEvents();
           imgui_ctx.new_frame();
 
-          vrd.update();
-          const size_t to_transfer = btransfers.get_total_size_to_transfer();
-          btransfers.start();
           show_imgui_basic_stats(frame_cr.get_accumulated_time() * 1000., to_transfer);
 
           ++frame_cnt;
@@ -198,24 +230,34 @@ namespace neam
             const double accumulated_time = cr.get_accumulated_time();
             const double used_time = ((accumulated_time - wasted) / frame_cnt) * 1000.f;
             const double wasted_time = (wasted / frame_cnt) * 1000.f;
-            neam::cr::out.log() << (accumulated_time / frame_cnt) * 1000.f
-                                << "ms/frame [used: " << used_time << "ms/frame, wasted: " << wasted_time << "ms/frame]"
-                                << "\t(" << (int)(frame_cnt / accumulated_time) << "fps)" << std::endl;
+            neam::cr::out().log("{:6.3} ms/frame [used: {:6.3} ms/frame, wasted: {:6.3} ms/frame]\t({} fps)",
+                                (accumulated_time / frame_cnt) * 1000.f,
+                                used_time,
+                                wasted_time,
+                                (int)(frame_cnt / accumulated_time));
             ++count_since_mem_stats;
             if (count_since_mem_stats == 8)
             {
               count_since_mem_stats = 0;
-              mem_alloc.print_stats();
+              context.allocator.print_stats();
             }
             cr.reset();
             frame_cnt = 0.f;
             wasted = 0.f;
           }
 
+          context.vrd.update();
+
           if (rate_limit > 0.0001 && frame_cr.get_accumulated_time() < rate_limit)
           {
             const double original_accumulated_time = frame_cr.get_accumulated_time();
             double cr = rate_limit - frame_cr.get_accumulated_time();
+            const uint64_t slack_us = 1000; // avoid overshoothing
+
+            // hard sleep:
+            std::this_thread::sleep_for(std::chrono::microseconds((uint64_t)(cr * 1e6) - slack_us));
+
+            // spin yield the remaining time:
             while (cr > 0.00001) // avoid overshoothing
             {
               std::this_thread::yield();
@@ -225,9 +267,7 @@ namespace neam
           }
         }
 
-        post_run_hook();
-        device.wait_idle();
-        post_run_idle_hook();
+        context.device.wait_idle();
       }
 
     protected:
@@ -242,6 +282,7 @@ namespace neam
         gfr.require_instance_layer("VK_LAYER_KHRONOS_validation");
 
         temp_transfer_queue = gfr.require_queue_capacity(VK_QUEUE_TRANSFER_BIT, false);
+        temp_compute_queue = gfr.require_queue_capacity(VK_QUEUE_COMPUTE_BIT, false);
 
         create_instance_hook(gfr);
 
@@ -258,7 +299,8 @@ namespace neam
 
       void show_imgui_basic_stats(const float frame_ms, const size_t to_transfer)
       {
-        const float PAD = 10.0f;
+        const float font_size = ImGui::GetFontSize();
+        const float PAD = font_size;
         const ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImVec2 work_pos = viewport->WorkPos; // Use work area to avoid menu-bar/task-bar, if any!
@@ -280,14 +322,15 @@ namespace neam
 
           ImGui::Text("Data to transfer: %.3f Kb", (to_transfer / 1000.0f));
 
-          ImGui::Text("Loaded pipelines: %zu | Loaded shaders: %zu", ppmgr.get_pipeline_count(), shmgr.get_shader_count());
+          ImGui::Text("Loaded pipelines: %zu | Loaded shaders: %zu", context.ppmgr.get_pipeline_count(), context.shmgr.get_shader_count());
 
-          ImGui::Text("Allocated GPU Memory: %.3f Mb [ in %zu allocations ]", mem_alloc.get_used_memory() / (1.0e6f), mem_alloc.get_allocation_count());
+          ImGui::Text("Allocated GPU Memory: %.3f Mb [ in %zu allocations ]", context.allocator.get_used_memory() / (1.0e6f), context.allocator.get_allocation_count());
+          ImGui::Text("Reserved GPU Memory:  %.3f Mb", context.allocator.get_reserved_memory() / (1.0e6f));
 
           ImGui::Separator();
 
           {
-            constexpr unsigned history_size = 400;
+            constexpr unsigned history_size = 500;
             static float frame_ms_history[history_size] = { 0.0f };
             static unsigned write_index = 0;
             frame_ms_history[write_index] = frame_ms;
@@ -296,7 +339,8 @@ namespace neam
             {
               return frame_ms_history[(idx + write_index) % history_size];
             };
-            ImGui::PlotHistogram("", plot_fnc, frame_ms_history, history_size, 0, nullptr, 0.0f, FLT_MAX, ImVec2(history_size, 30));
+
+            ImGui::PlotHistogram("", plot_fnc, frame_ms_history, history_size, 0, nullptr, 0.0f, FLT_MAX, ImVec2(ImGui::GetContentRegionAvail().x, font_size * 2));
           }
         }
         ImGui::End();
@@ -309,45 +353,31 @@ namespace neam
       virtual void create_instance_hook(neam::hydra::gen_feature_requester &/*gfr*/) {}
       virtual void create_instance_hook(neam::hydra::bootstrap &/*hydra_init*/) {}
 
-      virtual void pre_init_hook() {}
-      virtual void init_command_buffer(neam::hydra::vk::command_buffer_recorder &/*cbr*/, neam::hydra::vk::framebuffer &/*fb*/, size_t /*index*/) {}
 
-      virtual void refresh_hook() {} // called when both the renderpass and the swapchain has been recreated
-
-      virtual void pre_run_hook() {}
       virtual void render_loop_hook() {}
-      virtual void post_run_hook() {}
-      virtual void post_run_idle_hook() {} // called when the device is idle
+
+      virtual void refresh_hook() {}
+      virtual void setup_hook() {}
+      virtual void prepare_hook() {}
+      virtual void submit_hook(hydra::vk::command_buffer_recorder& /*cbr*/, hydra::vk::framebuffer& /*fb*/) {}
+      virtual void cleanup_hook() {}
 
     private:
       neam::hydra::gen_feature_requester gfr;
       neam::hydra::glfw::init_extension glfw_ext;
       neam::hydra::bootstrap hydra_init;
       neam::hydra::temp_queue_familly_id_t *temp_transfer_queue = nullptr;
+      neam::hydra::temp_queue_familly_id_t *temp_compute_queue = nullptr;
 
     protected:
       neam::hydra::vk::instance instance;
       neam::hydra::glfw::window window;
       neam::hydra::glfw::events::manager emgr;
-      neam::hydra::vk::device device;
-      neam::hydra::vk::queue gqueue;
-      neam::hydra::vk::queue tqueue;
 
-      // the memory allocator
-      neam::hydra::memory_allocator mem_alloc;
+      neam::hydra::hydra_context context;
 
       // the swapchain
       neam::hydra::vk::swapchain swapchain;
-
-      // command pools (graphic / transfer)
-      neam::hydra::vk::command_pool cmd_pool;
-      neam::hydra::vk::command_pool transient_cmd_pool;
-      neam::hydra::vk::command_pool reset_cmd_pool;
-
-      neam::hydra::vk::command_pool transfer_cmd_pool;
-
-      neam::hydra::vk_resource_destructor vrd;
-      neam::hydra::batch_transfers btransfers;
 
       // per-frame information
       std::vector<neam::hydra::vk::framebuffer> framebuffers;
@@ -355,11 +385,10 @@ namespace neam
 
       neam::hydra::vk::semaphore image_ready;
       neam::hydra::vk::semaphore render_finished;
+      neam::hydra::vk::semaphore transfer_finished;
 
-      neam::hydra::shader_manager shmgr;
-      neam::hydra::pipeline_manager ppmgr;
-
-      neam::hydra::imgui::context imgui_ctx;
+      neam::hydra::imgui::imgui_context imgui_ctx;
+//       neam::hydra::imgui::render_pass imgui_rp;
 
       neam::hydra::vk::render_pass render_pass; // NOTE: automatically refreshed by refresh()
 

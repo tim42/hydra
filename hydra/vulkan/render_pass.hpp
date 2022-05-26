@@ -33,7 +33,7 @@
 #include <deque>
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "device.hpp"
 #include "subpass.hpp"
@@ -52,6 +52,8 @@ namespace neam
       class render_pass
       {
         public:
+          /// \brief Create a render-pass with the explicit goal of being destroyed
+          render_pass(device &_dev, VkRenderPass pass) : dev(_dev), vk_render_pass(pass) {}
 
         public:
           /// \brief Create a renderpass with subpass_count subpasses and attachment_count attachments
@@ -199,7 +201,8 @@ namespace neam
           // // REFRESH // //
 
           /// \brief Re/create the render_pass
-          void refresh()
+          /// \note return the old render_pass that should be destroyed
+          vk::render_pass refresh()
           {
             // update the vk_ vectors
             vk_attachments.clear();
@@ -228,9 +231,11 @@ namespace neam
             create_info.pDependencies = vk_subpass_dependencies.data();
 
             // create the vulkan render pass object
-            if (vk_render_pass)
-              dev._vkDestroyRenderPass(vk_render_pass, nullptr);
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateRenderPass(&create_info, nullptr, &vk_render_pass));
+            VkRenderPass old_vk_render_pass = vk_render_pass;
+//             if (vk_render_pass)
+//               dev._vkDestroyRenderPass(vk_render_pass, nullptr);
+            check::on_vulkan_error::n_assert_success(dev._vkCreateRenderPass(&create_info, nullptr, &vk_render_pass));
+            return { dev, old_vk_render_pass };
           }
 
         public: // advanced

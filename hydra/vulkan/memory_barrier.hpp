@@ -81,6 +81,14 @@ namespace neam
             dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
           }
 
+          static buffer_memory_barrier queue_transfer(const ::neam::hydra::vk::buffer &_buffer, uint32_t src_queue_family_index, uint32_t dst_queue_family_index)
+          {
+            buffer_memory_barrier barrier(_buffer);
+            barrier.srcQueueFamilyIndex = src_queue_family_index;
+            barrier.dstQueueFamilyIndex = dst_queue_family_index;
+            return barrier;
+          }
+
           /// \brief Set both source and destination access masks
           void set_access_masks(VkAccessFlags src_access_mask, VkAccessFlags dest_access_mask)
           {

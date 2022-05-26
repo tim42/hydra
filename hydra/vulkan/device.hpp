@@ -37,7 +37,8 @@
 #include <vulkan/vulkan.h>
 
 #include "physical_device.hpp"
-#include "../hydra_exception.hpp"
+#include "instance.hpp"
+#include "../hydra_debug.hpp"
 #include "../hydra_types.hpp"
 
 namespace neam
@@ -62,16 +63,22 @@ namespace neam
 
         public:
           /// \brief Move constructor
-          device(device &&o)
-            : vk_instance(o.vk_instance), vk_device(o.vk_device), phys_dev(o.phys_dev), id_to_familly_queue(o.id_to_familly_queue)
+          device(device&& o)
+            : vk_instance(o.vk_instance),
+              vk_device(o.vk_device),
+              phys_dev(std::move(o.phys_dev)),
+              id_to_familly_queue(std::move(o.id_to_familly_queue))
           {
-            memcpy(&_st_offset, &o._st_offset, (size_t)(&_end_offset) - (size_t)(&_st_offset));
+//             _load_functions();
+            memcpy(&_st_offset, &o._st_offset, (uint8_t*)&_end_offset - (uint8_t*)&_st_offset);
+            o.vk_device = nullptr;
           }
 
           ~device()
           {
             if (vk_device)
               vkDestroyDevice(vk_device, nullptr);
+            vk_device = nullptr;
           }
 
           /// \brief Return the physical device from which the device has been created
@@ -96,7 +103,7 @@ namespace neam
           inline PFN_vkVoidFunction _get_proc_addr(const std::string &name)
           {
             PFN_vkVoidFunction vulkan_fnc_pointer = vkGetDeviceProcAddr(vk_device, name.c_str());
-            check::on_vulkan_error::n_assert(vulkan_fnc_pointer != nullptr, "vkGetDeviceProcAddr failed for " + name);
+            check::on_vulkan_error::n_assert(vulkan_fnc_pointer != nullptr, "vkGetDeviceProcAddr failed for {0}", name);
             return vulkan_fnc_pointer;
           }
 

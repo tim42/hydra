@@ -2,40 +2,30 @@
 ## CMAKE file for neam projects
 ##
 
-set(PROJ_FLAGS "-march=native -mtune=native")
 
-# general flags
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(PROJ_FLAGS "${PROJ_FLAGS} -O0 -g3")
-elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
-  set(PROJ_FLAGS "${PROJ_FLAGS} -DNDEBUG -fmerge-all-constants")
-elseif(CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
-  set(PROJ_FLAGS "${PROJ_FLAGS} -DNDEBUG -fmerge-all-constants")
+if(MSVC)
+    set(PROJECT_CXX_FLAGS /W4)
+else()
+    set(PROJECT_CXX_FLAGS -Wall -Wextra -rdynamic)
 endif()
 
-# some gcc/clang flags
-if (${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
-  set(PROJ_FLAGS "${PROJ_FLAGS} -std=gnu++1z -Wall -Wextra -Wno-unused-function")
+# Workaround kdevelop refusing the C++23 standard if set in cmake...
+#if(CMAKE_EXPORT_COMPILE_COMMANDS EQUAL ON)
+    if(MSVC)
+        # as of the writing of this file, it does not seems msvc has a flag for C++23
+        set(PROJECT_CXX_FLAGS ${PROJECT_CXX_FLAGS} /std:c++latest)
+    else()
+        # kdevelop (and probably clang) requires 2b and not 23
+        set(PROJECT_CXX_FLAGS ${PROJECT_CXX_FLAGS} -std=gnu++2b -Wno-invalid-offsetof)
+    endif()
+#else()
+    # this is the proper way, but kdevelop does not like it
+    #set(CMAKE_CXX_STANDARD 23)
+#endif()
 
-  if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(PROJ_FLAGS "${PROJ_FLAGS} -Og -fno-inline")
-  elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(PROJ_FLAGS "${PROJ_FLAGS} -O3 -finline-limit=100 -fmerge-constants -fmerge-all-constants")
-  elseif(CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
-    set(PROJ_FLAGS "${PROJ_FLAGS} -Os -fmerge-constants -fmerge-all-constants")
-  endif()
-
-elseif (${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
-  set(PROJ_FLAGS "${PROJ_FLAGS} -std=c++1z -Wall -Wextra -Wno-unused-function")
-
-  if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(PROJ_FLAGS "${PROJ_FLAGS}")
-  elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(PROJ_FLAGS "${PROJ_FLAGS} -O3")
-  elseif(CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
-    set(PROJ_FLAGS "${PROJ_FLAGS} -Oz")
-  endif()
+if (${CMAKE_BUILD_TYPE} STREQUAL "RelWithDebInfo")
+    if(MSVC)
+    else()
+        set(PROJECT_CXX_FLAGS ${PROJECT_CXX_FLAGS} -rdynamic -Og)
+    endif()
 endif()
-
-
-

@@ -30,7 +30,8 @@
 #ifndef __N_1651312409143832211_229263180_RENDERER_HPP__
 #define __N_1651312409143832211_229263180_RENDERER_HPP__
 
-#include "gui/gui.hpp"
+#include "render_pass.hpp"
+#include "pass_manager.hpp"
 
 namespace neam
 {

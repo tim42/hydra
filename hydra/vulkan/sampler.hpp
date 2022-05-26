@@ -33,7 +33,7 @@
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 #include "device.hpp"
 
 namespace neam
@@ -53,7 +53,7 @@ namespace neam
             create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
             create_info.pNext = nullptr;
             create_info.flags = 0;
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateSampler(&create_info, nullptr, &vk_sampler));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateSampler(&create_info, nullptr, &vk_sampler));
           }
 
         public:
@@ -102,6 +102,7 @@ namespace neam
 
             vk_sampler = o.vk_sampler;
             o.vk_sampler = nullptr;
+            return *this;
           }
 
           ~sampler()
@@ -113,6 +114,7 @@ namespace neam
         public: // advanced
           /// \brief Return the VkSampler
           VkSampler _get_vk_sampler() const { return vk_sampler; }
+          const VkSampler* _get_vk_sampler_ptr() const { return &vk_sampler; }
         private:
           device &dev;
           VkSampler vk_sampler;

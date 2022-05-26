@@ -26,9 +26,8 @@
 
 #pragma once
 
-#include <sstream>
 #include <imgui.h>
-#include "hydra/tools/logger/logger.hpp"
+#include <ntools/logger/logger.hpp>
 
 namespace neam
 {
@@ -37,14 +36,12 @@ namespace neam
   public:
     imgui_log_window()
     {
-      cr::out.add_stream(log_stream);
-      cr::out.get_multiplexed_stream().add_callback(_stream_callback, this);
+      cr::out.register_callback(_stream_callback, this);
     }
 
     ~imgui_log_window()
     {
-      cr::out.get_multiplexed_stream().remove_callback(_stream_callback, this);
-      cr::out.remove_stream(log_stream);
+      cr::out.unregister_callback(_stream_callback, this);
     }
 
     void clear()
@@ -66,8 +63,9 @@ namespace neam
         window_pos_pivot.x = 0.0f;
         window_pos_pivot.y = 1.0f;
 
+        const float font_size = ImGui::GetFontSize();
         ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
-        ImGui::SetNextWindowSize(ImVec2(work_size.x, 400), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(work_size.x, 16 * font_size), ImGuiCond_Always);
         if (ImGui::Begin("Log", nullptr, window_flags))
         {
           bool do_clear = ImGui::Button("Clear");
@@ -77,15 +75,15 @@ namespace neam
           ImGui::Checkbox("Auto-scroll", &auto_scroll);
 
           ImGui::Separator();
-          ImGui::BeginChild("scrolling", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
           if (do_clear)
             clear();
           if (do_copy)
             ImGui::LogToClipboard();
 
+          ImGui::BeginChild("##scrolling", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_AlwaysVerticalScrollbar);
           ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-          ImGui::PopStyleVar();
+          ImGui::PushFont(hydra::imgui::get_font(hydra::imgui::monospace_font));
 
           ImGuiListClipper clipper;
           clipper.Begin((int)entries.size());
@@ -93,42 +91,63 @@ namespace neam
           {
             for (int line_no = clipper.DisplayStart; line_no < clipper.DisplayEnd; line_no++)
             {
-              const char* line_start = entries[line_no].data();
-              const char* line_end = entries[line_no].data() + entries[line_no].size();
+              const char* line_start = entries[line_no].msg.data();
+              const char* line_end = entries[line_no].msg.data() + entries[line_no].msg.size();
+              ImGui::PushStyleColor(ImGuiCol_Text, entries[line_no].color);
               ImGui::TextUnformatted(line_start, line_end);
+              ImGui::PopStyleColor();
             }
           }
           clipper.End();
+          ImGui::PopFont();
+          ImGui::PopStyleVar();
 
           if (auto_scroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
-            ImGui::SetScrollHereY(1.0f);
+            ImGui::SetScrollHereY(1);
           ImGui::EndChild();
-          ImGui::End();
-
         }
+        ImGui::End();
     }
 
-  private:
-    void on_new_entry()
-    {
-      const std::string new_entry = log_stream.str();
-      log_stream = std::ostringstream{};
+    private:
+      void on_new_entry(neam::cr::logger::severity s, const std::string& msg, std::source_location loc)
+      {
+        const std::string new_entry = neam::cr::format_log_to_string(s, msg, loc);
 
-      if (entries.size() >= max_count)
-        entries.pop_front();
-      entries.push_back(new_entry);
-    }
+        if (entries.size() >= max_count)
+          entries.pop_front();
+        ImVec4 color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+        switch (s)
+        {
+          case neam::cr::logger::severity::debug:
+            color = ImVec4(0.40f, 0.40f, 0.40f, color.w);
+            break;
+          case neam::cr::logger::severity::message: break;
+          case neam::cr::logger::severity::warning:
+            color = ImVec4(1.00f, 0.72f, 0.00f, color.w);
+            break;
+          case neam::cr::logger::severity::error:
+          case neam::cr::logger::severity::critical:
+            color = ImVec4(1.00f, 0.05f, 0.00f, color.w);
+            break;
+        };
+        entries.push_back({ color, new_entry});
+      }
 
-    static void _stream_callback(void* self)
-    {
-      reinterpret_cast<imgui_log_window*>(self)->on_new_entry();
-    }
+      static void _stream_callback(void* self, neam::cr::logger::severity s, const std::string& msg, std::source_location loc)
+      {
+        reinterpret_cast<imgui_log_window*>(self)->on_new_entry(s, msg, loc);
+      }
 
-    std::ostringstream log_stream;
-    std::deque<std::string> entries;
+      struct entry_t
+      {
+        ImVec4 color;
+        std::string msg;
+      };
+      std::deque<entry_t> entries;
 
-    bool auto_scroll = true;
+      bool auto_scroll = true;
 
-    static constexpr size_t max_count = 10000;
+      static constexpr size_t max_count = 10000;
   };
 }

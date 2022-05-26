@@ -33,7 +33,7 @@
 #include <vulkan/vulkan.h>
 
 #include "device.hpp"
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 namespace neam
 {
@@ -61,7 +61,7 @@ namespace neam
             eci.pNext = nullptr;
             eci.flags = 0;
 
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateEvent(&eci, nullptr, &vk_event));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateEvent(&eci, nullptr, &vk_event));
           }
 
           /// \brief Move constructor
@@ -83,7 +83,7 @@ namespace neam
           {
             VkResult res = dev._vkResetEvent(vk_event);
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
-            check::on_vulkan_error::n_throw_exception(forward_result(res) /* from vkResetEvent() */);
+            check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkResetEvent() */);
 #endif
           }
 
@@ -92,7 +92,7 @@ namespace neam
           {
             VkResult res = dev._vkSetEvent(vk_event);
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
-            check::on_vulkan_error::n_throw_exception(forward_result(res) /* from vkSetEvent() */);
+            check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkSetEvent() */);
 #endif
           }
 
@@ -105,7 +105,7 @@ namespace neam
             else if (res == VK_EVENT_SET)
               return true;
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
-            check::on_vulkan_error::n_throw_exception(forward_result(res) /* from vkSetEvent() */);
+            check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkSetEvent() */);
 #endif
             return false; // ERROR
           }

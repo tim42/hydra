@@ -35,7 +35,7 @@
 #undef LODEPNG_NO_COMPILE_CPP
 
 #include "../../utilities/image_loader.hpp"
-#include "../../hydra_exception.hpp"
+#include "../../hydra_debug.hpp"
 
 namespace neam
 {
@@ -66,8 +66,8 @@ namespace neam
           uint8_t *temp_ret = nullptr;
           unsigned lode_ret_code = lodepng_decode_file(&temp_ret, &image_size.x, &image_size.y, file.c_str(), lode_formats[format_index], bpp[format_index]);
           if (lode_ret_code)
-            neam::cr::out.error() << file << ": lodePNG error: " << lodepng_error_text(lode_ret_code) << std::endl;
-          check::on_vulkan_error::n_assert(lode_ret_code == 0, file + ": lodePNG returned an error code (see the logs)");
+            neam::cr::out().error("{0}: lodePNG error: {1}", file, lodepng_error_text(lode_ret_code));
+          check::on_vulkan_error::n_assert(lode_ret_code == 0, "{0}: lodePNG returned an error code: {1}", file, lodepng_error_text(lode_ret_code));
 
           // copy, 'cause we need to use delete to free the memory (not 'free()')
           size_t ret_size = image_size.x * image_size.y * comp[format_index];

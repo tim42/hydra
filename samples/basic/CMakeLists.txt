@@ -2,33 +2,35 @@
 ## CMAKE file for neam/yaggler dev sample
 ##
 
-cmake_minimum_required(VERSION 2.8)
 
 # set the name of the sample
-set(SAMPLE_NAME "${PROJ_NAME}-basic")
+set(SAMPLE_NAME "basic")
 
-include_directories(SYSTEM ${GLM_INCLUDE_DIR})
-include_directories(SYSTEM ${GLFW_INCLUDE_DIR})
-include_directories(SYSTEM ${LODEPNG_INCLUDE_DIR})
-include_directories(SYSTEM ${IMGUI_INCLUDE_DIR})
-include_directories(SYSTEM ${IMGUI_BACKEND_INCLUDE_DIR})
-include_directories(../../)
-add_definitions(${PROJ_FLAGS})
+add_executable(${SAMPLE_NAME} main.cpp)
 
-# avoid listing all the files
-file(GLOB_RECURSE srcs ./*.cpp)
+target_compile_options(${SAMPLE_NAME} PRIVATE ${PROJECT_CXX_FLAGS})
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${PROJ_FLAGS}")
-set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${PROJ_FLAGS}")
+target_include_directories(${SAMPLE_NAME} PRIVATE SYSTEM ${VULKAN_INCLUDE_DIR})
+target_link_libraries(${SAMPLE_NAME} PUBLIC ${VULKAN_LIBRARY})
+target_include_directories(${SAMPLE_NAME} PRIVATE SYSTEM ${LIBURING_INCLUDE_DIR})
+target_link_libraries(${SAMPLE_NAME} PUBLIC ${LIBURING_LIBRARY})
 
-add_executable(${SAMPLE_NAME} ${srcs})
-
-target_link_libraries(${SAMPLE_NAME} ${PROJ_DEPS_LIBS})
-target_link_libraries(${SAMPLE_NAME} ${GLFW_LIBRARY})
-target_link_libraries(${SAMPLE_NAME} ${LODEPNG_LIBRARY})
-target_link_libraries(${SAMPLE_NAME} ${IMGUI_LIBRARY})
-target_link_libraries(${SAMPLE_NAME} ${libntools})
+target_include_directories(${SAMPLE_NAME} PRIVATE SYSTEM glm)
+target_include_directories(${SAMPLE_NAME} PRIVATE SYSTEM lodePNG)
+target_include_directories(${SAMPLE_NAME} PRIVATE SYSTEM imgui)
+target_include_directories(${SAMPLE_NAME} PRIVATE SYSTEM glfw)
+target_include_directories(${SAMPLE_NAME} PRIVATE SYSTEM fmt)
+target_include_directories(${SAMPLE_NAME} PRIVATE ntools)
+target_include_directories(${SAMPLE_NAME} PRIVATE hydra)
+target_include_directories(${SAMPLE_NAME} PRIVATE enfield)
 
 
-# target_link_libraries(${SAMPLE_NAME} ${PROJ_APP})
+target_link_libraries(${SAMPLE_NAME} PUBLIC glm)
+target_link_libraries(${SAMPLE_NAME} PUBLIC lodePNG)
+target_link_libraries(${SAMPLE_NAME} PUBLIC imgui)
+target_link_libraries(${SAMPLE_NAME} PUBLIC glfw)
+target_link_libraries(${SAMPLE_NAME} PUBLIC ntools)
+target_link_libraries(${SAMPLE_NAME} PUBLIC fmt)
+target_link_libraries(${SAMPLE_NAME} PUBLIC hydra)
+target_link_libraries(${SAMPLE_NAME} PUBLIC enfield)
 

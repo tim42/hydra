@@ -32,7 +32,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "../hydra_exception.hpp"
+#include "../hydra_debug.hpp"
 
 #include "device.hpp"
 #include "descriptor_set_layout_binding.hpp"
@@ -50,7 +50,7 @@ namespace neam
           descriptor_set_layout(device &_dev, const VkDescriptorSetLayoutCreateInfo &create_info)
             : dev(_dev)
           {
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateDescriptorSetLayout(&create_info, nullptr, &vk_ds_layout));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateDescriptorSetLayout(&create_info, nullptr, &vk_ds_layout));
           }
 
           descriptor_set_layout(device &_dev, VkDescriptorSetLayout _vk_ds_layout) : dev(_dev), vk_ds_layout(_vk_ds_layout) {}
@@ -70,7 +70,7 @@ namespace neam
               VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr, 0,
               (uint32_t)vk_bindings_vct.size(), vk_bindings_vct.data()
             };
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateDescriptorSetLayout(&create_info, nullptr, &vk_ds_layout));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateDescriptorSetLayout(&create_info, nullptr, &vk_ds_layout));
           }
 
           descriptor_set_layout(descriptor_set_layout &&o) : dev(o.dev), vk_ds_layout(o.vk_ds_layout) {o.vk_ds_layout = nullptr;}

@@ -91,7 +91,7 @@ namespace neam
             cmd_pool_info.flags = flags;
 
             VkCommandPool cmd_pool;
-            check::on_vulkan_error::n_throw_exception(dev._vkCreateCommandPool(&cmd_pool_info, nullptr, &cmd_pool));
+            check::on_vulkan_error::n_assert_success(dev._vkCreateCommandPool(&cmd_pool_info, nullptr, &cmd_pool));
 
             return command_pool(dev, cmd_pool);
           }
@@ -113,7 +113,7 @@ namespace neam
           /// when all the work previously submitted will be done.
           void submit(const fence &fence_to_sig)
           {
-            check::on_vulkan_error::n_throw_exception(dev._fn_vkQueueSubmit(vk_queue, 0, nullptr, fence_to_sig._get_vk_fence()));
+            check::on_vulkan_error::n_assert_success(dev._fn_vkQueueSubmit(vk_queue, 0, nullptr, fence_to_sig._get_vk_fence()));
           }
 
           /// \brief Wait the queue to be idle
@@ -145,7 +145,7 @@ namespace neam
             if (result == VK_ERROR_OUT_OF_DATE_KHR && out_of_date)
               *out_of_date = true;
             else
-              check::on_vulkan_error::n_throw_exception(result);
+              check::on_vulkan_error::n_assert_success(result);
           }
 
         public: // advanced

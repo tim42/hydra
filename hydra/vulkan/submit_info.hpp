@@ -121,10 +121,10 @@ namespace neam
               if (fence_only)
               {
                 if (this->fence)
-                    check::on_vulkan_error::n_throw_exception(dev._fn_vkQueueSubmit(vk_queue, 0, nullptr, this->fence));
+                    check::on_vulkan_error::n_assert_success(dev._fn_vkQueueSubmit(vk_queue, 0, nullptr, this->fence));
               }
               else
-                check::on_vulkan_error::n_throw_exception(dev._fn_vkQueueSubmit(vk_queue, vk_submit_infos.size(), vk_submit_infos.data(), this->fence));
+                check::on_vulkan_error::n_assert_success(dev._fn_vkQueueSubmit(vk_queue, vk_submit_infos.size(), vk_submit_infos.data(), this->fence));
             }
           };
 
@@ -197,7 +197,7 @@ namespace neam
 
       /// \brief Alias for si.add_wait(semaphore)
       using cmd_sema_pair = std::pair<const semaphore &, VkPipelineStageFlags>;
-      submit_info &operator << (submit_info &si, const cmd_sema_pair &sem)
+      inline submit_info &operator << (submit_info &si, const cmd_sema_pair &sem)
       {
         si.add_wait(sem.first, sem.second);
         return si;
@@ -205,21 +205,21 @@ namespace neam
 
 
       /// \brief Alias for si.add(command_buffer)
-      submit_info &operator << (submit_info &si, const command_buffer &cb)
+      inline submit_info &operator << (submit_info &si, const command_buffer &cb)
       {
         si.add(cb);
         return si;
       }
 
       /// \brief Alias for si.add_signal(semaphore)
-      submit_info &operator >> (submit_info &si, const semaphore &sem)
+      inline submit_info &operator >> (submit_info &si, const semaphore &sem)
       {
         si.add_signal(sem);
         return si;
       }
 
       /// \brief Alias for si.add_signal(fence)
-      submit_info &operator >> (submit_info &si, const fence &fnc)
+      inline submit_info &operator >> (submit_info &si, const fence &fnc)
       {
         si.add_signal(fnc);
         return si;

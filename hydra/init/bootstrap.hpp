@@ -98,10 +98,10 @@ namespace neam
           auto compatible_gpu_list = hdc.filter_devices();
           check::on_vulkan_error::n_assert(compatible_gpu_list.size() > 0, "could not find a GPU compatible with the requirements of the application");
 
-          vk::device device = hdc.create_device(compatible_gpu_list[0]);
+          vk::device device = hdc.create_device(instance, compatible_gpu_list[0]);
           new_device_created(device);
 
-          cr::out.log() << "vulkan device created on " << compatible_gpu_list[0].get_name() << std::endl;
+          cr::out().log( "vulkan device created on {0}", compatible_gpu_list[0].get_name());
 
           return device;
         }

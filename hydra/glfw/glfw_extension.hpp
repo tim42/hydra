@@ -36,7 +36,7 @@
 #include "glfw_events.hpp"
 
 #include  "../init/hydra_init_interface.hpp"
-#include  "../hydra_exception.hpp"
+#include  "../hydra_debug.hpp"
 
 namespace neam
 {
@@ -58,7 +58,7 @@ namespace neam
           ///       please use the create_window_skip() method that will skip this part
           /// \see class window
           template<typename... WindowConstructorParameters>
-          window create_window(neam::hydra::vk::instance &instance, WindowConstructorParameters... params)
+          window create_window(neam::hydra::vk::instance &instance, WindowConstructorParameters&&... params)
           {
             window win(std::forward<WindowConstructorParameters>(params)...);
             _create_surface(win, instance);
@@ -70,22 +70,11 @@ namespace neam
           ///       has a queue that supports presenting.
           /// \see class window
           template<typename... WindowConstructorParameters>
-          window create_window_skip(neam::hydra::vk::instance &instance, WindowConstructorParameters... params)
+          window create_window_skip(neam::hydra::vk::instance &instance, WindowConstructorParameters&&... params)
           {
             window win(std::forward<WindowConstructorParameters>(params)...);
             _create_surface(win, instance, false);
             return win;
-          }
-
-          /// \brief When requesting a queue that support presenting, also request that this
-          ///        queue supports graphic operations
-          /// The default is to request a queue with both presenting and graphic capabilities
-          void request_graphic_queue(bool should_support_graphic_ops = true)
-          {
-            if (should_support_graphic_ops)
-              requester.queue_flags = VK_QUEUE_GRAPHICS_BIT;
-            else
-              requester.queue_flags = (VkQueueFlagBits)0;
           }
 
         public: // advanced
@@ -94,8 +83,6 @@ namespace neam
           void _create_surface(window &win, neam::hydra::vk::instance &instance, bool ask_for_queue = true)
           {
             win._create_surface(instance);
-            if (ask_for_queue)
-              requester.windows.emplace_back(&win);
           }
 
         public: // neam::hydra::init_interface
@@ -107,15 +94,14 @@ namespace neam
           void pre_device_creation(neam::hydra::vk::instance &) override {}
           void post_device_creation(neam::hydra::vk::device &dev) override
           {
-            for (window *w : requester.windows)
-              w->_get_surface().set_physical_device(dev.get_physical_device());
-            requester.windows.clear();
+//             for (window *w : requester.windows)
+//               w->_get_surface().set_physical_device(dev.get_physical_device());
+//             requester.windows.clear();
           }
 
-          neam::hydra::feature_requester_interface &get_feature_requester() override { return requester; }
+//           neam::hydra::feature_requester_interface &get_feature_requester() override { return requester; }
 
         private:
-          feature_requester requester;
 
         private:
       };

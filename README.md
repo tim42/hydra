@@ -7,7 +7,31 @@
 
 ---
 
-hydra: C++14 vulkan renderer.
+hydra: C++23ish vulkan renderer(ish).
+
+---
+
+**Disclaimer**: the only supported platform is linux (not unix, linux), eventhough other unix platforms
+can be accomodated for at a loss of feature.
+
+ - Hydra uses lib_uring for asynchronous IO. Other POSIX platforms can fallback to a fully synchronous IO
+   (they should support scatter/gatherIO, otherwise it's going to be synchronous AND slower than necessary).
+   (synchronous fallback is not done as of yet).
+ - Hydra uses some linux-ism for loading modules from packed files.
+   There's a least a BSD fallback that I know of.
+ - Hydra uses makefiles and bash scripts for the build system. Platforms with poor support for those will have
+   poor support for hydra.
+
+I do not own a window/bsd/\*nix machine with a window/bsd/\*nix dev env, and I don't plan to.
+As such I am unable to add windows/bsd/\*nix support.
+
+## Engine Features
+
+ - Fully asynchronous and easy to use IO. (and _only_ asynchronous IO).
+ - A modern and flexible (and fully asynchronous) resource system.
+ - A fully reloadable / dynamic code and data handling (code is a resource).
+ - 
+
 
 
 This project is under development, and can't be used in any kind of project.
@@ -87,4 +111,3 @@ make
 ---
 
 
-Made w/ <3 by Timothée Feuillet.

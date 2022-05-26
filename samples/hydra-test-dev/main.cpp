@@ -2,7 +2,7 @@
 // #include <neam/reflective/reflective.hpp>
 
 //#define N_ALLOW_DEBUG true // we want full debug information
-#define N_DISABLE_CHECKS // we don't want anything
+#define N_DISABLE_CHECKS 1 // we don't want anything
 
 #include <hydra/tools/logger/logger.hpp>
 
@@ -48,7 +48,7 @@ int main(int, char **)
 {
   // I want all these debug information to be printed:
 //   neam::cr::out.log_level = neam::cr::stream_logger::verbosity_level::debug;
-  neam::cr::out.log_level = neam::cr::stream_logger::verbosity_level::log;
+  neam::cr::out.min_severity = neam::cr::logger::severity::message;
 
   neam::hydra::glfw::init_extension glfw_ext;
   neam::hydra::gen_feature_requester gfr;
@@ -90,7 +90,6 @@ int main(int, char **)
   // create the batch transfer
   neam::hydra::vk_resource_destructor vrd;
   neam::hydra::batch_transfers btransfers(device, tqueue, transfer_cmd_pool, vrd);
-  btransfers.allocate_memory(mem_alloc);
 
   //////////////////////////////////////////////////////////////////////////////
   // create the render pass
@@ -117,8 +116,8 @@ int main(int, char **)
   mesh.vertex_input_state() = dummy_vertex::get_vertex_input_state();
   mesh.allocate_memory(mem_alloc);
 
-  mesh.transfer_data(btransfers, 0, sizeof(indices[0]) * indices.size(), indices.data());
-  mesh.transfer_data(btransfers, 1, sizeof(vertices[0]) * vertices.size(), vertices.data());
+  mesh.transfer_data(btransfers, 0, sizeof(indices[0]) * indices.size(), indices.data(), gqueue.get_queue_familly_index());
+  mesh.transfer_data(btransfers, 1, sizeof(vertices[0]) * vertices.size(), vertices.data(), gqueue.get_queue_familly_index());
 
   //////////////////////////////////////////////////////////////////////////////
   // setup the descriptors/...
@@ -139,7 +138,7 @@ int main(int, char **)
 
   // allocate memory for the image (+ transfer data to it)
   {
-    neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::optimal_image);
+    neam::hydra::memory_allocation ma = mem_alloc.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::persistent_optimal_image);
     hydra_logo_img.bind_memory(*ma.mem(), ma.offset());
 
     uint8_t *pixels = new uint8_t[logo_size * logo_size * 4];
@@ -147,7 +146,7 @@ int main(int, char **)
     btransfers.add_transfer(hydra_logo_img, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, logo_size * logo_size * 4, pixels, nullptr, &end_transfer);
     delete[] pixels;
 
-    btransfers.start(); // We can transfer buffers while the other things initialize...
+    btransfers.transfer(mem_alloc); // We can transfer buffers while the other things initialize...
   }
 
   neam::hydra::vk::image_view hydra_logo_img_view(device, hydra_logo_img, VK_IMAGE_VIEW_TYPE_2D);
@@ -220,7 +219,7 @@ int main(int, char **)
   neam::cr::chrono cr;
   float frame_cnt = 0;
 
-  neam::cr::out.log() << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
+//   neam::cr::out.log() << "btransfer: remaining " << btransfers.get_total_size_to_transfer() << " bytes..." << std::endl;
   end_transfer.wait(); // can't really do much more here
 
   cr.reset();
@@ -238,7 +237,7 @@ int main(int, char **)
 
     if (cr.get_accumulated_time() > 2.)
     {
-      neam::cr::out.log() << (cr.get_accumulated_time() / frame_cnt) * 1000.f << "ms/frame\t(" << (int)(frame_cnt / cr.get_accumulated_time()) << "fps)"<< std::endl;
+//       neam::cr::out.log() << (cr.get_accumulated_time() / frame_cnt) * 1000.f << "ms/frame\t(" << (int)(frame_cnt / cr.get_accumulated_time()) << "fps)"<< std::endl;
       cr.reset();
       frame_cnt = 0;
     }

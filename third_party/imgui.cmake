@@ -1,12 +1,19 @@
 
-set(IMGUI_SOURCES
-  ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
-  ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
-  ${IMGUI_DIR}/imgui.cpp
-  ${IMGUI_DIR}/imgui_draw.cpp
-  ${IMGUI_DIR}/imgui_demo.cpp
-  ${IMGUI_DIR}/imgui_tables.cpp
-  ${IMGUI_DIR}/imgui_widgets.cpp)
-#target_include_directories(${IMGUI_NAME} PUBLIC ${IMGUI_INCLUDE_DIR} PUBLIC ${IMGUI_BACKEND_INCLUDE_DIR})
-include_directories(${IMGUI_DIR} ${IMGUI_DIR}/backends ${GLFW_DIR}/include)
-add_library(${IMGUI_NAME} STATIC ${IMGUI_SOURCES})
+add_library(imgui STATIC
+    imgui/backends/imgui_impl_glfw.cpp
+    imgui/backends/imgui_impl_glfw.h
+
+    imgui/imgui.cpp
+    imgui/imgui_draw.cpp
+    imgui/imgui_demo.cpp
+    imgui/imgui_tables.cpp
+    imgui/imgui_widgets.cpp
+
+    imgui/imgui.h
+    imgui/imgui_internal.h
+    imgui/imconfig.h
+)
+
+target_include_directories(imgui PRIVATE glfw)
+target_link_libraries(imgui PUBLIC glfw)
+target_include_directories(imgui PUBLIC imgui/backends imgui/)

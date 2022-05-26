@@ -49,7 +49,7 @@
 // N_DISABLE_CHECKS will disable all the asserts and error checking
 // N_ALLOW_DEBUG will log a lot of information about checks and asserts
 // NOTE: hydra assert throws exceptions (neam::hydra::exception that inherits from std::exception)
-#include "hydra_exception.hpp"
+#include "hydra_debug.hpp"
 
 // include the bootstrap / init files
 #include "init/bootstrap.hpp"
@@ -66,8 +66,11 @@
 
 // include main components
 #include "utilities/utilities.hpp"
-#include "geometry/geometry.hpp"
-#include "threading/threading.hpp"
+#include <ntools/threading/threading.hpp>
+#include <ntools/io/io.hpp>
+#include "resources/resources.hpp"
+
+// #include "geometry/geometry.hpp"
 #include "geometry/geometry.hpp"
 
 // #ifndef HYDRA_NO_RENDERER

@@ -10,6 +10,7 @@ set(SAMPLE_NAME "${PROJ_NAME}-terrain")
 include_directories(SYSTEM ${GLM_INCLUDE_DIR})
 include_directories(SYSTEM ${GLFW_INCLUDE_DIR})
 include_directories(SYSTEM ${LODEPNG_INCLUDE_DIR})
+include_directories(SYSTEM fmt)
 include_directories(../../)
 add_definitions(${PROJ_FLAGS})
 
@@ -25,6 +26,7 @@ target_link_libraries(${SAMPLE_NAME} ${PROJ_DEPS_LIBS})
 target_link_libraries(${SAMPLE_NAME} ${GLFW_LIBRARY})
 target_link_libraries(${SAMPLE_NAME} ${LODEPNG_LIBRARY})
 target_link_libraries(${SAMPLE_NAME} ${libntools})
+target_link_libraries(${SAMPLE_NAME} fmt)
 
 
 # target_link_libraries(${SAMPLE_NAME} ${PROJ_APP})

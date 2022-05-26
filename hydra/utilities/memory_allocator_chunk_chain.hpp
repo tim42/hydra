@@ -32,7 +32,7 @@
 
 #include "memory_allocator_chunk.hpp"
 #include "memory_allocation.hpp"
-
+#if 0
 namespace neam
 {
   namespace hydra
@@ -45,7 +45,7 @@ namespace neam
         memory_allocator_chunk_chain(memory_allocator_chunk_chain &&o)
           : memory_type_index(o.memory_type_index), allocator(o.allocator),
             type(o.type), dev(o.dev),
-            chunk_list(std::move(o.chunk_list)), dev_to_mac(std::move(o.dev_to_mac))
+            chunk_list(std::move(o.chunk_list))
         {}
         ~memory_allocator_chunk_chain() {}
 
@@ -59,39 +59,32 @@ namespace neam
         void set_vk_device(vk::device *_dev) { dev = _dev; }
 
 
-        memory_allocation allocate_memory(size_t size, size_t alignment)
+        /*memory_allocation allocate_memory(size_t size, size_t alignment)
         {
           check::on_vulkan_error::n_assert(size < memory_allocator_chunk<>::chunk_allocation_size, "m_a_c_c::allocate(): cannot allocate more than the chunk size");
           check::on_vulkan_error::n_assert(size != 0, "m_a_c_c::allocate(): cannot allocate nothing");
 
           for (auto &it : chunk_list)
           {
-            if (it.first.can_allocate(size)) // fast heuristic to determinate if that chunk can allocate the requested memory
-            {
-              int offset = it.first.allocate(size, alignment);
-              if (offset == -1)
+              unsigned offset = it.first.allocate(size, alignment);
+              if (offset == memory_allocator_chunk<>::invalid_allocation)
                 continue; // how unfortunate :/
               ++allocation_count;
-              return memory_allocation(memory_type_index, false, type, offset, size, &it.second, allocator);
-            }
+              return memory_allocation(memory_type_index, false, type, offset, size, &it.second, allocator, &it.first);
           }
           // If we get here, we don't have enough chunk...
           chunk_list.emplace_front(memory_allocator_chunk<>(), vk::device_memory::allocate(*dev, memory_allocator_chunk<>::chunk_allocation_size, memory_type_index));
           auto &it = chunk_list.front();
-          dev_to_mac.emplace(std::make_pair(&it.second, &it.first));
           int offset = it.first.allocate(size, alignment);
           check::on_vulkan_error::n_assert(offset != -1, "m_a_c_c::allocate(): allocation failed in an empty chunk. yay.");
           ++allocation_count;
-          return memory_allocation(memory_type_index, false, type, offset, size, &it.second, allocator);
-        }
+          return memory_allocation(memory_type_index, false, type, offset, size, &it.second, allocator, &it.first);
+        }*/
 
         void free_memory(const memory_allocation &ma)
         {
-          memory_allocator_chunk<> *mac;
-          auto dtm_it = dev_to_mac.find(ma.mem());
-          check::on_vulkan_error::n_assert(dtm_it != dev_to_mac.end(), "m_a_c_c::free_memory(): invalid free (can't find the corresponding memory_allocator_chunk)");
-
-          mac = dtm_it->second;
+          memory_allocator_chunk<> *mac = reinterpret_cast<memory_allocator_chunk<> *>(ma._get_payload());
+          check::on_vulkan_error::n_assert(mac != nullptr, "m_a_c_c::free_memory(): nullptr payload.");
 
           mac->free(ma.offset(), ma.size());
 
@@ -99,14 +92,24 @@ namespace neam
 
           if (mac->is_empty()) // remove empty chunks
           {
-            chunk_list.remove_if([&](const std::pair<memory_allocator_chunk<>, vk::device_memory> &_mac)
+//             chunk_list.remove_if([&](const std::pair<memory_allocator_chunk<>, vk::device_memory> &_mac)
+//             {
+//               return &_mac.second == ma.mem();
+//             });
+//             auto it = std::find_if(chunk_list.begin(), chunk_list.end(), [&](const std::pair<memory_allocator_chunk<>, vk::device_memory> &_mac)
+//             {
+//               return &_mac.second == ma.mem();
+//             });
+//             std::swap(chunk_list[chunk_list.begin() - it], chunk_list.back());
+//             chunk_list.pop_back();
+            while (chunk_list.size() > 0 && chunk_list.front().first.is_empty())
             {
-              return &_mac.second == ma.mem();
-            });
+              chunk_list.pop_front();
+            }
           }
         }
 
-        void print_stats(const std::string& name) const
+        void print_stats(const std::string& /*name*/) const
         {
           size_t free_memory = 0;
           size_t total_memory = 0;
@@ -121,12 +124,17 @@ namespace neam
           if (chunk_count == 0)
             return;
 
-          cr::out.log() << "chain@" << this << "[" << name << "]:" << cr::newline
-                             << "  free memory:           " << (free_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
-                             << "  allocated memory:      " << ((total_memory - free_memory) / (1024.f * 1024.f)) << " Mio" << cr::newline
-                             << "  total memory:          " << (total_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
-                             << "  number of allocations: " << allocation_count << cr::newline
-                             << "  number of chunk:       " << (chunk_count) << std::endl;
+//           cr::out.log() << "chain@" << this << "[" << name << "]:" << cr::newline
+//                              << "  free memory:           " << (free_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
+//                              << "  allocated memory:      " << ((total_memory - free_memory) / (1024.f * 1024.f)) << " Mio" << cr::newline
+//                              << "  total memory:          " << (total_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
+//                              << "  number of allocations: " << allocation_count << cr::newline
+//                              << "  number of chunk:       " << (chunk_count) << std::endl;
+        }
+
+        size_t get_chain_reserved_memory() const
+        {
+          return chunk_list.size() * memory_allocator_chunk<>::chunk_allocation_size;
         }
 
       private:
@@ -137,12 +145,11 @@ namespace neam
 
         size_t allocation_count = 0;
 
-        std::list<std::pair<memory_allocator_chunk<>, vk::device_memory>> chunk_list; // normal chunk list
-        std::unordered_map<const vk::device_memory *, memory_allocator_chunk<> *> dev_to_mac;
+        std::deque<std::pair<memory_allocator_chunk<>, vk::device_memory>> chunk_list; // normal chunk list
     };
   } // namespace hydra
 } // namespace neam
 
-
+#endif
 #endif // __N_504010956183331340_3179031897_MEMORY_ALLOCATOR_CHUNK_CHAIN_HPP__
 

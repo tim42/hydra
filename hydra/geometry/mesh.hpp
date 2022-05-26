@@ -187,20 +187,20 @@ namespace neam
 
         /// \brief Allocate and bind some memory for the batch transfer
         /// The memory is then freed when the transfer object is destructed
-        void allocate_memory(memory_allocator &mem_alloc, VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+        void allocate_memory(memory_allocator &mem_alloc, VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, allocation_type at = allocation_type::persistent)
         {
-          _bind_memory_area(mem_alloc.allocate_memory(get_memory_requirements(), flags));
+          _bind_memory_area(mem_alloc.allocate_memory(get_memory_requirements(), flags, at));
         }
 
         /// \brief Bind a memory area to every single buffers
         /// (it does alignement & everything else).
         /// \see get_memory_requirements()
         /// \note The memory is freed after the end of the mesh's life
-        void _bind_memory_area(const memory_allocation &ma)
+        void _bind_memory_area(memory_allocation &&ma)
         {
           _bind_memory_area(*ma.mem(), ma.offset());
           allocation.free();
-          allocation = ma;
+          allocation = std::move(ma);
         }
 
         /// \brief Bind a memory area to every single buffers
@@ -230,22 +230,22 @@ namespace neam
         size_t _get_buffer_offset(size_t buffer_index) const { return buffers_offsets.at(buffer_index); }
 
         /// \brief Map the buffer to host memory
-        /// \note The bound memory MUST be host visible
-        void *_map_buffer(size_t buffer_index) const { return dev_mem->map_memory(buffers_offsets.at(buffer_index), buffers[buffer_index].size()); }
+        /// \note The bound memory MUST be host visible (and allocated with memory type: mapped_memory)
+        void *_map_buffer(size_t buffer_index) const { return dev_mem->map_memory(buffers_offsets.at(buffer_index)); }
 
 
         /// \brief Transfer some data to a buffer (using a batch transfer utility)
         /// \param signal_semaphore If specified, a semaphore that will become signaled when the transfer as been completed
-        void transfer_data(batch_transfers &bt, size_t buffer_index, size_t data_size, const void *_data, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
+        void transfer_data(batch_transfers &bt, size_t buffer_index, size_t data_size, const void *_data, size_t dst_queue_familly, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
         {
-          transfer_data(bt, buffer_index, 0, data_size, _data, signal_semaphore, signal_fence);
+          transfer_data(bt, buffer_index, 0, data_size, _data, dst_queue_familly, signal_semaphore, signal_fence);
         }
 
         /// \brief Transfer some data to a buffer (using a batch transfer utility)
         /// \param signal_semaphore If specified, a semaphore that will become signaled when the transfer as been completed
-        void transfer_data(batch_transfers &bt, size_t buffer_index, size_t offset, size_t data_size, const void *_data, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
+        void transfer_data(batch_transfers &bt, size_t buffer_index, size_t offset, size_t data_size, const void *_data, size_t dst_queue_familly, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
         {
-          bt.add_transfer(buffers.at(buffer_index), offset, data_size, _data, signal_semaphore, signal_fence);
+          bt.add_transfer(buffers.at(buffer_index), offset, data_size, _data, dst_queue_familly, signal_semaphore, signal_fence);
         }
 
         /// \brief Call this to setup the vertex description
