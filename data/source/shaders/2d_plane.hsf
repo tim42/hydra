@@ -1,0 +1,129 @@
+
+
+#include "yay.glsl"
+
+
+
+// raymarcher defines
+layout(constant_id = hydra::id(max_steps)) const int k_max_steps = 12;
+layout(constant_id = hydra::id(inside_step_distance)) const float k_inside_step_distance = 0.35f;
+
+
+// prog defines
+#define ROTATION_SPEED                  0.2000
+
+#define CAM_DISTANCE                    30.
+#define CAM_DISTANCE_MVT                10.
+
+// glow
+layout(constant_id = hydra::id(glow_max_distance)) const float k_glow_max_distance = 1.0f;
+layout(constant_id = hydra::id(glow_strength)) const float k_glow_strength = 0.04f;
+
+
+// in/out:
+// vert:
+hydra::layout(vert(in), location = 0) vec2 vertex_in_position;
+hydra::layout(vert(in), location = 1) vec3 vertex_in_color;
+hydra::layout(vert(in), location = 2) vec2 vertex_in_uv;
+
+hydra::layout(vert(out), location = 0) vec2 out_vertex_pos;
+hydra::layout(vert(out), location = 1) vec2 out_vertex_uv;
+
+// frag:
+hydra::layout(frag(in), location = 0) vec2 in_vertex_pos;
+hydra::layout(frag(in), location = 1) vec2 in_vertex_uv;
+
+hydra::layout(frag(out), location = 0) vec4 frag_out_color;
+
+
+layout(binding = 0) uniform sampler2D tex_sampler;
+layout(std140, binding = 1) uniform ubo_t
+{
+  float time;
+  vec2 screen_resolution;
+} ubo;
+
+
+#glsl:if hydra::is_stage(vert, frag)
+#glsl:endif
+
+hydra::entry_point(main_vs, vert)
+hydra::entry_point(main_fs, frag)
+
+const vec3 scene_color = vec3(0.7, 0.70, 1.5);
+
+mat3 rotation_matrix_xy(float angle)
+{
+  vec3 axis = vec3(0, 1, 0);
+  float s = sin(angle);
+  float c = cos(angle);
+  float oc = 1.0 - c;
+  return mat3
+  (
+    c,          0.0,                            axis.y * s,
+    0.0,        oc * axis.y * axis.y + c,       0.0,
+    -axis.y * s, 0.0,                           c
+  );
+}
+
+// where the computations (the distance field) are
+float map(vec3 position)
+{
+  const float c = 15.;
+
+  float d = length(mod(position, 50.) - 50. * 0.5) - c;
+
+  vec3 p = mod(position, c) - c * 0.5;
+  return max(-(length(p) - c / 1.8), d);
+}
+
+// do the raymarch
+vec3 raymarch(vec3 from, in vec3 dir, int max_steps/* = k_max_steps*/)
+{
+  vec3 color = vec3(0, 0, 0);
+
+  float dst_acc = 0.;
+  float dst_rmg = 0.;
+
+  for(int it = 0; it < max_steps; ++it)
+  {
+    dst_rmg = map(from + dir * dst_acc) * 1.0;
+    dst_acc += max(k_inside_step_distance, (dst_rmg));
+
+    if (abs(dst_rmg) <= k_glow_max_distance)
+      color += k_glow_strength * scene_color * (k_glow_max_distance - abs(dst_rmg)) * 10. / ((dst_acc + 1.)); // "glow"
+  }
+
+  return sqrt(color);
+}
+
+#define PI      3.1415927
+
+void main_vs()
+{
+  gl_Position = vec4(vertex_in_position, 0.0, 1.0);
+
+  out_vertex_pos = vertex_in_position;
+  out_vertex_uv = vertex_in_uv;
+}
+
+void main_fs()
+{
+  vec2 tuv = in_vertex_uv;
+  tuv.x *= ubo.screen_resolution.x / ubo.screen_resolution.y;
+  vec4 tex = texture(tex_sampler, tuv);
+  tex.a *= /*sin(ubo.time) + 1*/0.125f;
+
+  vec2 uv = (in_vertex_pos.xy);
+  uv.x *= ubo.screen_resolution.x / ubo.screen_resolution.y;
+  vec3 dir = normalize(vec3(uv * 1.0, 1.0));
+
+  mat3 rotmat = rotation_matrix_xy(mod(ubo.time * ROTATION_SPEED, 2. * PI));
+
+  vec3 pos = vec3(0., 5., -1. * CAM_DISTANCE + sin(ubo.time * ROTATION_SPEED) * CAM_DISTANCE_MVT);
+  frag_out_color = vec4(raymarch(pos * rotmat, dir * rotmat, k_max_steps + int(200 * tex.a)), 1.0);
+
+//   out_color.rgb = out_color.rgb * (1. - tex.a) + tex.a * vec3(1.);
+  frag_out_color.rgb = mix(frag_out_color.rgb, pow(frag_out_color.rgb, (1./3.).xxx), tex.a);
+//   out_color.a = tex.a;
+}
