@@ -256,6 +256,15 @@ namespace neam
           pc.get_input_assembly_state().set_topology(topology).enable_primitive_restart(primitive_restart);
         }
 
+        id_t compute_vertex_description_hash() const
+        {
+          id_t hash = pvis.compute_hash();
+          hash = (id_t)ct::hash::fnv1a_continue<64>((uint64_t)hash, reinterpret_cast<const uint8_t*>(&topology), sizeof(topology));
+          hash = (id_t)ct::hash::fnv1a_continue<64>((uint64_t)hash, reinterpret_cast<const uint8_t*>(&primitive_restart), sizeof(primitive_restart));
+
+          return hash;
+        }
+
         /// \brief Bind the buffers to a command buffer
         void bind(vk::command_buffer_recorder &cbr) const
         {

@@ -68,6 +68,18 @@ namespace neam
           {}
 
           descriptor_pool(descriptor_pool &&o) : dev(o.dev), vk_dpool(o.vk_dpool) { o.vk_dpool = nullptr; }
+          descriptor_pool& operator = (descriptor_pool &&o)
+          {
+            if (&o == this)
+              return *this;
+
+            check::on_vulkan_error::n_assert(&dev == &o.dev, "Cannot move-assign a descriptor pool to a pool from another device");
+            if (vk_dpool)
+              dev._vkDestroyDescriptorPool(vk_dpool, nullptr);
+            vk_dpool = o.vk_dpool;
+            o.vk_dpool = nullptr;
+            return *this;
+          }
 
           ~descriptor_pool()
           {

@@ -78,20 +78,18 @@ namespace neam
       public:
         vk_resource_destructor() = default;
         vk_resource_destructor(const vk_resource_destructor &) = delete;
-        vk_resource_destructor(vk_resource_destructor &&) = default;
+//         vk_resource_destructor(vk_resource_destructor &&) = default;
         vk_resource_destructor &operator = (const vk_resource_destructor &) = delete;
-        vk_resource_destructor &operator = (vk_resource_destructor &&) = default;
+//         vk_resource_destructor &operator = (vk_resource_destructor &&) = default;
         ~vk_resource_destructor()
         {
-          for (auto* it : res_list)
-            delete it;
-          for (auto* it : to_add)
-            delete it;
+          _force_full_cleanup();
         }
 
         /// \brief Postpone the frame-end cleanup of the allocator, the fence is the next valid fence supplied
         void postpone_end_frame_cleanup(const vk::queue& queue, memory_allocator& allocator)
         {
+          std::lock_guard _l(add_lock);
           to_add.push_back(new frame_allocator_wrapper{queue.get_queue_familly_index(), allocator});
         }
 
@@ -100,6 +98,7 @@ namespace neam
         template<typename... ResourceTypes>
         void postpone_destruction_to_next_fence(const vk::queue& queue, ResourceTypes&& ... resources)
         {
+          std::lock_guard _l(add_lock);
           to_add.push_back(new spec_wrapper<ResourceTypes...>{nullptr, queue.get_queue_familly_index(), std::move(resources)...});
         }
 
@@ -108,6 +107,7 @@ namespace neam
         template<typename... ResourceTypes>
         void postpone_destruction(const vk::queue& queue, vk::fence&& fence, ResourceTypes&& ... resources)
         {
+          std::lock_guard _l(lock);
           auto* ptr = new spec_wrapper<vk::fence, ResourceTypes...> {nullptr, queue.get_queue_familly_index(), std::move(fence), std::move(resources)...};
           ptr->fence = &std::get<0>(ptr->resources);
 
@@ -128,6 +128,7 @@ namespace neam
         template<typename... ResourceTypes>
         void postpone_destruction(const vk::queue& queue, const vk::fence& fence, ResourceTypes&& ... resources)
         {
+          std::lock_guard _l(lock);
           auto* ptr = new spec_wrapper<ResourceTypes...>{&fence, queue.get_queue_familly_index(), std::move(resources)...};
           for (auto it = to_add.begin(); it != to_add.end(); ++it)
           {
@@ -143,6 +144,7 @@ namespace neam
         /// \brief Perform the check
         void update()
         {
+          std::lock_guard _l(lock);
           for (auto it = res_list.begin(); it != res_list.end(); ++it)
           {
             if ((*it)->fence->is_signaled())
@@ -158,8 +160,49 @@ namespace neam
           }
         }
 
+        bool has_pending_cleanup() const { return !res_list.empty() || !to_add.empty(); }
+        bool has_pending_non_scheduled_cleanup() const { return !to_add.empty(); }
+
+        void _force_full_cleanup()
+        {
+          while (has_pending_cleanup() || has_pending_non_scheduled_cleanup())
+          {
+            {
+              std::list<wrapper *> temp_list;
+              {
+                std::lock_guard _l(lock);
+                std::swap(temp_list, res_list);
+              }
+              for (auto it : temp_list)
+              {
+                // clean the sublit:
+                for (auto* sub_it : it->sublist)
+                  delete sub_it;
+                delete it;
+              }
+            }
+
+            {
+              std::list<wrapper*> temp_list;
+              {
+                std::lock_guard _l(add_lock);
+                std::swap(temp_list, to_add);
+              }
+              for (auto it : temp_list)
+              {
+                // clean the sublit:
+                for (auto* sub_it : it->sublist)
+                  delete sub_it;
+                delete it;
+              }
+            }
+          }
+        }
+
       private:
+        spinlock lock;
         std::list<wrapper *> res_list;
+        spinlock add_lock;
         std::list<wrapper *> to_add;
     };
   } // namespace hydra

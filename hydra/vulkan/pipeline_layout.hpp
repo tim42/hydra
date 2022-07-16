@@ -79,6 +79,20 @@ namespace neam
             check::on_vulkan_error::n_assert_success(dev._vkCreatePipelineLayout(&plci, nullptr, &vk_playout));
           }
 
+          pipeline_layout(pipeline_layout&& o) : dev(o.dev), vk_playout(o.vk_playout) { o.vk_playout = nullptr; }
+          pipeline_layout& operator = (pipeline_layout&& o)
+          {
+            if (&o == this)
+              return *this;
+
+            check::on_vulkan_error::n_assert(&dev == &o.dev, "Cannot move-assign a pipeline layout to a pipeline layout from another device");
+            if (vk_playout)
+              dev._vkDestroyPipelineLayout(vk_playout, nullptr);
+            vk_playout = o.vk_playout;
+            o.vk_playout = nullptr;
+            return *this;
+          }
+
           ~pipeline_layout()
           {
             if (vk_playout)

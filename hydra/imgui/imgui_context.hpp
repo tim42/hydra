@@ -37,6 +37,7 @@
 #include <hydra/engine/hydra_context.hpp>
 #include <hydra/assets/raw.hpp>
 
+#include <hydra/glfw/glfw_engine_module.hpp>
 #include <hydra/glfw/glfw_events.hpp>
 
 namespace neam
@@ -57,6 +58,7 @@ namespace neam
       static constexpr uint32_t monospace_font = 1 * _mode_count;
       static constexpr uint32_t _font_count = 2 * _mode_count;
 
+      /// \brief Return the font corresponding to the given flags
       static ImFont* get_font(uint32_t idx)
       {
         // first, try to fallback to the default_font, keeping the same mode
@@ -68,16 +70,320 @@ namespace neam
         return ImGui::GetIO().Fonts->Fonts[idx];
       }
 
+      /// \brief Switch font (pop current + push new one) and adjust the vertical position if the size are not the same
+      /// \note You have to call switch_font_pop() + ImGui::NewLine() to correctly get a new line
+      static void switch_font_sameline(uint32_t idx, bool pop = true)
+      {
+        const float lh = ImGui::GetTextLineHeight();
+        if (pop)
+          ImGui::PopFont();
+        ImGui::SameLine();
+        ImGui::PushFont(get_font(idx));
+        const float nlh = ImGui::GetTextLineHeight();
+        const float cpy = ImGui::GetCursorPosY();
+        ImGui::SetCursorPosY(cpy + (lh-nlh)*0.75f);
+      }
+      static void switch_font_pop_sameline()
+      {
+        const float lh = ImGui::GetTextLineHeight();
+        ImGui::PopFont();
+        ImGui::SameLine();
+        const float nlh = ImGui::GetTextLineHeight();
+        const float cpy = ImGui::GetCursorPosY();
+        ImGui::SetCursorPosY(cpy - (lh-nlh)*0.75f);
+      }
+
       // NOTE: We cannot use the imgui vulkan implementation as the resource management is somewhat incorrect
       // (buffers are destroyed when they are still in use)
       // So we made our own using hydra facilities
-      class imgui_context : public glfw::events::raw_keyboard_listener, public glfw::events::raw_mouse_listener
+      class imgui_context : public events::raw_keyboard_listener, public events::raw_mouse_listener
       {
+        private:
+          // FIXME: move that elsewhere
+          struct win_event_listener : public events::raw_keyboard_listener, public events::raw_mouse_listener, public events::window_listener
+          {
+            static ImGuiKey ImGui_ImplGlfw_KeyToImGuiKey(int key)
+            {
+              switch (key)
+              {
+                case GLFW_KEY_TAB: return ImGuiKey_Tab;
+                case GLFW_KEY_LEFT: return ImGuiKey_LeftArrow;
+                case GLFW_KEY_RIGHT: return ImGuiKey_RightArrow;
+                case GLFW_KEY_UP: return ImGuiKey_UpArrow;
+                case GLFW_KEY_DOWN: return ImGuiKey_DownArrow;
+                case GLFW_KEY_PAGE_UP: return ImGuiKey_PageUp;
+                case GLFW_KEY_PAGE_DOWN: return ImGuiKey_PageDown;
+                case GLFW_KEY_HOME: return ImGuiKey_Home;
+                case GLFW_KEY_END: return ImGuiKey_End;
+                case GLFW_KEY_INSERT: return ImGuiKey_Insert;
+                case GLFW_KEY_DELETE: return ImGuiKey_Delete;
+                case GLFW_KEY_BACKSPACE: return ImGuiKey_Backspace;
+                case GLFW_KEY_SPACE: return ImGuiKey_Space;
+                case GLFW_KEY_ENTER: return ImGuiKey_Enter;
+                case GLFW_KEY_ESCAPE: return ImGuiKey_Escape;
+                case GLFW_KEY_APOSTROPHE: return ImGuiKey_Apostrophe;
+                case GLFW_KEY_COMMA: return ImGuiKey_Comma;
+                case GLFW_KEY_MINUS: return ImGuiKey_Minus;
+                case GLFW_KEY_PERIOD: return ImGuiKey_Period;
+                case GLFW_KEY_SLASH: return ImGuiKey_Slash;
+                case GLFW_KEY_SEMICOLON: return ImGuiKey_Semicolon;
+                case GLFW_KEY_EQUAL: return ImGuiKey_Equal;
+                case GLFW_KEY_LEFT_BRACKET: return ImGuiKey_LeftBracket;
+                case GLFW_KEY_BACKSLASH: return ImGuiKey_Backslash;
+                case GLFW_KEY_RIGHT_BRACKET: return ImGuiKey_RightBracket;
+                case GLFW_KEY_GRAVE_ACCENT: return ImGuiKey_GraveAccent;
+                case GLFW_KEY_CAPS_LOCK: return ImGuiKey_CapsLock;
+                case GLFW_KEY_SCROLL_LOCK: return ImGuiKey_ScrollLock;
+                case GLFW_KEY_NUM_LOCK: return ImGuiKey_NumLock;
+                case GLFW_KEY_PRINT_SCREEN: return ImGuiKey_PrintScreen;
+                case GLFW_KEY_PAUSE: return ImGuiKey_Pause;
+                case GLFW_KEY_KP_0: return ImGuiKey_Keypad0;
+                case GLFW_KEY_KP_1: return ImGuiKey_Keypad1;
+                case GLFW_KEY_KP_2: return ImGuiKey_Keypad2;
+                case GLFW_KEY_KP_3: return ImGuiKey_Keypad3;
+                case GLFW_KEY_KP_4: return ImGuiKey_Keypad4;
+                case GLFW_KEY_KP_5: return ImGuiKey_Keypad5;
+                case GLFW_KEY_KP_6: return ImGuiKey_Keypad6;
+                case GLFW_KEY_KP_7: return ImGuiKey_Keypad7;
+                case GLFW_KEY_KP_8: return ImGuiKey_Keypad8;
+                case GLFW_KEY_KP_9: return ImGuiKey_Keypad9;
+                case GLFW_KEY_KP_DECIMAL: return ImGuiKey_KeypadDecimal;
+                case GLFW_KEY_KP_DIVIDE: return ImGuiKey_KeypadDivide;
+                case GLFW_KEY_KP_MULTIPLY: return ImGuiKey_KeypadMultiply;
+                case GLFW_KEY_KP_SUBTRACT: return ImGuiKey_KeypadSubtract;
+                case GLFW_KEY_KP_ADD: return ImGuiKey_KeypadAdd;
+                case GLFW_KEY_KP_ENTER: return ImGuiKey_KeypadEnter;
+                case GLFW_KEY_KP_EQUAL: return ImGuiKey_KeypadEqual;
+                case GLFW_KEY_LEFT_SHIFT: return ImGuiKey_LeftShift;
+                case GLFW_KEY_LEFT_CONTROL: return ImGuiKey_LeftCtrl;
+                case GLFW_KEY_LEFT_ALT: return ImGuiKey_LeftAlt;
+                case GLFW_KEY_LEFT_SUPER: return ImGuiKey_LeftSuper;
+                case GLFW_KEY_RIGHT_SHIFT: return ImGuiKey_RightShift;
+                case GLFW_KEY_RIGHT_CONTROL: return ImGuiKey_RightCtrl;
+                case GLFW_KEY_RIGHT_ALT: return ImGuiKey_RightAlt;
+                case GLFW_KEY_RIGHT_SUPER: return ImGuiKey_RightSuper;
+                case GLFW_KEY_MENU: return ImGuiKey_Menu;
+                case GLFW_KEY_0: return ImGuiKey_0;
+                case GLFW_KEY_1: return ImGuiKey_1;
+                case GLFW_KEY_2: return ImGuiKey_2;
+                case GLFW_KEY_3: return ImGuiKey_3;
+                case GLFW_KEY_4: return ImGuiKey_4;
+                case GLFW_KEY_5: return ImGuiKey_5;
+                case GLFW_KEY_6: return ImGuiKey_6;
+                case GLFW_KEY_7: return ImGuiKey_7;
+                case GLFW_KEY_8: return ImGuiKey_8;
+                case GLFW_KEY_9: return ImGuiKey_9;
+                case GLFW_KEY_A: return ImGuiKey_A;
+                case GLFW_KEY_B: return ImGuiKey_B;
+                case GLFW_KEY_C: return ImGuiKey_C;
+                case GLFW_KEY_D: return ImGuiKey_D;
+                case GLFW_KEY_E: return ImGuiKey_E;
+                case GLFW_KEY_F: return ImGuiKey_F;
+                case GLFW_KEY_G: return ImGuiKey_G;
+                case GLFW_KEY_H: return ImGuiKey_H;
+                case GLFW_KEY_I: return ImGuiKey_I;
+                case GLFW_KEY_J: return ImGuiKey_J;
+                case GLFW_KEY_K: return ImGuiKey_K;
+                case GLFW_KEY_L: return ImGuiKey_L;
+                case GLFW_KEY_M: return ImGuiKey_M;
+                case GLFW_KEY_N: return ImGuiKey_N;
+                case GLFW_KEY_O: return ImGuiKey_O;
+                case GLFW_KEY_P: return ImGuiKey_P;
+                case GLFW_KEY_Q: return ImGuiKey_Q;
+                case GLFW_KEY_R: return ImGuiKey_R;
+                case GLFW_KEY_S: return ImGuiKey_S;
+                case GLFW_KEY_T: return ImGuiKey_T;
+                case GLFW_KEY_U: return ImGuiKey_U;
+                case GLFW_KEY_V: return ImGuiKey_V;
+                case GLFW_KEY_W: return ImGuiKey_W;
+                case GLFW_KEY_X: return ImGuiKey_X;
+                case GLFW_KEY_Y: return ImGuiKey_Y;
+                case GLFW_KEY_Z: return ImGuiKey_Z;
+                case GLFW_KEY_F1: return ImGuiKey_F1;
+                case GLFW_KEY_F2: return ImGuiKey_F2;
+                case GLFW_KEY_F3: return ImGuiKey_F3;
+                case GLFW_KEY_F4: return ImGuiKey_F4;
+                case GLFW_KEY_F5: return ImGuiKey_F5;
+                case GLFW_KEY_F6: return ImGuiKey_F6;
+                case GLFW_KEY_F7: return ImGuiKey_F7;
+                case GLFW_KEY_F8: return ImGuiKey_F8;
+                case GLFW_KEY_F9: return ImGuiKey_F9;
+                case GLFW_KEY_F10: return ImGuiKey_F10;
+                case GLFW_KEY_F11: return ImGuiKey_F11;
+                case GLFW_KEY_F12: return ImGuiKey_F12;
+                default: return ImGuiKey_None;
+              }
+            }
+            void ImGui_ImplGlfw_UpdateKeyModifiers(int mods)
+            {
+              io.AddKeyEvent(ImGuiKey_ModCtrl, (mods & GLFW_MOD_CONTROL) != 0);
+              io.AddKeyEvent(ImGuiKey_ModShift, (mods & GLFW_MOD_SHIFT) != 0);
+              io.AddKeyEvent(ImGuiKey_ModAlt, (mods & GLFW_MOD_ALT) != 0);
+              io.AddKeyEvent(ImGuiKey_ModSuper, (mods & GLFW_MOD_SUPER) != 0);
+            }
+            static int ImGui_ImplGlfw_KeyToModifier(int key)
+            {
+              if (key == GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL)
+                return GLFW_MOD_CONTROL;
+              if (key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT)
+                return GLFW_MOD_SHIFT;
+              if (key == GLFW_KEY_LEFT_ALT || key == GLFW_KEY_RIGHT_ALT)
+                return GLFW_MOD_ALT;
+              if (key == GLFW_KEY_LEFT_SUPER || key == GLFW_KEY_RIGHT_SUPER)
+                return GLFW_MOD_SUPER;
+              return 0;
+            }
+
+            static int ImGui_ImplGlfw_TranslateUntranslatedKey(int key, int scancode)
+            {
+                // GLFW 3.1+ attempts to "untranslate" keys, which goes the opposite of what every other framework does, making using lettered shortcuts difficult.
+                // (It had reasons to do so: namely GLFW is/was more likely to be used for WASD-type game controls rather than lettered shortcuts, but IHMO the 3.1 change could have been done differently)
+                // See https://github.com/glfw/glfw/issues/1502 for details.
+                // Adding a workaround to undo this (so our keys are translated->untranslated->translated, likely a lossy process).
+                // This won't cover edge cases but this is at least going to cover common cases.
+                if (key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_EQUAL)
+                    return key;
+                const char* key_name = glfwGetKeyName(key, scancode);
+                if (key_name && key_name[0] != 0 && key_name[1] == 0)
+                {
+                  const char char_names[] = "`-=[]\\,;\'./";
+                  const int char_keys[] = { GLFW_KEY_GRAVE_ACCENT, GLFW_KEY_MINUS, GLFW_KEY_EQUAL, GLFW_KEY_LEFT_BRACKET, GLFW_KEY_RIGHT_BRACKET, GLFW_KEY_BACKSLASH, GLFW_KEY_COMMA, GLFW_KEY_SEMICOLON, GLFW_KEY_APOSTROPHE, GLFW_KEY_PERIOD, GLFW_KEY_SLASH, 0 };
+                  IM_ASSERT(IM_ARRAYSIZE(char_names) == IM_ARRAYSIZE(char_keys));
+                  if (key_name[0] >= '0' && key_name[0] <= '9')               { key = GLFW_KEY_0 + (key_name[0] - '0'); }
+                  else if (key_name[0] >= 'A' && key_name[0] <= 'Z')          { key = GLFW_KEY_A + (key_name[0] - 'A'); }
+                  else if (key_name[0] >= 'a' && key_name[0] <= 'z')          { key = GLFW_KEY_A + (key_name[0] - 'a'); }
+                  else if (const char* p = strchr(char_names, key_name[0]))   { key = char_keys[p - char_names]; }
+                }
+                // if (action == GLFW_PRESS) printf("key %d scancode %d name '%s'\n", key, scancode, key_name);
+                return key;
+            }
+
+            void on_mouse_button(int button, int action, int modifiers) final override
+            {
+              ImGui_ImplGlfw_UpdateKeyModifiers(modifiers);
+
+              if (button >= 0 && button < ImGuiMouseButton_COUNT)
+                io.AddMouseButtonEvent(button, action == GLFW_PRESS);
+            }
+            void on_mouse_wheel(double x, double y) final override
+            {
+              io.AddMouseWheelEvent((float)x, (float)y);
+            }
+            void on_mouse_move(double x, double y) final override
+            {
+              if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+              {
+                const glm::uvec2 pos = ref->window.get_position();
+                x += pos.x;
+                y += pos.y;
+              }
+              io.AddMousePosEvent((float)x, (float)y);
+            }
+
+            void on_key(int keycode, int scancode, int action, int mods) final override
+            {
+              // Workaround: X11 does not include current pressed/released modifier key in 'mods' flags. https://github.com/glfw/glfw/issues/1630
+              int keycode_to_mod = ImGui_ImplGlfw_KeyToModifier(keycode);
+              if (keycode_to_mod)
+                mods = (action == GLFW_PRESS) ? (mods | keycode_to_mod) : (mods & ~keycode_to_mod);
+              ImGui_ImplGlfw_UpdateKeyModifiers(mods);
+
+              // FIXME:
+//               if (keycode >= 0 && keycode < IM_ARRAYSIZE(bd->KeyOwnerWindows))
+//                   bd->KeyOwnerWindows[keycode] = (action == GLFW_PRESS) ? window : NULL;
+
+              keycode = ImGui_ImplGlfw_TranslateUntranslatedKey(keycode, scancode);
+
+              ImGuiKey imgui_key = ImGui_ImplGlfw_KeyToImGuiKey(keycode);
+              io.AddKeyEvent(imgui_key, (action == GLFW_PRESS));
+              io.SetKeyEventNativeData(imgui_key, keycode, scancode); // To support legacy indexing (<1.87 user code)
+            }
+            void on_unicode_input(unsigned int code) final override
+            {
+              io.AddInputCharacter(code);
+            }
+
+            void window_closed() final override
+            {
+              ImGuiViewport* viewport = ImGui::FindViewportByPlatformHandle(ref);
+              if (viewport)
+                viewport->PlatformRequestClose = true;
+            }
+            void window_focused(bool focused) final override { io.AddFocusEvent(focused != 0); }
+            void window_iconified(bool /*iconified*/) final override {}
+
+            void on_mouse_entered(bool entered) final override
+            {
+              // FIXME:
+//               if (entered)
+//               {
+//                   bd->MouseWindow = window;
+//                   io.AddMousePosEvent(bd->LastValidMousePos.x, bd->LastValidMousePos.y);
+//               }
+//               else if (!entered && bd->MouseWindow == window)
+//               {
+//                   bd->LastValidMousePos = io.MousePos;
+//                   bd->MouseWindow = NULL;
+//                   io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+//               }
+            }
+            void window_resized(const glm::vec2 &/*new_size*/) final override
+            {
+              ImGuiViewport* viewport = ImGui::FindViewportByPlatformHandle(ref);
+              if (viewport)
+              {
+//                   bool ignore_event = (ImGui::GetFrameCount() <= vd->IgnoreWindowSizeEventFrame + 1);
+//                   //data->IgnoreWindowSizeEventFrame = -1;
+//                   if (ignore_event)
+//                       return;
+//               }
+                viewport->PlatformRequestResize = true;
+              }
+            }
+
+            void window_position_changed(const glm::vec2 &/*new_pos*/) final override
+            {
+              ImGuiViewport* viewport = ImGui::FindViewportByPlatformHandle(ref);
+              if (viewport)
+              {
+                // FIXME:
+//                 if (ImGui_ImplGlfw_ViewportData* vd = (ImGui_ImplGlfw_ViewportData*)viewport->PlatformUserData)
+//                 {
+//                     bool ignore_event = (ImGui::GetFrameCount() <= vd->IgnoreWindowPosEventFrame + 1);
+//                     //data->IgnoreWindowPosEventFrame = -1;
+//                     if (ignore_event)
+//                         return;
+//                 }
+                viewport->PlatformRequestMove = true;
+              }
+            }
+
+            win_event_listener(ImGuiIO& _io, glfw::glfw_module::state_ref_t* _ref, bool _owned = false)
+             : io(_io)
+             , ref(_ref)
+             , owned(_owned)
+            {
+              ref->emgr.register_mouse_listener(this);
+              ref->emgr.register_keyboard_listener(this);
+              ref->emgr.register_window_listener(this);
+            }
+            ~win_event_listener()
+            {
+              ref->emgr.unregister_mouse_listener(this);
+              ref->emgr.unregister_keyboard_listener(this);
+              ref->emgr.unregister_window_listener(this);
+            }
+
+            ImGuiIO& io;
+            glfw::glfw_module::state_ref_t* ref;
+            bool owned = false;
+          };
+
         public:
-          imgui_context(core_context& _ctx, glfw::window& win,  glfw::events::manager& _emgr)
+          using viewport_ref_t = glfw::glfw_module::state_ref_t;
+          imgui_context(hydra_context& _ctx, engine_t& _engine, viewport_ref_t& main_viewport)
           : ctx(_ctx),
-            window(win),
-            emgr(_emgr),
+            engine(_engine),
             context(*ImGui::CreateContext()),
             io(ImGui::GetIO())
           {
@@ -86,13 +392,53 @@ namespace neam
 
             //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
             //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-            io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-            io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+            io.ConfigFlags |= ImGuiConfigFlags_DockingEnable
+                            | ImGuiConfigFlags_ViewportsEnable;
+//                            | ImGuiConfigFlags_DpiEnableScaleViewports
+//                            | ImGuiConfigFlags_DpiEnableScaleFonts;
+            io.ConfigViewportsNoAutoMerge = true;
+            io.ConfigViewportsNoTaskBarIcon = true;
 
             io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines;
 
-            content_scale = win.get_content_scale();
+            ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+            platform_io.Platform_CreateWindow = _t_platform_create_window;
+            platform_io.Platform_DestroyWindow = _t_platform_destroy_window;
+            platform_io.Platform_ShowWindow = _t_platform_show_window;
+
+            platform_io.Platform_SetWindowPos = _t_platform_set_window_pos;
+            platform_io.Platform_GetWindowPos = _t_platform_get_window_pos;
+
+            platform_io.Platform_SetWindowSize = _t_platform_set_window_size;
+            platform_io.Platform_GetWindowSize = _t_platform_get_window_size;
+
+            platform_io.Platform_SetWindowFocus = _t_platform_set_window_focus;
+            platform_io.Platform_GetWindowFocus = _t_platform_get_window_focus;
+
+            platform_io.Platform_GetWindowMinimized = _t_platform_get_window_minimized;
+
+            platform_io.Platform_SetWindowTitle = _t_platform_set_window_title;
+
+            platform_io.Platform_RenderWindow = _t_platform_render_window;
+
+            platform_io.Platform_SetWindowAlpha = _t_platform_set_window_opacity;
+
+            // FIXME:
+//             io.SetClipboardTextFn = ImGui_ImplGlfw_SetClipboardText;
+//             io.GetClipboardTextFn = ImGui_ImplGlfw_GetClipboardText;
+//             io.ClipboardUserData = bd->Window;
+
+
+            ImGuiViewport* im_main_viewport = ImGui::GetMainViewport();
+            im_main_viewport->PlatformHandle = &main_viewport;
+            win_event_listener* wevt = new win_event_listener(io, &main_viewport, false);
+            im_main_viewport->PlatformUserData = wevt;
+            main_vp = wevt;
+
+            content_scale = main_viewport.window.get_content_scale();
+//             content_scale = glm::vec2(1, 1);//main_viewport.window.get_content_scale();
             const float scale = (std::max(content_scale.x, content_scale.y));
+
 
             // Setup Dear ImGui style
             ImGui::StyleColorsDark();
@@ -102,23 +448,19 @@ namespace neam
             ImGui::GetStyle().ScaleAllSizes(scale);
             ImGui::GetStyle().AntiAliasedLinesUseTex = false;
 
-            // FIXME: a custom implem of this one, as hydra can handle multiple windows. For now it's OK, but in the future we'll need to fix this.
-            ImGui_ImplGlfw_InitForVulkan(window._get_glfw_handle(), false);
-            emgr.register_keyboard_listener(this);
-            emgr.register_mouse_listener(this);
-
             // Setup capabilities:
-            io.BackendRendererName = "hydra/vk";
+            io.BackendPlatformName = "hydra";
+            io.BackendRendererName = "hydra";
+
+            io.BackendPlatformUserData = this;
             // We can honor the ImDrawCmd::VtxOffset field, allowing for large meshes.
-            io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
+            io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset
+                             | ImGuiBackendFlags_RendererHasViewports
+                             | ImGuiBackendFlags_PlatformHasViewports;
           }
 
           virtual ~imgui_context()
           {
-            emgr.unregister_keyboard_listener(this);
-            emgr.unregister_mouse_listener(this);
-
-            ImGui_ImplGlfw_Shutdown();
             ImGui::DestroyContext(&context);
           }
 
@@ -149,7 +491,8 @@ namespace neam
 
           void new_frame()
           {
-            const glm::vec2 new_content_scale = window.get_content_scale();
+//             const glm::vec2 new_content_scale = glm::vec2(1, 1);//!main_vp ? glm::vec2(1, 1) : main_vp->ref->window.get_content_scale();
+            const glm::vec2 new_content_scale = !main_vp ? glm::vec2(1, 1) : main_vp->ref->window.get_content_scale();
             if (new_content_scale != content_scale || has_font_change)
             {
               const float old_scale = (std::max(content_scale.x, content_scale.y));
@@ -169,15 +512,19 @@ namespace neam
                 io.FontGlobalScale = 1;
                 for (uint32_t i = 0; i < _font_count; i += _mode_count)
                 {
-                  const float font_base_size = (i == default_font ? 18 : 13);
-                  if (ttf_fonts[i].size > 0)
+                  const float default_font_size = 18;
+                  const float font_base_size = (i == monospace_font ? 13 : default_font_size);
+                  if (ttf_fonts[i].data.size > 0)
                   {
                     for (uint32_t m = 0; m < _mode_count; ++m)
                     {
-                      uint32_t font_idx = (ttf_fonts[i + m].size > 0 ? i + m : i);
+                      uint32_t font_idx = (ttf_fonts[i + m].data.size > 0 ? i + m : i);
                       ImFontConfig cfg;
                       cfg.FontDataOwnedByAtlas = false;
-                      io.Fonts->AddFontFromMemoryTTF(ttf_fonts[font_idx].data.get(), ttf_fonts[font_idx].size, std::roundf(font_base_size * scale), &cfg);
+                      cfg.OversampleH = 1;
+                      cfg.OversampleV = 1;
+                      //cfg.GlyphOffset.y = (default_font_size - font_base_size) * scale * ttf_fonts[i].scale * 0.75f;
+                      io.Fonts->AddFontFromMemoryTTF(ttf_fonts[font_idx].data.data.get(), ttf_fonts[font_idx].data.size, std::roundf(font_base_size * scale * ttf_fonts[i].scale), &cfg);
                     }
                   }
                   else
@@ -185,6 +532,8 @@ namespace neam
                     for (uint32_t m = 0; m < _mode_count; ++m)
                     {
                       ImFontConfig cfg;
+                      cfg.OversampleH = 1;
+                      cfg.OversampleV = 1;
                       cfg.SizePixels = std::roundf(font_base_size * scale);
                       io.Fonts->AddFontDefault(&cfg);
                     }
@@ -198,7 +547,61 @@ namespace neam
             }
 
             switch_to();
-            ImGui_ImplGlfw_NewFrame();
+            {
+              ImGui_ImplGlfw_UpdateMonitors();
+              const double current_time = glfwGetTime();
+              io.DeltaTime = (old_time <= current_time ? (1.0f / 60.0f) : (float)(current_time - old_time));
+              old_time = current_time;
+              if (main_vp)
+              {
+                // Setup display size (every frame to accommodate for window resizing)
+                int display_w, display_h;
+                glm::uvec2 sz = main_vp->ref->window.get_size();
+                glm::uvec2 fb_sz = main_vp->ref->window.get_framebuffer_size();
+                io.DisplaySize = ImVec2((float)sz.x, (float)sz.y);
+                if (sz.x > 0 && sz.y > 0)
+                    io.DisplayFramebufferScale = ImVec2((float)fb_sz.x / (float)sz.x, (float)fb_sz.y / (float)sz.y);
+              }
+//               ImGui_ImplGlfw_UpdateMouseData();
+
+              // update mouse cursor:
+              ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
+              ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+              for (int n = 0; n < platform_io.Viewports.Size; n++)
+              {
+                viewport_ref_t* vpref = (viewport_ref_t*)platform_io.Viewports[n]->PlatformHandle;
+                if (imgui_cursor == ImGuiMouseCursor_None)
+                {
+                  vpref->window.disable_cursor(true);
+                }
+                else if (io.MouseDrawCursor)
+                {
+                  // Hide OS mouse cursor if imgui is drawing it or if it wants no cursor
+                  vpref->window.hide_cursor(true);
+                }
+                else
+                {
+                  // Show OS mouse cursor
+                  glfw::cursor c = glfw::cursor::arrow;
+                  switch (imgui_cursor)
+                  {
+                    case ImGuiMouseCursor_Arrow: c = glfw::cursor::arrow; break;
+                    case ImGuiMouseCursor_TextInput: c = glfw::cursor::ibeam; break;
+                    case ImGuiMouseCursor_ResizeAll: c = glfw::cursor::resize_all; break;
+                    case ImGuiMouseCursor_ResizeNS: c = glfw::cursor::resize_ns; break;
+                    case ImGuiMouseCursor_ResizeEW: c = glfw::cursor::resize_ew; break;
+                    case ImGuiMouseCursor_ResizeNESW: c = glfw::cursor::resize_nesw; break;
+                    case ImGuiMouseCursor_ResizeNWSE: c = glfw::cursor::resize_nwse; break;
+                    case ImGuiMouseCursor_Hand: c = glfw::cursor::pointing_hand; break;
+                    case ImGuiMouseCursor_NotAllowed: c = glfw::cursor::not_allowed; break;
+                    default:
+                      cr::out().error("invalid/unknown imgui cursor: {}", (int)imgui_cursor);
+                  }
+                  vpref->window.set_cursor(c);
+                }
+              }
+            }
+
             ImGui::NewFrame();
           }
 
@@ -208,10 +611,10 @@ namespace neam
           bool should_regenerate_fonts() const { return regenerate_fonts; }
           void set_font_as_regenerated() { regenerate_fonts = false; }
 
-          void _load_font(string_id rid, uint32_t font)
+          void _load_font(string_id rid, uint32_t font, float scale = 1.0f)
           {
             ctx.res.read_resource<assets::raw_asset>(rid)
-            .then([this, idx = font, rid](assets::raw_asset&& font, resources::status st)
+            .then([this, scale, idx = font, rid](assets::raw_asset&& font, resources::status st)
             {
               if (st == resources::status::success)
               {
@@ -223,30 +626,161 @@ namespace neam
                 return;
               }
               std::lock_guard _l(font_lock);
-              ttf_fonts[idx] = (std::move(font.data));
+              ttf_fonts[idx] = {std::move(font.data), scale};
               has_font_change = true;
             });
           }
 
-        private: // events
-          void on_mouse_button(int button, int action, int modifiers) final override
+      private: // imgui stuff
+        void ImGui_ImplGlfw_UpdateMonitors()
+        {
+          ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+          int monitors_count = 0;
+          GLFWmonitor** glfw_monitors = glfwGetMonitors(&monitors_count);
+          platform_io.Monitors.resize(0);
+          for (int n = 0; n < monitors_count; n++)
           {
-            ImGui_ImplGlfw_MouseButtonCallback(window._get_glfw_handle(), button, action, modifiers);
+            ImGuiPlatformMonitor monitor;
+            int x, y;
+            glfwGetMonitorPos(glfw_monitors[n], &x, &y);
+            const GLFWvidmode* vid_mode = glfwGetVideoMode(glfw_monitors[n]);
+            monitor.MainPos = monitor.WorkPos = ImVec2((float)x, (float)y);
+            monitor.MainSize = monitor.WorkSize = ImVec2((float)vid_mode->width, (float)vid_mode->height);
+// #if GLFW_HAS_MONITOR_WORK_AREA
+            int w, h;
+            glfwGetMonitorWorkarea(glfw_monitors[n], &x, &y, &w, &h);
+            if (w > 0 && h > 0) // Workaround a small GLFW issue reporting zero on monitor changes: https://github.com/glfw/glfw/pull/1761
+            {
+              monitor.WorkPos = ImVec2((float)x, (float)y);
+              monitor.WorkSize = ImVec2((float)w, (float)h);
+            }
+// #endif
+// #if GLFW_HAS_PER_MONITOR_DPI
+            // Warning: the validity of monitor DPI information on Windows depends on the application DPI awareness settings, which generally needs to be set in the manifest or at runtime.
+            float x_scale, y_scale;
+            glfwGetMonitorContentScale(glfw_monitors[n], &x_scale, &y_scale);
+            monitor.DpiScale = x_scale;
+// #endif
+            platform_io.Monitors.push_back(monitor);
           }
-          void on_mouse_wheel(double x, double y) final override
-          {
-            ImGui_ImplGlfw_ScrollCallback(window._get_glfw_handle(), x, y);
-          }
-          void on_mouse_move(double /*x*/, double /*y*/) final override {}
+        }
 
-          void on_key(int key, int scancode, int action, int modifiers) final override
+        static void add_render_pass_to_window(imgui_context* ctx, viewport_ref_t& ref, ImGuiViewport* vp);
+
+        private: // inmgui multi-viewport suppory
+          static void _t_platform_create_window(ImGuiViewport* vp)
           {
-            ImGui_ImplGlfw_KeyCallback(window._get_glfw_handle(), key, scancode, action, modifiers);
+//             cr::out().debug("imgui-context: creating a new window (ID: {})", vp->ID);
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            auto window_state = ctx->engine.get_module<glfw::glfw_module>("glfw"_rid)->create_window(glm::uvec2(vp->Size.x, vp->Size.y), "[hydra imgui window]",
+            std::initializer_list<std::pair<int, int>>
+            {
+              {GLFW_VISIBLE, false},
+              {GLFW_FOCUSED, false},
+              {GLFW_TRANSPARENT_FRAMEBUFFER, true},
+              {GLFW_FOCUS_ON_SHOW, false},
+              {GLFW_DECORATED, (vp->Flags & ImGuiViewportFlags_NoDecoration) ? false : true},
+              {GLFW_FLOATING, (vp->Flags & ImGuiViewportFlags_TopMost) ? true : false},
+            });
+            window_state->window.set_position(glm::uvec2((uint32_t)vp->Pos.x, (uint32_t)vp->Pos.y));
+            if (vp->Flags & ImGuiViewportFlags_NoTaskBarIcon)
+              window_state->window._set_window_type(glfw::window::_window_type::utility);
+            else
+              window_state->window._set_window_type(glfw::window::_window_type::dialog);
+
+            win_event_listener* wevt = new win_event_listener(ctx->io, window_state.get(), true);
+            vp->PlatformUserData = wevt;
+            add_render_pass_to_window(ctx, *window_state.get(), vp);
+            vp->PlatformHandle = window_state.release();
           }
-          void on_unicode_input(unsigned int code) final override
+          static void _t_platform_destroy_window(ImGuiViewport* vp)
           {
-            ImGui_ImplGlfw_CharCallback(window._get_glfw_handle(), code);
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+
+            win_event_listener* wevt = (win_event_listener*)vp->PlatformUserData;
+            const bool owned = wevt->owned;
+//             cr::out().debug("imgui-context: destroying a window (ID: {}, owned: {})", vp->ID, owned);
+            if (ctx->main_vp == wevt)
+              ctx->main_vp = nullptr;
+            delete wevt;
+
+            if (owned)
+            {
+              viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+              delete vpref;
+            }
+            vp->PlatformHandle = nullptr;
+            vp->PlatformUserData = nullptr;
           }
+          static void _t_platform_show_window(ImGuiViewport* vp)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            vpref->window.show();
+          }
+
+          static void _t_platform_set_window_pos(ImGuiViewport* vp, ImVec2 pos)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            vpref->window.set_position({pos.x, pos.y});
+          }
+          static ImVec2 _t_platform_get_window_pos(ImGuiViewport* vp)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            glm::uvec2 r = vpref->window.get_position();
+            return {(float)r.x, (float)r.y};
+          }
+
+          static void _t_platform_set_window_size(ImGuiViewport* vp, ImVec2 size)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            vpref->window.set_size({size.x, size.y});
+          }
+          static ImVec2 _t_platform_get_window_size(ImGuiViewport* vp)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            glm::uvec2 r = vpref->window.get_size();
+            return {(float)r.x, (float)r.y};
+          }
+
+          static void _t_platform_set_window_focus(ImGuiViewport* vp)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            vpref->window.focus();
+          }
+          static bool _t_platform_get_window_focus(ImGuiViewport* vp)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            return vpref->window.is_focused();
+          }
+
+          static bool _t_platform_get_window_minimized(ImGuiViewport* vp)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            return vpref->window.is_iconified();
+          }
+
+          static void _t_platform_set_window_title(ImGuiViewport* vp, const char* title)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            vpref->window.set_title(title);
+          }
+          static void _t_platform_set_window_opacity(ImGuiViewport* vp, float alpha)
+          {
+            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+            viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
+            vpref->window.set_opacity(alpha);
+          }
+
+          static void _t_platform_render_window(ImGuiViewport*, void*) {}
 
         private: // style:
           static void hydra_dark_theme()
@@ -254,18 +788,18 @@ namespace neam
             ImVec4* colors = ImGui::GetStyle().Colors;
             colors[ImGuiCol_Text]                   = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
             colors[ImGuiCol_TextDisabled]           = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
-            colors[ImGuiCol_WindowBg]               = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
+            colors[ImGuiCol_WindowBg]               = ImVec4(0.11f, 0.10f, 0.10f, 1.00f);
             colors[ImGuiCol_ChildBg]                = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-            colors[ImGuiCol_PopupBg]                = ImVec4(0.19f, 0.19f, 0.19f, 0.92f);
+            colors[ImGuiCol_PopupBg]                = ImVec4(0.16f, 0.16f, 0.16f, 0.79f);
             colors[ImGuiCol_Border]                 = ImVec4(0.69f, 0.69f, 0.69f, 0.29f);
-            colors[ImGuiCol_BorderShadow]           = ImVec4(0.00f, 0.00f, 0.00f, 0.24f);
-            colors[ImGuiCol_FrameBg]                = ImVec4(0.01f, 0.01f, 0.01f, 0.60f);
-            colors[ImGuiCol_FrameBgHovered]         = ImVec4(0.08f, 0.08f, 0.08f, 0.60f);
+            colors[ImGuiCol_BorderShadow]           = ImVec4(0.00f, 0.00f, 0.00f, 0.41f);
+            colors[ImGuiCol_FrameBg]                = ImVec4(0.01f, 0.01f, 0.01f, 0.42f);
+            colors[ImGuiCol_FrameBgHovered]         = ImVec4(0.20f, 0.20f, 0.20f, 0.49f);
             colors[ImGuiCol_FrameBgActive]          = ImVec4(0.20f, 0.22f, 0.23f, 0.70f);
-            colors[ImGuiCol_TitleBg]                = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-            colors[ImGuiCol_TitleBgActive]          = ImVec4(0.06f, 0.06f, 0.06f, 1.00f);
-            colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-            colors[ImGuiCol_MenuBarBg]              = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
+            colors[ImGuiCol_TitleBg]                = ImVec4(0.00f, 0.00f, 0.00f, 0.42f);
+            colors[ImGuiCol_TitleBgActive]          = ImVec4(0.06f, 0.06f, 0.06f, 0.45f);
+            colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(0.00f, 0.00f, 0.00f, 0.51f);
+            colors[ImGuiCol_MenuBarBg]              = ImVec4(0.20f, 0.20f, 0.20f, 0.48f);
             colors[ImGuiCol_ScrollbarBg]            = ImVec4(0.05f, 0.05f, 0.05f, 0.54f);
             colors[ImGuiCol_ScrollbarGrab]          = ImVec4(0.34f, 0.34f, 0.34f, 0.54f);
             colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(0.40f, 0.40f, 0.40f, 0.54f);
@@ -279,30 +813,30 @@ namespace neam
             colors[ImGuiCol_Header]                 = ImVec4(0.00f, 0.00f, 0.00f, 0.52f);
             colors[ImGuiCol_HeaderHovered]          = ImVec4(0.00f, 0.00f, 0.00f, 0.36f);
             colors[ImGuiCol_HeaderActive]           = ImVec4(0.20f, 0.22f, 0.23f, 0.33f);
-            colors[ImGuiCol_Separator]              = ImVec4(0.28f, 0.28f, 0.28f, 0.29f);
-            colors[ImGuiCol_SeparatorHovered]       = ImVec4(0.44f, 0.44f, 0.44f, 0.29f);
+            colors[ImGuiCol_Separator]              = ImVec4(0.48f, 0.48f, 0.48f, 0.29f);
+            colors[ImGuiCol_SeparatorHovered]       = ImVec4(0.42f, 0.45f, 0.51f, 0.68f);
             colors[ImGuiCol_SeparatorActive]        = ImVec4(0.40f, 0.44f, 0.47f, 1.00f);
-            colors[ImGuiCol_ResizeGrip]             = ImVec4(0.28f, 0.28f, 0.28f, 0.29f);
-            colors[ImGuiCol_ResizeGripHovered]      = ImVec4(0.44f, 0.44f, 0.44f, 0.29f);
-            colors[ImGuiCol_ResizeGripActive]       = ImVec4(0.40f, 0.44f, 0.47f, 1.00f);
+            colors[ImGuiCol_ResizeGrip]             = ImVec4(0.28f, 0.28f, 0.28f, 0.45f);
+            colors[ImGuiCol_ResizeGripHovered]      = ImVec4(0.44f, 0.44f, 0.44f, 0.48f);
+            colors[ImGuiCol_ResizeGripActive]       = ImVec4(0.40f, 0.44f, 0.47f, 0.66f);
             colors[ImGuiCol_Tab]                    = ImVec4(0.00f, 0.00f, 0.00f, 0.52f);
-            colors[ImGuiCol_TabHovered]             = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
+            colors[ImGuiCol_TabHovered]             = ImVec4(0.21f, 0.21f, 0.21f, 0.52f);
             colors[ImGuiCol_TabActive]              = ImVec4(0.20f, 0.20f, 0.20f, 0.36f);
             colors[ImGuiCol_TabUnfocused]           = ImVec4(0.00f, 0.00f, 0.00f, 0.52f);
-            colors[ImGuiCol_TabUnfocusedActive]     = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
-            colors[ImGuiCol_DockingPreview]         = ImVec4(0.33f, 0.67f, 0.86f, 1.00f);
-            colors[ImGuiCol_DockingEmptyBg]         = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
+            colors[ImGuiCol_TabUnfocusedActive]     = ImVec4(0.14f, 0.14f, 0.14f, 0.49f);
+            colors[ImGuiCol_DockingPreview]         = ImVec4(0.33f, 0.67f, 0.86f, 0.64f);
+            colors[ImGuiCol_DockingEmptyBg]         = ImVec4(0.01f, 0.01f, 0.01f, 0.44f);
             colors[ImGuiCol_PlotLines]              = ImVec4(0.00f, 0.50f, 0.90f, 1.00f);
             colors[ImGuiCol_PlotLinesHovered]       = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
             colors[ImGuiCol_PlotHistogram]          = ImVec4(0.00f, 0.50f, 0.90f, 1.00f);
             colors[ImGuiCol_PlotHistogramHovered]   = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
             colors[ImGuiCol_TableHeaderBg]          = ImVec4(0.00f, 0.00f, 0.00f, 0.52f);
             colors[ImGuiCol_TableBorderStrong]      = ImVec4(0.00f, 0.00f, 0.00f, 0.52f);
-            colors[ImGuiCol_TableBorderLight]       = ImVec4(0.28f, 0.28f, 0.28f, 0.29f);
+            colors[ImGuiCol_TableBorderLight]       = ImVec4(0.28f, 0.28f, 0.28f, 0.47f);
             colors[ImGuiCol_TableRowBg]             = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
             colors[ImGuiCol_TableRowBgAlt]          = ImVec4(1.00f, 1.00f, 1.00f, 0.06f);
-            colors[ImGuiCol_TextSelectedBg]         = ImVec4(0.20f, 0.22f, 0.23f, 1.00f);
-            colors[ImGuiCol_DragDropTarget]         = ImVec4(0.33f, 0.67f, 0.86f, 1.00f);
+            colors[ImGuiCol_TextSelectedBg]         = ImVec4(0.20f, 0.22f, 0.23f, 0.60f);
+            colors[ImGuiCol_DragDropTarget]         = ImVec4(0.33f, 0.67f, 0.86f, 0.64f);
             colors[ImGuiCol_NavHighlight]           = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
             colors[ImGuiCol_NavWindowingHighlight]  = ImVec4(1.00f, 0.00f, 0.00f, 0.70f);
             colors[ImGuiCol_NavWindowingDimBg]      = ImVec4(1.00f, 0.00f, 0.00f, 0.20f);
@@ -319,24 +853,55 @@ namespace neam
             style.ScrollbarSize                     = 15;
             style.GrabMinSize                       = 10;
             style.WindowBorderSize                  = 1;
-            style.ChildBorderSize                   = 1;
+            style.ChildBorderSize                   = 0;
             style.PopupBorderSize                   = 1;
-            style.FrameBorderSize                   = 1;
-            style.TabBorderSize                     = 1;
-            style.WindowRounding                    = 7;
-            style.ChildRounding                     = 4;
-            style.FrameRounding                     = 3;
-            style.PopupRounding                     = 4;
+            style.FrameBorderSize                   = 0;
+            style.TabBorderSize                     = 0;
+            style.WindowRounding                    = 0;
+            style.ChildRounding                     = 0;
+            style.FrameRounding                     = 0;
+            style.PopupRounding                     = 0;
             style.ScrollbarRounding                 = 9;
-            style.GrabRounding                      = 3;
+            style.GrabRounding                      = 2;
+            style.TabRounding                       = 2;
             style.LogSliderDeadzone                 = 4;
-            style.TabRounding                       = 4;
+            style.AntiAliasedLines                  = false;
+            style.AntiAliasedFill                   = false;
+            style.AntiAliasedLinesUseTex            = false;
           }
 
         private:
-          core_context& ctx;
-          glfw::window& window;
-          glfw::events::manager& emgr;
+          struct image_holder
+          {
+            vk::image image;
+            memory_allocation allocation;
+            vk::image_view view;
+
+            image_holder(hydra_context& context, vk::image&& _image, VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D)
+              : image(std::move(_image))
+              , allocation(get_allocation(context.allocator))
+              , view(context.device, image, view_type)
+            {
+            }
+            image_holder(image_holder&&) = default;
+            image_holder& operator = (image_holder&&) = default;
+
+            memory_allocation get_allocation(memory_allocator& allocator)
+            {
+              auto alloc = allocator.allocate_memory(image.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::persistent_optimal_image);
+              image.bind_memory(*alloc.mem(), alloc.offset());
+              return alloc;
+            }
+          };
+          struct font_t
+          {
+            raw_data data;
+            float scale = 1;
+          };
+        private:
+          hydra_context& ctx;
+          engine_t& engine;
+          win_event_listener* main_vp = nullptr;
 
           ImGuiContext& context;
           ImGuiIO& io;
@@ -345,8 +910,14 @@ namespace neam
           bool regenerate_fonts = true;
 
           spinlock font_lock;
-          raw_data ttf_fonts[_font_count];
+          font_t ttf_fonts[_font_count];
           bool has_font_change = true;
+
+          double old_time = 0;;
+
+          vk::sampler font_sampler { ctx.device, VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0, -1000, 1000 }; std::optional<image_holder> font_texture;
+          vk::descriptor_set font_texture_ds { ctx.device, VkDescriptorSet(nullptr) };
+          friend class render_pass;
       };
     } // namespace imgui
   } // namespace hydra

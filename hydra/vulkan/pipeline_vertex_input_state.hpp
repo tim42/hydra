@@ -31,6 +31,7 @@
 #define __N_18844283671003224974_3191428268_PIPELINE_VERTEX_INPUT_STATE_HPP__
 
 #include <vulkan/vulkan.h>
+#include <ntools/hash/fnv1a.hpp>
 
 namespace neam
 {
@@ -109,6 +110,17 @@ namespace neam
         public: // advanced
           /// \brief Yield a const reference to VkPipelineVertexInputStateCreateInfo
           operator const VkPipelineVertexInputStateCreateInfo &() const { return vk_pvisci; }
+
+          id_t compute_hash() const
+          {
+            uint64_t hash = ct::hash::internal::fnv_offset_basis<uint64_t>;
+            for (const auto& it : vk_binding_desc)
+              hash = ct::hash::fnv1a_continue<64>(hash, reinterpret_cast<const uint8_t*>(&it), sizeof(it));
+            for (const auto& it : vk_attr_desc)
+              hash = ct::hash::fnv1a_continue<64>(hash, reinterpret_cast<const uint8_t*>(&it), sizeof(it));
+            return (id_t)hash;
+          }
+
         private:
           VkPipelineVertexInputStateCreateInfo vk_pvisci;
           std::vector<VkVertexInputBindingDescription> vk_binding_desc;

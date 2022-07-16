@@ -15,8 +15,13 @@ add_library(hydra SHARED
 
     # modules:
     engine/core_modules/io_module.cpp
-    glfw/glfw_engine_module.cpp
+
     imgui/imgui_engine_module.cpp
+    imgui/imgui_context.cpp
+    imgui/generic_ui.cpp
+
+    #glfw/glfw_engine_module.cpp
+    glfw/glfw_window.cpp
 )
 
 
@@ -32,6 +37,7 @@ target_include_directories(hydra PRIVATE SYSTEM ${LIBMAGIC_INCLUDE_DIR})
 target_link_libraries(hydra PRIVATE ${LIBMAGIC_LIBRARY})
 
 target_link_libraries(hydra PUBLIC glm)
+target_link_libraries(hydra PUBLIC X11)
 #target_link_libraries(hydra PUBLIC ntools)
 
 if (LIBLZMA_FOUND)

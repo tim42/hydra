@@ -51,7 +51,7 @@ namespace neam
 
     void show_log_window()
     {
-        const ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
+        const ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar;
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImVec2 work_pos = viewport->WorkPos; // Use work area to avoid menu-bar/task-bar, if any!
@@ -64,8 +64,8 @@ namespace neam
         window_pos_pivot.y = 1.0f;
 
         const float font_size = ImGui::GetFontSize();
-        ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
-        ImGui::SetNextWindowSize(ImVec2(work_size.x, 16 * font_size), ImGuiCond_Always);
+//         ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
+//         ImGui::SetNextWindowSize(ImVec2(work_size.x, 16 * font_size), ImGuiCond_Always);
         if (ImGui::Begin("Log", nullptr, window_flags))
         {
           bool do_clear = ImGui::Button("Clear");
@@ -116,19 +116,22 @@ namespace neam
 
         if (entries.size() >= max_count)
           entries.pop_front();
-        ImVec4 color = ImGui::GetStyle().Colors[ImGuiCol_Text];
+        ImVec4 color;
+//         ImVec4 color = ImGui::GetStyle().Colors[ImGuiCol_Text];
         switch (s)
         {
           case neam::cr::logger::severity::debug:
-            color = ImVec4(0.40f, 0.40f, 0.40f, color.w);
+            color = ImVec4(0.40f, 0.40f, 0.40f, 1.0f);
             break;
-          case neam::cr::logger::severity::message: break;
+          case neam::cr::logger::severity::message:
+            color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+            break;
           case neam::cr::logger::severity::warning:
-            color = ImVec4(1.00f, 0.72f, 0.00f, color.w);
+            color = ImVec4(1.00f, 0.72f, 0.00f, 1.0f);
             break;
           case neam::cr::logger::severity::error:
           case neam::cr::logger::severity::critical:
-            color = ImVec4(1.00f, 0.05f, 0.00f, color.w);
+            color = ImVec4(1.00f, 0.05f, 0.00f, 1.0f);
             break;
         };
         entries.push_back({ color, new_entry});

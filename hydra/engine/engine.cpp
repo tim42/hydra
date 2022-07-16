@@ -29,6 +29,8 @@
 #include <hydra/init/bootstrap.hpp>
 #include <hydra/init/feature_requesters/gen_feature_requester.hpp>
 
+#include <ntools/struct_metadata/fmt_support.hpp>
+
 namespace neam::hydra
 {
   resources::context::status_chain engine_t::boot(runtime_mode _mode, id_t index_key, const std::string& index_file)
@@ -192,7 +194,9 @@ namespace neam::hydra
 
     // boot the core context:
     std::lock_guard _lg (init_lock);
-    auto ret = cctx.boot(tgd.compile_tree(), index_key, index_file).then(&cctx.tm, threading::k_non_transient_task_group, [this, &cctx](resources::status st)
+    auto tree = tgd.compile_tree();
+    tree.print_debug();
+    auto ret = cctx.boot(std::move(tree), index_key, index_file).then(&cctx.tm, threading::k_non_transient_task_group, [this, &cctx](resources::status st)
     {
       cr::out().debug("engine boot: index loaded");
       if (st == resources::status::failure)
@@ -222,33 +226,72 @@ namespace neam::hydra
 
   void engine_t::sync_teardown()
   {
-    std::lock_guard _lg(init_lock);
+    init_lock.lock();
     if (mode == runtime_mode::none)
+    {
+      init_lock.unlock();
       return;
+    }
 
     core_context& cctx = get_core_context();
-    if (cctx.is_stopped() && modules.empty())
-      return;
-    if ((mode & runtime_mode::vulkan_context) != runtime_mode::none)
+    if (cctx.is_stopped())
     {
-      vk_context& vctx = get_vulkan_context();
-      vctx.device.wait_idle();
+      init_lock.unlock();
+      return;
     }
     cr::out().debug("engine tear-down: stopping the task manager...");
-    cctx.stop_app();
+    cctx.stop_app()
+    .then([this, &cctx]
+    {
+      cr::out().debug("engine tear-down: clearing remaining tasks...");
+      while (cctx.tm.has_pending_tasks())
+        cctx.tm.run_a_task();
 
-    cr::out().debug("engine tear-down: clearing remaining tasks...");
-    while (cctx.tm.has_pending_tasks())
-      cctx.tm.run_a_task();
+      if ((mode & runtime_mode::vulkan_context) != runtime_mode::none)
+      {
+        vk_context& vctx = get_vulkan_context();
 
-    cr::out().debug("engine tear-down: destructing modules...");
-    // clear the modules
-    modules.clear();
+        cr::out().debug("engine tear-down: syncing vulkan device...");
+        vctx.device.wait_idle();
 
-    // NOTE: we cannot destroy the context here as we might be in a task.
+        if ((mode & runtime_mode::hydra_context) != runtime_mode::none)
+        {
+          hydra_context& hctx = get_hydra_context();
 
-    // very last operation
-    mode = runtime_mode::none;
+          cr::out().debug("engine tear-down: destructing vulkan objects which are pending deletion...");
+          hctx.vrd._force_full_cleanup();
+        }
+      }
+
+      cr::out().debug("engine tear-down: module shutdown...");
+      for (auto& mod : modules)
+        mod.second->on_start_shutdown();
+
+      if ((mode & runtime_mode::vulkan_context) != runtime_mode::none)
+      {
+        vk_context& vctx = get_vulkan_context();
+        vctx.device.wait_idle();
+        if ((mode & runtime_mode::hydra_context) != runtime_mode::none)
+        {
+          hydra_context& hctx = get_hydra_context();
+          hctx.vrd._force_full_cleanup();
+        }
+      }
+
+      cr::out().debug("engine tear-down: destructing modules...");
+      modules.clear();
+
+      // NOTE: we cannot destroy the context as we are still in the task manager
+
+      cr::out().debug("engine tear-down: clearing the runtime-mode...");
+
+      // very last operation
+      mode = runtime_mode::none;
+
+      // release the lock:
+      init_lock.unlock();
+    });
+
   }
 }
 

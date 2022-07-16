@@ -80,7 +80,7 @@ namespace neam
             return ret;
           }
 
-          /// \brief Seth the attachment_color_blending to alpha blending
+          /// \brief Set the attachment_color_blending to alpha blending
           void set_alpha_blending()
           {
             *this = VkPipelineColorBlendAttachmentState
@@ -130,6 +130,7 @@ namespace neam
         public: // advanced
           /// \brief Yields a VkPipelineColorBlendAttachmentState
           operator const VkPipelineColorBlendAttachmentState &() const { return vk_pcbas; }
+          VkPipelineColorBlendAttachmentState& _get_vk_blend_state() { return vk_pcbas; }
         private:
           VkPipelineColorBlendAttachmentState vk_pcbas;
       };

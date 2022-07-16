@@ -60,7 +60,7 @@ namespace neam
           {}
 
           /// \brief Default constructor disables logic OP color blending
-          pipeline_color_blending(std::initializer_list<const attachment_color_blending *> acb_list, const glm::vec4 &blend_constants = glm::vec4(0, 0, 0, 0))
+          pipeline_color_blending(std::initializer_list<const attachment_color_blending> acb_list, const glm::vec4 &blend_constants = glm::vec4(0, 0, 0, 0))
             : vk_pcbci
           {
             VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, nullptr, 0,
@@ -74,7 +74,7 @@ namespace neam
           }
 
           /// \brief constructor that enables logic op color blending
-          pipeline_color_blending(std::initializer_list<const attachment_color_blending *> acb_list, VkLogicOp op, const glm::vec4 &blend_constants = glm::vec4(0, 0, 0, 0))
+          pipeline_color_blending(std::initializer_list<const attachment_color_blending> acb_list, VkLogicOp op, const glm::vec4 &blend_constants = glm::vec4(0, 0, 0, 0))
             : vk_pcbci
           {
             VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, nullptr, 0,
@@ -88,9 +88,9 @@ namespace neam
           }
 
           /// \brief Copy constructor
-          pipeline_color_blending(const pipeline_color_blending &o) : vk_pcbci(o.vk_pcbci), vk_attachments(o.vk_attachments), attachments(o.attachments) {}
+          pipeline_color_blending(const pipeline_color_blending &o) : vk_pcbci(o.vk_pcbci), vk_attachments(o.vk_attachments) {}
           /// \brief Move constructor
-          pipeline_color_blending(pipeline_color_blending &&o) : vk_pcbci(o.vk_pcbci), vk_attachments(std::move(o.vk_attachments)), attachments(std::move(o.attachments)) {}
+          pipeline_color_blending(pipeline_color_blending &&o) : vk_pcbci(o.vk_pcbci), vk_attachments(std::move(o.vk_attachments))  {}
           /// \brief Copy operator
           pipeline_color_blending &operator = (const pipeline_color_blending &o)
           {
@@ -98,7 +98,6 @@ namespace neam
               return *this;
             vk_pcbci = o.vk_pcbci;
             vk_attachments = o.vk_attachments;
-            attachments = o.attachments;
             return *this;
 
           }
@@ -109,32 +108,26 @@ namespace neam
               return *this;
             vk_pcbci = o.vk_pcbci;
             vk_attachments = std::move(o.vk_attachments);
-            attachments = std::move(o.attachments);
             return *this;
           }
 
           /// \brief Add an attachment_color_blending
-          void add_attachment_color_blending(const attachment_color_blending *acb)
+          void add_attachment_color_blending(attachment_color_blending acb)
           {
-            attachments.push_back(acb);
+            vk_attachments.push_back(acb);
             refresh();
           }
 
           /// \brief Add multiple attachment_color_blending
-          void add_attachment_color_blending(std::initializer_list<const attachment_color_blending *> acb_list)
+          void add_attachment_color_blending(std::initializer_list<const attachment_color_blending> acb_list)
           {
-            attachments.insert(attachments.end(), acb_list.begin(), acb_list.end());
+            vk_attachments.insert(vk_attachments.end(), acb_list.begin(), acb_list.end());
             refresh();
           }
 
           /// \brief Refresh attachments (if they have changed)
           void refresh()
           {
-            vk_attachments.clear();
-            vk_attachments.reserve(attachments.size());
-
-            for (auto it : attachments) vk_attachments.push_back(*it);
-
             vk_pcbci.attachmentCount = vk_attachments.size();
             vk_pcbci.pAttachments = vk_attachments.data();
           }
@@ -142,7 +135,6 @@ namespace neam
           /// \brief Clear the attachments color blending
           void clear()
           {
-            attachments.clear();
             vk_attachments.clear();
             refresh();
           }
@@ -150,7 +142,7 @@ namespace neam
           /// \brief Return the number of attachments
           size_t get_attachment_count() const
           {
-            return attachments.size();
+            return vk_attachments.size();
           }
 
           /// \brief enable or disable logic op blending
@@ -187,7 +179,6 @@ namespace neam
         private:
           VkPipelineColorBlendStateCreateInfo vk_pcbci;
           std::vector<VkPipelineColorBlendAttachmentState> vk_attachments;
-          std::deque<const attachment_color_blending *> attachments;
       };
     } // namespace vk
   } // namespace hydra

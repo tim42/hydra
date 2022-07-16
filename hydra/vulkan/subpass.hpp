@@ -227,6 +227,8 @@ namespace neam
           std::vector<VkAttachmentReference> vk_depth_stencil_attachment;
           std::vector<uint32_t> vk_preserve_attachment;
           bool use_resolve;
+
+          friend class render_pass;
       };
     } // namespace vk
   } // namespace hydra

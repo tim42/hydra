@@ -40,6 +40,8 @@
 #include "../vulkan/device.hpp"
 #include "../vulkan/pipeline.hpp"
 
+#include "pipeline_render_state.hpp"
+
 namespace neam
 {
   namespace hydra
@@ -54,92 +56,69 @@ namespace neam
     /// \todo handle transparently pipeline caches
     class pipeline_manager
     {
-      private:
-        struct pipeline_holder
-        {
-          vk::pipeline_creator pc;
-          vk::pipeline p;
-        };
       public:
         pipeline_manager(vk::device &_dev) : dev(_dev) {}
         pipeline_manager(pipeline_manager &&o) : dev(o.dev), pipelines_map(std::move(o.pipelines_map)) {}
 
-        /// \brief Add a new pipeline
-        void _add_pipeline(const id_t id, vk::pipeline_creator&& pc)
+        template<typename Fnc>
+        void add_pipeline(const id_t id, Fnc&& fnc)
         {
-          pipelines_map.emplace(id, std::move(pc));
+          if (auto sit = pipelines_map.find(id); sit == pipelines_map.end())
+          {
+            auto [it, inserted] = pipelines_map.emplace(id, dev);
+            fnc(it->second);
+          }
         }
 
-        vk::pipeline_creator& add_pipeline(const id_t id)
+        bool has_pipeline(id_t id) const
         {
-          pipelines_map.emplace(id, dev);
-          return pipelines_map.at(id);
+          return pipelines_map.contains(id);
         }
-
-        /// \brief Return the pipeline creator of a given pipeline
-        /// To then refresh the pipeline, call refresh(name);
-        const vk::pipeline_creator& get_pipeline_creator(const id_t id) const { return find_pipeline(id)->second; }
-        vk::pipeline_creator& get_pipeline_creator(const id_t id) { return find_pipeline(id)->second; }
-        const vk::pipeline_creator& get_pipeline_creator(const string_id id) const { return find_pipeline(id)->second; }
-        vk::pipeline_creator& get_pipeline_creator(const string_id id) { return find_pipeline(id)->second; }
 
         /// \brief Return the pipeline named name
-        const vk::pipeline& get_pipeline(const id_t id) const { return find_pipeline(id)->second.get_pipeline(); }
-        vk::pipeline& get_pipeline(const id_t id) { return find_pipeline(id)->second.get_pipeline(); }
-        const vk::pipeline& get_pipeline(const string_id id) const { return find_pipeline(id)->second.get_pipeline(); }
-        vk::pipeline& get_pipeline(const string_id id) { return find_pipeline(id)->second.get_pipeline(); }
+        template<typename... Args>
+        const vk::pipeline& get_pipeline(const id_t id, Args&&... args)
+        {
+          return find_pipeline(id)->second.get_pipeline(std::forward<Args>(args)...);
+        }
+        template<typename... Args>
+        const vk::pipeline& get_pipeline(const string_id id, Args&&... args)
+        {
+          return find_pipeline(id)->second.get_pipeline(std::forward<Args>(args)...);
+        }
+        const vk::pipeline_layout& get_pipeline_layout(const id_t id)
+        {
+          return find_pipeline(id)->second.get_pipeline_layout();
+        }
+        const vk::pipeline_layout& get_pipeline_layout(const string_id id)
+        {
+          return find_pipeline(id)->second.get_pipeline_layout();
+        }
+        template<typename... Args>
+        vk::descriptor_set allocate_descriptor_set(const id_t id, Args&& ... args)
+        {
+          return find_pipeline(id)->second.allocate_descriptor_set(std::forward<Args>(args)...);
+        }
+        template<typename... Args>
+        vk::descriptor_set allocate_descriptor_set(const string_id id, Args&& ... args)
+        {
+          return find_pipeline(id)->second.allocate_descriptor_set(std::forward<Args>(args)...);
+        }
 
         /// \brief Refresh a single pipeline
-        void refresh(const string_id id)
-        {
-          auto it = find_pipeline(id);
-          if (it->second.allow_derivate_pipelines())
-          {
-            it->second.set_base_pipeline(&it->second.get_pipeline());
-            it->second.create_pipeline();
-            it->second.set_base_pipeline(nullptr);
-          }
-          else
-          {
-            // slow path
-            it->second.create_pipeline();
-          }
-        }
+        void refresh(const string_id id, vk_resource_destructor& vrd, vk::queue& queue) { find_pipeline(id)->second.invalidate_pipelines(vrd, queue); }
+        /// \brief Refresh a single pipeline
+        void refresh(const id_t id, vk_resource_destructor& vrd, vk::queue& queue) { find_pipeline(id)->second.invalidate_pipelines(vrd, queue); }
 
-        void refresh(const id_t id)
-        {
-          auto it = find_pipeline(id);
-
-          if (it->second.allow_derivate_pipelines())
-          {
-            it->second.set_base_pipeline(&it->second.get_pipeline());
-            it->second.set_base_pipeline(nullptr);
-          }
-          else
-          {
-            // slow path
-            it->second.create_pipeline();
-          }
-        }
+        void immediate_refresh(const string_id id) { find_pipeline(id)->second.invalidate_pipelines(); }
+        void immediate_refresh(const id_t id) { find_pipeline(id)->second.invalidate_pipelines(); }
 
         /// \brief Recreate all the pipelines
         void refresh(vk_resource_destructor& vrd, vk::queue& queue)
         {
           for (auto &it : pipelines_map)
           {
-            if (it.second.allow_derivate_pipelines())
-            {
-              vrd.postpone_destruction_to_next_fence(queue, std::move(it.second.get_pipeline()));
-//               it.second.set_base_pipeline(&it.second.get_pipeline());
-              it.second.create_pipeline();
-//               it.second.set_base_pipeline(nullptr);
-            }
-            else
-            {
-              // slow path
-              vrd.postpone_destruction_to_next_fence(queue, std::move(it.second.get_pipeline()));
-              it.second.create_pipeline();
-            }
+            it.second.invalidate_pipelines(vrd, queue);
           }
         }
 
@@ -150,7 +129,7 @@ namespace neam
 
       private:
         vk::device &dev;
-        std::map<id_t, vk::pipeline_creator> pipelines_map;
+        std::map<id_t, pipeline_render_state> pipelines_map;
 
       private:
         auto find_pipeline(id_t id) const -> decltype(pipelines_map.find(id))
@@ -169,14 +148,14 @@ namespace neam
         auto find_pipeline(string_id id) const -> decltype(pipelines_map.find(id))
         {
           auto it = pipelines_map.find(id);
-          check::on_vulkan_error::n_check(it != pipelines_map.end(), "could not find pipeline: {}", id.get_string());
+          check::on_vulkan_error::n_check(it != pipelines_map.end(), "could not find pipeline: {}", id);
           return it;
         }
 
         auto find_pipeline(string_id id) -> decltype(pipelines_map.find(id))
         {
           auto it = pipelines_map.find(id);
-          check::on_vulkan_error::n_check(it != pipelines_map.end(), "could not find pipeline: {}", id.get_string());
+          check::on_vulkan_error::n_check(it != pipelines_map.end(), "could not find pipeline: {}", id);
           return it;
         }
     };

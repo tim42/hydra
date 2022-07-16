@@ -82,6 +82,8 @@ namespace neam::hydra
           if (it.joinable())
             it.join();
         }
+        std::lock_guard _l(destruction_lock);
+        cr::out().debug("core context is being destructed");
         while (!can_return)
         {
           tm.run_a_task();
@@ -98,21 +100,28 @@ namespace neam::hydra
         }
       }
 
-      void stop_app()
+      async::continuation_chain stop_app()
       {
-        if (is_stopped()) return;
-        tm.get_frame_lock().lock();
-        should_stop = true;
+        if (is_stopped()) return async::continuation_chain::create_and_complete();
+        destruction_lock.lock();
+        async::continuation_chain ret;
         can_return = false;
-        // wake the task manager, if necessary
-        tm.get_long_duration_task([this]{ can_return = true; });
+        tm.request_stop([this, state = ret.create_state()] mutable
+        {
+          should_stop = true;
+          can_return = true;
+          state.complete();
+          destruction_lock.unlock();
+        });
         halted = true;
+        return ret;
       }
 
       bool is_stopped() const { return halted; }
 
     private:
       std::vector<std::thread> threads;
+      spinlock destruction_lock;
       bool should_stop = false;
       bool can_return = false;
       bool halted = false;

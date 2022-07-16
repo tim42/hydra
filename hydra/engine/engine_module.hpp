@@ -174,6 +174,9 @@ namespace neam::hydra
     public: // init (hydra_context)
       void set_hydra_context(hydra_context* _hctx) { hctx = _hctx; }
 
+    public: // shutdown:
+      virtual void on_start_shutdown() {}
+
     protected:
       core_context* cctx = nullptr; // guaranteed to always exist
       vk_context* vctx = nullptr;

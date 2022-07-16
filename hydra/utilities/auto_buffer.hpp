@@ -94,7 +94,7 @@ namespace neam
         ~auto_buffer()
         {
           if (data_cpy)
-            delete data_cpy;
+            delete [] data_cpy;
           data_cpy = nullptr;
         }
 

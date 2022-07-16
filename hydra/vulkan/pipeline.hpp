@@ -96,7 +96,7 @@ namespace neam
       class pipeline_creator
       {
         public:
-          pipeline_creator(device& _dev) : dev(_dev), pss(*this), current(dev, nullptr) {}
+          pipeline_creator(device& _dev) : dev(_dev), pss(*this) {}
 
           /// \brief Return the shader stages of the pipeline
           pipeline_shader_stage &get_pipeline_shader_stage() { return pss; }
@@ -161,6 +161,8 @@ namespace neam
           /// \brief Return te subpass used by the pipeline
           void set_subpass_index(size_t subpass_index) { create_info.subpass = subpass_index; }
 
+          void clear_render_pass() { rp = nullptr; create_info.subpass = 0; }
+
           /// \brief Return the base pipeline (could be nullptr if none). Creating derivate pipelines
           /// may allow faster transition between derivates of the same pipeline
           pipeline *get_base_pipeline() const { return base_pipeline; }
@@ -197,7 +199,7 @@ namespace neam
           VkPipelineCreateFlags get_flags() const { return create_info.flags; }
 
           /// \brief Create a new pipeline
-          pipeline& create_pipeline(pipeline_cache *cache = nullptr)
+          pipeline create_pipeline(pipeline_cache *cache = nullptr)
           {
             // refresh structs
             pvs.refresh();
@@ -210,8 +212,7 @@ namespace neam
                 neam::cr::out().error("hydra::pipeline_creator: Trying to create a pipeline with invalid shader stages");
               else
                 neam::cr::out().debug("hydra::pipeline_creator: Waiting for async operation to finish (yielding empty pipeline)");
-              current = pipeline(dev, nullptr);
-              return current;
+              return pipeline(dev, nullptr);
             }
 
             // update the create_info
@@ -243,7 +244,10 @@ namespace neam
             check::on_vulkan_error::n_assert(rp != nullptr, "could not create a pipeline without a valid render pass");
 
             create_info.layout = layout->_get_vk_pipeline_layout();
-            create_info.renderPass = rp->get_vk_render_pass();
+            if (rp != nullptr)
+            {
+              create_info.renderPass = rp->get_vk_render_pass();
+            }
 //             if (base_pipeline)
 //               create_info.basePipelineHandle = base_pipeline->get_vk_pipeline();
 //             else
@@ -256,12 +260,12 @@ namespace neam
               pcache = cache->get_vk_pipeline_cache();
             check::on_vulkan_error::n_assert_success(dev._vkCreateGraphicsPipelines(pcache, 1, &create_info, nullptr, &p));
 
-            current = pipeline(dev, p);
-            return current;
+            return pipeline(dev, p);
           }
 
-          pipeline& get_pipeline() { return current; }
-          const pipeline& get_pipeline() const { return current; }
+          bool is_dirty() const { return dirty; }
+          void set_dirty(bool _is_dirty = true) { dirty = _is_dirty; }
+
 
         private:
           device &dev;
@@ -289,12 +293,12 @@ namespace neam
           render_pass *rp = nullptr;
 
           pipeline *base_pipeline = nullptr;
-          pipeline current;
+          bool dirty = true;
       };
 
       inline void pipeline_shader_stage::ask_pipeline_refresh()
       {
-        creator->create_pipeline();
+        creator->set_dirty();
       }
     } // namespace vk
   } // namespace hydra

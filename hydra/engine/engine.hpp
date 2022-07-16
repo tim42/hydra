@@ -58,7 +58,11 @@ namespace neam::hydra
 
       /// \brief Fully cleanup after a teardown.
       /// Must be called outside the task manager
-      void cleanup() { context = std::monostate{}; }
+      void cleanup()
+      {
+        cr::out().debug("engine tear-down: destructing the context...");
+        context = std::monostate{};
+      }
 
     public:
       /// \brief Return the mode with which the engine has been setup

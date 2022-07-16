@@ -35,6 +35,8 @@
 #include "swapchain.hpp"
 #include "pipeline_multisample_state.hpp"
 
+#include <ntools/hash/fnv1a.hpp>
+
 namespace neam
 {
   namespace hydra
@@ -67,7 +69,7 @@ namespace neam
 
           /// \brief Copy constr.
           attachment(const attachment &o)
-            : vk_attachment_desc(o.vk_attachment_desc), swapchain_ptr(o.swapchain_ptr), multisample_ptr(o.multisample_ptr)
+            : vk_attachment_desc(o.vk_attachment_desc), hash(o.hash), swapchain_ptr(o.swapchain_ptr), multisample_ptr(o.multisample_ptr)
           {
           }
 
@@ -77,6 +79,7 @@ namespace neam
             vk_attachment_desc = (desc);
             swapchain_ptr = (nullptr);
             multisample_ptr = (nullptr);
+            reset_hash();
             return *this;
           }
 
@@ -84,6 +87,7 @@ namespace neam
           attachment &operator = (const attachment &o)
           {
             vk_attachment_desc = (o.vk_attachment_desc);
+            hash = o.hash;
             swapchain_ptr = (o.swapchain_ptr);
             multisample_ptr = (o.multisample_ptr);
             return *this;
@@ -92,6 +96,7 @@ namespace neam
           /// \brief Refresh format & samples (if a pipeline_multisample_state &a swapchain has been provided)
           void refresh()
           {
+            reset_hash();
             if (swapchain_ptr)
               vk_attachment_desc.format = swapchain_ptr->get_image_format();
             if (multisample_ptr)
@@ -108,6 +113,7 @@ namespace neam
           /// \brief Set the color/depth & stencil load operation (if you don't care about stencil, simply leave the second argument as-is)
           attachment &set_load_op(VkAttachmentLoadOp color_depth_load_op, VkAttachmentLoadOp stencil_load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE)
           {
+            reset_hash();
             vk_attachment_desc.loadOp = color_depth_load_op;
             vk_attachment_desc.stencilLoadOp = stencil_load_op;
             return *this;
@@ -116,6 +122,7 @@ namespace neam
           /// \brief Set the color/depth & stencil store operation (if you don't care about stencil, simply leave the second argument as-is)
           attachment &set_store_op(VkAttachmentStoreOp color_depth_store_op = VK_ATTACHMENT_STORE_OP_STORE, VkAttachmentStoreOp stencil_store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE)
           {
+            reset_hash();
             vk_attachment_desc.storeOp = color_depth_store_op;
             vk_attachment_desc.stencilStoreOp = stencil_store_op;
             return *this;
@@ -124,23 +131,40 @@ namespace neam
           /// \brief Set the layouts (initial and final) of the attachment. The driver will make the transition for us
           attachment &set_layouts(VkImageLayout initial_layout, VkImageLayout final_layout)
           {
+            reset_hash();
             vk_attachment_desc.initialLayout = initial_layout;
             vk_attachment_desc.finalLayout = final_layout;
             return *this;
           }
 
           /// \brief Set the format
-          attachment &set_format(VkFormat format) { vk_attachment_desc.format = format; return *this; }
+          attachment &set_format(VkFormat format) { reset_hash(); vk_attachment_desc.format = format; return *this; }
 
           /// \brief Set the samples count
-          attachment &set_samples(VkSampleCountFlagBits samples) { vk_attachment_desc.samples = samples; return *this; }
+          attachment &set_samples(VkSampleCountFlagBits samples) { reset_hash(); vk_attachment_desc.samples = samples; return *this; }
 
         public: // advanced
           /// \brief Yield a const reference to VkAttachmentDescription
           operator const VkAttachmentDescription &() const { return vk_attachment_desc; }
 
+          id_t compute_hash()
+          {
+            if (hash != id_t::none)
+              return hash;
+
+            hash = (id_t)ct::hash::fnv1a<64>(reinterpret_cast<const uint8_t*>(&vk_attachment_desc), sizeof(vk_attachment_desc));
+
+            return hash;
+          }
+
+          void reset_hash()
+          {
+            hash = id_t::none;
+          }
+
         private:
           VkAttachmentDescription vk_attachment_desc;
+          id_t hash = id_t::none;
           const swapchain *swapchain_ptr;
           const pipeline_multisample_state *multisample_ptr;
       };

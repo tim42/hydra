@@ -52,14 +52,14 @@ namespace neam
         public: // advanced
           /// \brief Create the command buffer from a vulkan structure
           command_buffer(device &_dev, command_pool &_pool, VkCommandBuffer _cmd_buf)
-            : dev(_dev), pool(_pool), cmd_buf(_cmd_buf)
+            : dev(_dev), vk_pool(_pool._get_vulkan_command_pool()), cmd_buf(_cmd_buf)
           {
           }
 
         public:
           /// \brief Move constructor
           command_buffer(command_buffer &&o)
-            : dev(o.dev), pool(o.pool), cmd_buf(o.cmd_buf)
+            : dev(o.dev), vk_pool(o.vk_pool), cmd_buf(o.cmd_buf)
           {
             o.cmd_buf = nullptr;
           }
@@ -67,7 +67,7 @@ namespace neam
           ~command_buffer()
           {
             if (cmd_buf)
-              dev._vkFreeCommandBuffers(pool._get_vulkan_command_pool(), 1, &cmd_buf);
+              dev._vkFreeCommandBuffers(vk_pool, 1, &cmd_buf);
           }
 
           /// \brief Start the recording of the command buffer
@@ -118,7 +118,7 @@ namespace neam
 
         private:
           device &dev;
-          command_pool &pool;
+          VkCommandPool vk_pool;
           VkCommandBuffer cmd_buf;
       };
 

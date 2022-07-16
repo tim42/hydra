@@ -74,6 +74,19 @@ namespace neam
           }
 
           descriptor_set_layout(descriptor_set_layout &&o) : dev(o.dev), vk_ds_layout(o.vk_ds_layout) {o.vk_ds_layout = nullptr;}
+          descriptor_set_layout& operator = (descriptor_set_layout &&o)
+          {
+            if (&o == this)
+              return *this;
+
+            check::on_vulkan_error::n_assert(&dev == &o.dev, "Cannot move-assign a descriptor_set_layout to another one from another device");
+            if (vk_ds_layout)
+              dev._vkDestroyDescriptorSetLayout(vk_ds_layout, nullptr);
+            vk_ds_layout = o.vk_ds_layout;
+            o.vk_ds_layout = nullptr;
+            return *this;
+          }
+
           ~descriptor_set_layout()
           {
             if (vk_ds_layout)

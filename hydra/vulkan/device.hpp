@@ -69,7 +69,6 @@ namespace neam
               phys_dev(std::move(o.phys_dev)),
               id_to_familly_queue(std::move(o.id_to_familly_queue))
           {
-//             _load_functions();
             memcpy(&_st_offset, &o._st_offset, (uint8_t*)&_end_offset - (uint8_t*)&_st_offset);
             o.vk_device = nullptr;
           }

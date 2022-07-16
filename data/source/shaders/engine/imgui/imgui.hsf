@@ -1,0 +1,31 @@
+
+
+hydra::layout(vert(in), location = 0) vec2 attrib_pos;
+hydra::layout(vert(in), location = 1) vec2 attrib_uv;
+hydra::layout(vert(in), location = 2) vec4 attrib_color;
+hydra::layout(vert(out), location = 0) struct { vec4 color; vec2 uv; } vertex_out;
+
+hydra::layout(frag(in), location = 0) struct { vec4 color; vec2 uv; } fragment_in;
+hydra::layout(frag(out), location = 0) vec4 frag_out_color;
+
+
+layout(set=0, binding=0) uniform sampler2D s_texture;
+
+layout(push_constant) uniform push_constant { vec2 scale; vec2 translate; } pc;
+
+hydra::entry_point(main_vs, vert)
+hydra::entry_point(main_fs, frag)
+
+
+void main_vs()
+{
+  vertex_out.color = attrib_color;
+  vertex_out.uv = attrib_uv;
+  gl_Position = vec4(attrib_pos * pc.scale + pc.translate, 0, 1);
+}
+
+void main_fs()
+{
+  frag_out_color = fragment_in.color * texture(s_texture, fragment_in.uv);
+}
+

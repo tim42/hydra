@@ -233,7 +233,7 @@ namespace neam
         }
 
         /// \brief Do the transfer
-        bool transfer(memory_allocator& mem_alloc, std::initializer_list<vk::semaphore*> sema = {}, vk::fence* fence = nullptr)
+        bool transfer(memory_allocator& mem_alloc, std::vector<vk::semaphore*> sema = {}, vk::fence* fence = nullptr)
         {
           if (buffer_transfer_list.empty() && image_transfer_list.empty())
             return false;

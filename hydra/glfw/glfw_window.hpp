@@ -47,12 +47,27 @@ namespace neam
   {
     namespace glfw
     {
+      enum class cursor
+      {
+        arrow,
+        ibeam,
+        crosshair,
+        pointing_hand,
+        resize_ew,
+        resize_ns,
+        resize_nwse,
+        resize_nesw,
+        resize_all,
+        not_allowed,
+        _count,
+      };
+
       /// \brief A GLFW window, as supported by hydra
       class window
       {
         public:
-          window(hydra_context& hctx, glm::uvec2 window_size, const std::string& title = "HYDRA")
-           : window(window_size, title)
+          window(hydra_context& hctx, glm::uvec2 window_size, const std::string& title = "HYDRA", std::initializer_list<std::pair<int, int>> w_hints = {})
+           : window(window_size, title, w_hints)
           {
             _create_surface(hctx.instance);
             _get_surface().set_physical_device(hctx.device.get_physical_device());
@@ -117,6 +132,12 @@ namespace neam
               delete surface;
             if (win)
               glfwDestroyWindow(win);
+
+            for (auto* it : cursors)
+            {
+              if (it != nullptr)
+                glfwDestroyCursor(it);
+            }
           }
 
           /// \brief Makes the context of the specified window current for the calling thread.
@@ -181,6 +202,11 @@ namespace neam
             glfwSetWindowTitle(win, title.data());
           }
 
+          void set_opacity(float alpha)
+          {
+            glfwSetWindowOpacity(win, alpha);
+          }
+
           /// \brief Set the window icon
           /// \note This function may only be called from the main thread. (from GLFW documentation)
           /// \param icon_size The size of the icon (good sizes are 16x16, 32x32 and 48x48)
@@ -189,6 +215,22 @@ namespace neam
           {
             GLFWimage img = {(int)icon_size.x, (int)icon_size.y, icon_data};
             glfwSetWindowIcon(win, 1, &img);
+          }
+
+          /// \brief focus the window
+          /// \note This function may only be called from the main thread. (from GLFW documentation)
+          void focus() const
+          {
+            glfwFocusWindow(win);
+          }
+
+          bool is_focused() const
+          {
+            return glfwGetWindowAttrib(win, GLFW_FOCUSED) != 0;
+          }
+          bool is_iconified() const
+          {
+            return glfwGetWindowAttrib(win, GLFW_ICONIFIED) != 0;
           }
 
           /// \brief minimize/iconify the window
@@ -262,6 +304,34 @@ namespace neam
             glm::vec2 scale;
             glfwGetWindowContentScale(win, &scale.x, &scale.y);
             return scale;
+          }
+
+          const char* get_clipboard_text() const
+          {
+            return glfwGetClipboardString(win);
+          }
+
+          void set_clipboard_text(const char* text)
+          {
+            glfwSetClipboardString(win, text);
+          }
+
+        public: // cursor/mouse interraction
+          void set_cursor(cursor c)
+          {
+            if (cursors[0] == nullptr)
+              _init_cursors();
+            glfwSetCursor(win, cursors[(uint32_t)c] ? cursors[(uint32_t)c] : cursors[(uint32_t)cursor::arrow]);
+            glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+          }
+
+          void disable_cursor(bool disable)
+          {
+            glfwSetInputMode(win, GLFW_CURSOR, disable ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+          }
+          void hide_cursor(bool hide)
+          {
+            glfwSetInputMode(win, GLFW_CURSOR, hide ? GLFW_CURSOR_HIDDEN : GLFW_CURSOR_NORMAL);
           }
 
         public: // advanced
@@ -341,6 +411,38 @@ namespace neam
             glfwWindowHint(hint, value);
           }
 
+          void _set_hint(int hint, const char* const value)
+          {
+            glfwWindowHintString(hint, value);
+          }
+
+          enum class _window_type
+          {
+            normal,
+            utility,
+            menu,
+            dialog,
+            splash,
+          };
+          /// \brief Set the widow type
+          /// \note require platform-specific code
+          void _set_window_type(_window_type wt);
+
+        private:
+          void _init_cursors()
+          {
+            cursors[(uint32_t)cursor::arrow] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+            cursors[(uint32_t)cursor::ibeam] = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
+            cursors[(uint32_t)cursor::crosshair] = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+            cursors[(uint32_t)cursor::pointing_hand] = glfwCreateStandardCursor(GLFW_POINTING_HAND_CURSOR);
+            cursors[(uint32_t)cursor::resize_ew] = glfwCreateStandardCursor(GLFW_RESIZE_EW_CURSOR);
+            cursors[(uint32_t)cursor::resize_ns] = glfwCreateStandardCursor(GLFW_RESIZE_NS_CURSOR);
+            cursors[(uint32_t)cursor::resize_nwse] = glfwCreateStandardCursor(GLFW_RESIZE_NWSE_CURSOR);
+            cursors[(uint32_t)cursor::resize_nesw] = glfwCreateStandardCursor(GLFW_RESIZE_NESW_CURSOR);
+            cursors[(uint32_t)cursor::resize_all] = glfwCreateStandardCursor(GLFW_RESIZE_ALL_CURSOR);
+            cursors[(uint32_t)cursor::not_allowed] = glfwCreateStandardCursor(GLFW_NOT_ALLOWED_CURSOR);
+          }
+          
         private:
           GLFWwindow *win;
           neam::hydra::vk::surface *surface = nullptr;
@@ -349,6 +451,8 @@ namespace neam
           bool is_window_fullscreen = false;
           glm::uvec2 last_position;
           glm::uvec2 last_size;
+
+          GLFWcursor* cursors[(uint32_t)cursor::_count] = {nullptr};
       };
     } // namespace glfw
   } // namespace hydra

@@ -40,6 +40,8 @@
 #include "subpass_dependency.hpp"
 #include "attachment.hpp"
 
+#include <ntools/id/id.hpp>
+
 namespace neam
 {
   namespace hydra
@@ -241,6 +243,33 @@ namespace neam
         public: // advanced
           /// \brief Return the underlying render pass
           VkRenderPass get_vk_render_pass() const { return vk_render_pass; }
+
+          id_t compute_subpass_hash(uint32_t subpass)
+          {
+            if (subpass >= subpasses.size())
+              return id_t::none;
+
+            const auto& sp = subpasses[subpass];
+            id_t hash = id_t::none;
+            for (const auto& ref : sp.vk_color_attachment)
+            {
+              if (ref.attachment >= attachments.size())
+                continue;
+              id_t subhash = attachments[ref.attachment].compute_hash();
+              subhash = (id_t)ct::hash::fnv1a_continue<64>((uint64_t)subhash, (const uint8_t*)&ref.layout, sizeof(ref.layout));
+              hash = combine(hash, subhash);
+            }
+            for (const auto& ref : sp.vk_depth_stencil_attachment)
+            {
+              if (ref.attachment >= attachments.size())
+                continue;
+              id_t subhash = attachments[ref.attachment].compute_hash();
+              subhash = (id_t)ct::hash::fnv1a_continue<64>((uint64_t)subhash, (const uint8_t*)&ref.layout, sizeof(ref.layout));
+              hash = combine(hash, subhash);
+            }
+            return hash;
+          }
+
         private:
           device &dev;
           VkRenderPass vk_render_pass = nullptr;

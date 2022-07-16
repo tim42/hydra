@@ -29,6 +29,7 @@
 #include <list>
 #include <unordered_map>
 #include <cstdint>
+#include <deque>
 
 #include "../hydra_debug.hpp"
 #include "../vulkan/device.hpp"
