@@ -35,6 +35,7 @@
 
 namespace neam::hydra::imgui
 {
+  // FIXME: Move to a generic UI header
   void link(const std::string& url, const std::string& text)
   {
     ImVec4 text_color = ImVec4(0.2f, 0.5f, 1.0f, 1.0f);
@@ -72,10 +73,10 @@ namespace neam::hydra::imgui
   }
 
   template<typename Fnc>
-  static void help_marker_fnc(Fnc&& fnc)
+  static void help_marker_fnc(Fnc&& fnc, const std::string& help_text = "(?)")
   {
     switch_font_sameline(monospace_font | italic, false);
-    ImGui::TextDisabled("(?)");
+    ImGui::TextDisabled(help_text.c_str());
     switch_font_pop_sameline();
     ImGui::NewLine();
     if (ImGui::IsItemClicked())
@@ -265,44 +266,21 @@ namespace neam::hydra::imgui
       if (has_range)
       {
         const auto range = payload.ref->attributes.get<metadata::range<VT>>();
-//         if (range.min != range.max && range.step == 0)
-//         {
-//           ImGui::SliderScalarN("", DT, &v, ComponentCount, &range.min, &range.max, format_len > 2 ? Format.string : nullptr);
-//         }
-        /*else */if (range.min != range.max)
+        if (range.min != range.max)
         {
           if (((range.max - range.min) / (range.step == 0 ? 1 : range.step)) < VT(120))
             ImGui::SliderScalarN("", DT, &v, ComponentCount, &range.min, &range.max, format_len > 2 ? Format.string : nullptr);
           else
             ImGui::DragScalarN("", DT, &v, ComponentCount, 1, &range.min, &range.max, format_len > 2 ? Format.string : nullptr);
         }
-//         else if (range.step != 0)
-//         {
-//           ImGui::InputScalarN("", DT, &v, ComponentCount, &range.step, nullptr, format_len > 2 ? Format.string : nullptr);
-//           if (range.min != range.max)
-//           {
-//             if (v < range.min) v = range.min;
-//             if (v > range.max) v = range.max;
-//           }
-//         }
         else
         {
-          VT one = 1;
-          VT ten = is_hex ? 0x10 : 10;
-//           if constexpr (std::is_floating_point_v<VT>)
-            ImGui::DragScalarN("", DT, &v, ComponentCount, 1, nullptr, nullptr, format_len > 2 ? Format.string : nullptr);
-//           else
-//             ImGui::InputScalarN("", DT, &v, ComponentCount, &one, &ten, format_len > 2 ? Format.string : nullptr);
+          ImGui::DragScalarN("", DT, &v, ComponentCount, 1, nullptr, nullptr, format_len > 2 ? Format.string : nullptr);
         }
       }
       else
       {
-        VT one = 1;
-        VT ten = is_hex ? 0x10 : 10;
-//         if constexpr (std::is_floating_point_v<VT>)
-          ImGui::DragScalarN("", DT, &v, ComponentCount, 1, nullptr, nullptr, format_len > 2 ? Format.string : nullptr);
-//         else
-//           ImGui::InputScalarN("", DT, &v, ComponentCount, &one, &ten, format_len > 2 ? Format.string : nullptr);
+        ImGui::DragScalarN("", DT, &v, ComponentCount, 1, nullptr, nullptr, format_len > 2 ? Format.string : nullptr);
       }
       if constexpr (is_hex)
       {
