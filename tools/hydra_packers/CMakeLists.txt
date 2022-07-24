@@ -8,6 +8,8 @@ add_library(hydra_packers SHARED
     image_packer.cpp
     spirv_packer.cpp
     spirv_packer_big_dump_table.cpp
+
+    process_helpers.cpp
 )
 
 

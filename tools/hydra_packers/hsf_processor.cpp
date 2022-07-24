@@ -39,7 +39,7 @@
 
 namespace neam::hydra::processor
 {
-  static constexpr const char* k_deps_target_name = "ca/ca";
+  static constexpr const char* k_deps_target_name = "<!!<ca/ca>!!>";
   static constexpr const char k_final_shader_prefix[] = R"(
 // HYDRA SHADER PREFIX:
 #version 460
@@ -276,21 +276,22 @@ namespace neam::hydra::processor
         replace_all(out.cpp.dependencies, std::string(k_deps_target_name) + ": ", "");
         // replace every \$ with a simple space
         replace_all(out.cpp.dependencies, "\\\n", " ");
-        // replace all the double spaces with a single space:
+        // replace all the double spaces with a single space: (spaces are escaped, so double spaces are ours)
         static const std::regex double_space_reg = std::regex("  *");
         out.cpp.dependencies = std::regex_replace(out.cpp.dependencies, double_space_reg, " ");
         // replace all spaces non prefixed with \ with a newline:
-        static const std::regex non_prefixed_space_reg = std::regex("[^\\\\] ");
-        out.cpp.dependencies = std::regex_replace(out.cpp.dependencies, non_prefixed_space_reg, "\n");
+        static const std::regex non_prefixed_space_reg = std::regex("([^\\\\]) ");
+        out.cpp.dependencies = std::regex_replace(out.cpp.dependencies, non_prefixed_space_reg, "$1\n");
         // remove all '\'
         replace_all(out.cpp.dependencies, "\\", "");
         // then split the string on newlines:
-        std::vector<std::string> deps;
         if (out.cpp.dependencies.size() > 0)
+        {
+          std::vector<std::string> deps;
           deps = split_string(out.cpp.dependencies, "\n");
-
-        // TODO: do stuff with the deps so we can trigger a build when one of the dep changes
-
+          for (auto& it : deps)
+            input.db.add_file_to_file_dependency(input.file, it);
+        }
 
         std::map<id_t, uint32_t> index_map = resolve_hydra_id(out.cpp.output);
         std::vector<packer::spirv_shader_code> entry_points = get_all_entry_points(out.cpp.output);
@@ -302,6 +303,7 @@ namespace neam::hydra::processor
           .resource_type = assets::spirv_shader::type_name,
           .data = rle::serialize(packer::spirv_packer_input{ .shader_code = (k_final_shader_prefix + out.cpp.output), .constant_id = std::move(index_map), .variations = std::move(entry_points)}),
           .metadata = std::move(input.metadata),
+          .db = input.db,
         });
         return resources::processor::chain::create_and_complete({.to_pack = std::move(ret)}, resources::status::success);
       });

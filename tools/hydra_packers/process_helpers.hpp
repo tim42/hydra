@@ -59,66 +59,6 @@ namespace neam
 
   /// \brief Queue a process, avoiding spinning / deadlocking on io
   /// \warning spawn_fnc must be non-blocking
-  inline async::chain<int> queue_process(hydra::core_context& ctx, spawn_function_t&& spawn_fnc)
-  {
-    struct process_t
-    {
-      async::chain<int>::state state;
-      spawn_function_t spawn_fnc;
-
-      pid_t pid = 0;
-    };
-
-    static spinlock lock;
-    static uint32_t queued_process_count = 0;
-    static bool has_task = false;
-
-    std::lock_guard _l(lock);
-    async::chain<int> ret;
-
-    queued_process_count += 1;
-    if (!has_task)
-    {
-      has_task = true;
-
-      // register the task lambda
-      ctx.tm.get_long_duration_task([&ctx]
-      {
-        while (true)
-        {
-          std::this_thread::yield();
-
-          // process some io:
-          ctx.io.process();
-
-          std::lock_guard _l(lock);
-          if (queued_process_count == 0)
-          {
-            has_task = false;
-            return;
-          }
-        }
-      });
-    }
-    ctx.tm.get_long_duration_task([&ctx, spawn_fnc = std::move(spawn_fnc), state = ret.create_state()] mutable
-    {
-      const pid_t pid = spawn_fnc();
-      int ret = -1;
-      int status;
-      if (waitpid(pid, &status, 0) == pid)
-      {
-        if (WIFEXITED(status))
-          ret = WEXITSTATUS(status);
-      }
-
-      {
-        std::lock_guard _l(lock);
-        --queued_process_count;
-      }
-
-      state.complete(ret);
-    });
-    return ret;
-  }
+  async::chain<int> queue_process(hydra::core_context& ctx, spawn_function_t&& spawn_fnc);
 }
 

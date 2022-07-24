@@ -64,6 +64,7 @@ namespace neam::hydra::processor
             .texels = std::move(rd),
           }),
           .metadata = std::move(input.metadata),
+          .db = input.db,
         });
       return resources::processor::chain::create_and_complete({.to_pack = std::move(ret)}, resources::status::success);
     }
