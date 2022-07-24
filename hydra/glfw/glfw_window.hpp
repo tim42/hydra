@@ -86,7 +86,11 @@ namespace neam
               glfwWindowHint(it.first, it.second);
 
             if (!(win = glfwCreateWindow(window_size.x, window_size.y, title.data(), 0, 0)))
-              check::on_vulkan_error::n_assert(false, "GLFW: glfwCreateWindow call failed");
+            {
+              const char* er = nullptr;
+              glfwGetError(&er);
+              check::on_vulkan_error::n_assert(false, "GLFW: glfwCreateWindow call failed: {}", (er == nullptr ? "no error" : er));
+            }
 
             select();
             _set_hydra_icon();
@@ -108,7 +112,11 @@ namespace neam
             const GLFWvidmode *vmode = glfwGetVideoMode(glfwGetPrimaryMonitor());
 
             if (!(win = glfwCreateWindow(vmode->width, vmode->height, title.data(), glfwGetPrimaryMonitor(), 0)))
-              check::on_vulkan_error::n_assert(false, "GLFW: glfwCreateWindow call failed");
+            {
+              const char* er = nullptr;
+              glfwGetError(&er);
+              check::on_vulkan_error::n_assert(false, "GLFW: glfwCreateWindow call failed: {}", (er == nullptr ? "no error" : er));
+            }
 
             select();
             _set_hydra_icon();
@@ -271,6 +279,12 @@ namespace neam
             return glfwWindowShouldClose(win);
           }
 
+          /// \brief set the close flag of the window
+          void should_close(bool flag)
+          {
+            glfwSetWindowShouldClose(win, flag ? 1 : 0);
+          }
+
           void fullscreen(bool fullscreen, unsigned /*monitor_idx*/ = 0)
           {
             if (fullscreen)
@@ -400,10 +414,10 @@ namespace neam
           /// \brief Set the hydra icon (bonus function)
           /// \note icon_sz must be a power of 2
           /// \note glyph_count can't be more than 5, and more than 4 if icon_sz is 16
-          void _set_hydra_icon(size_t icon_sz = 256, size_t glyph_count = 1)
+          void _set_hydra_icon(uint32_t color = 0, size_t icon_sz = 256, size_t glyph_count = 1)
           {
             uint8_t pixels[icon_sz * icon_sz * 4];
-            set_icon(glm::uvec2(icon_sz, icon_sz), generate_rgba_logo(pixels, icon_sz, glyph_count));
+            set_icon(glm::uvec2(icon_sz, icon_sz), generate_rgba_logo(pixels, icon_sz, glyph_count, color));
           }
 
           void _set_hint(int hint, int value)

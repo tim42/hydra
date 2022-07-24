@@ -30,6 +30,7 @@
 #include <hydra/engine/engine.hpp>
 #include <hydra/engine/vk_context.hpp>
 #include <hydra/init/feature_requesters/gen_feature_requester.hpp>
+#include <hydra/renderer/renderer_engine_module.hpp>
 
 #include <GLFW/glfw3.h>
 
@@ -80,7 +81,7 @@ namespace neam::hydra::glfw
       static bool is_compatible_with(runtime_mode m)
       {
         // we need vulkan and a screen for glfw to be active
-        if ((m & runtime_mode::vulkan_context) == runtime_mode::none)
+        if ((m & runtime_mode::vulkan_context) != runtime_mode::vulkan_context)
           return false;
         if ((m & runtime_mode::offscreen) != runtime_mode::none)
           return false;
@@ -121,12 +122,10 @@ namespace neam::hydra::glfw
 
       void add_task_groups(threading::task_group_dependency_tree& tgd) override
       {
-        tgd.add_task_group("render"_rid, "render");
         tgd.add_task_group("events"_rid, "events");
       }
       void add_task_groups_dependencies(threading::task_group_dependency_tree& tgd) override
       {
-        tgd.add_dependency("render"_rid, "io"_rid);
         tgd.add_dependency("render"_rid, "events"_rid);
         tgd.add_dependency("events"_rid, "init"_rid);
       }
@@ -144,14 +143,11 @@ namespace neam::hydra::glfw
         });
 
         // setup the debug + render task
-        hctx->tm.set_start_task_group_callback("render"_rid, [this]
+        engine->get_module<renderer_module>("renderer"_rid)->register_on_render_start("glfw::render"_rid, [this]
         {
           // render task
           cctx->tm.get_task([this]
           {
-            // cleanup resources that need cleanup
-            hctx->vrd.update();
-
             std::lock_guard _l(lock);
             // add / remove states:
             for (auto& state : states_to_add)
@@ -252,11 +248,12 @@ namespace neam::hydra::glfw
 
               hctx->vrd.postpone_destruction_to_next_fence(hctx->gqueue, std::move(init_frame_command_buffer), std::move(frame_command_buffer));
 
-              hctx->vrd.postpone_destruction(hctx->gqueue, std::move(gframe_done));
-              if (has_any_compute)
-                hctx->vrd.postpone_destruction(hctx->cqueue, std::move(*cframe_done));
-
               state->pm.cleanup();
+
+              hctx->vrd.postpone_destruction_inclusive(hctx->gqueue, std::move(gframe_done));
+              if (has_any_compute)
+                hctx->vrd.postpone_destruction_inclusive(hctx->cqueue, std::move(*cframe_done));
+
               if (out_of_date || recreate)
                 state->refresh();
             }

@@ -455,12 +455,12 @@ namespace neam::hydra::events::glfw
       }
 
     private:
-      neam::hydra::glfw::window &win;
-      std::set<events::keyboard_listener *> klisteners;
-      std::set<events::mouse_listener *> mlisteners;
-      std::set<events::raw_keyboard_listener *> raw_klisteners;
-      std::set<events::raw_mouse_listener *> raw_mlisteners;
-      std::set<events::window_listener *> wlisteners;
+      neam::hydra::glfw::window& win;
+      std::set<events::keyboard_listener*> klisteners;
+      std::set<events::mouse_listener*> mlisteners;
+      std::set<events::raw_keyboard_listener*> raw_klisteners;
+      std::set<events::raw_mouse_listener*> raw_mlisteners;
+      std::set<events::window_listener*> wlisteners;
 
       events::mouse_status last_mouse_status;
       events::keyboard_status last_keyboard_status;
