@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 #include <ntools/id/id.hpp>
@@ -35,6 +37,7 @@
 
 namespace neam::hydra
 {
+  /// \brief 
   struct render_pass_context
   {
     // global / unchanged inputs:
@@ -43,7 +46,22 @@ namespace neam::hydra
     vk::rect2D viewport_rect;
     VkFormat output_format;
 
+    // Please use output() instead of directly accessing those:
     vk::framebuffer& final_fb;
+    std::optional<vk::framebuffer> output_fb;
+
+    /// \brief Return the current framebuffer
+    vk::framebuffer& output()
+    {
+      if (output_fb)
+        return *output_fb;
+      return final_fb;
+    }
+
+    /// \brief 
+    vk::image& swap_buffers()
+    {
+    }
   };
 
   struct render_pass_output
