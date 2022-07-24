@@ -42,7 +42,7 @@ namespace neam
     /// \param[out] pixels Where the image will be written. Must have a size of at least icon_sz * icon_sz * 4
     /// \param icon_sz The size of the image. Must be a power of 2 and greater than 16.
     /// \param glyph_count The number of glyph the image will have (must be lower than 5 and lower than 4 if icon_sz is 16)
-    static uint8_t *generate_rgba_logo(uint8_t *pixels, size_t icon_sz = 256, size_t glyph_count = 4)
+    static uint8_t* generate_rgba_logo(uint8_t* pixels, size_t icon_sz = 256, size_t glyph_count = 4, uint32_t color = 0)
     {
       const uint8_t hydra_logo[] = {0x7D, 0x3D, 0xEB, 0x5F, 0x7B};
 
@@ -53,7 +53,19 @@ namespace neam
       const size_t sq_sz = icon_sz / (glyph_count * 4) ;
       const size_t y_pos = (glyph_count == 1 ? (sq_sz / 2) : (icon_sz / 2 - (sq_sz / 2 + 1)));
       const size_t x_pos = sq_sz / 2;
-      memset(pixels, 0, icon_sz * icon_sz * 4);
+      color = color & 0x00FFFFFF;
+      if (!color)
+      {
+        memset(pixels, 0, icon_sz * icon_sz * 4);
+      }
+      else
+      {
+        uint32_t* upixels = (uint32_t*)pixels;
+        for (uint32_t i = 0; i < icon_sz * icon_sz; ++i)
+        {
+          upixels[i] = color;
+        }
+      }
 
       for (size_t i = 0; i < glyph_count; ++i)
       {
