@@ -15,3 +15,5 @@ find_package(LibMagic REQUIRED)
 # LZMA is optional
 find_package(LibLZMA)
 
+# Freetype is optional (imgui has std_truetype)
+find_package(Freetype)

@@ -29,6 +29,11 @@ endif()
 # dependencies:
 include(cmake/deps.cmake)
 
+if (${FREETYPE_FOUND})
+  add_compile_definitions(IMGUI_ENABLE_FREETYPE=1)
+endif()
+add_compile_definitions(IMGUI_USER_CONFIG=<imgui_hydra_config.h>)
+
 # build / configure the third_party libs
 add_subdirectory(third_party/)
 
@@ -48,9 +53,10 @@ add_compile_definitions(N_ALLOW_DEBUG=false)
 add_compile_definitions(N_DISABLE_CHECKS=false)
 add_compile_definitions(N_ASYNC_USE_TASK_MANAGER=true)
 if (LIBLZMA_FOUND)
+    message(STATUS "found liblzma2, using resource compression")
     add_compile_definitions(N_RES_LZMA_COMPRESSION=true) # compress resources using liblzma. (require an index rebuild / res repack)
 else()
-    message("liblzma2 not found, deactivating resource compression")
+    message(STATUS "liblzma2 not found, deactivating resource compression")
     add_compile_definitions(N_RES_LZMA_COMPRESSION=false) # compress resources using liblzma. (require an index rebuild / res repack)
 endif()
 
