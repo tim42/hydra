@@ -111,6 +111,18 @@ namespace neam
           auto* ptr = new spec_wrapper<vk::fence, ResourceTypes...> {nullptr, queue.get_queue_familly_index(), std::move(fence), std::move(resources)...};
           ptr->fence = &std::get<0>(ptr->resources);
 
+          res_list.push_back(ptr);
+        }
+
+        /// \brief Postpone the destruction of n elements when the fence becomes signaled
+        /// \note it also destroys the fence
+        template<typename... ResourceTypes>
+        void postpone_destruction_inclusive(const vk::queue& queue, vk::fence&& fence, ResourceTypes&& ... resources)
+        {
+          std::lock_guard _l(lock);
+          auto* ptr = new spec_wrapper<vk::fence, ResourceTypes...> {nullptr, queue.get_queue_familly_index(), std::move(fence), std::move(resources)...};
+          ptr->fence = &std::get<0>(ptr->resources);
+
           for (auto it = to_add.begin(); it != to_add.end(); ++it)
           {
             if ((*it)->queue_familly == queue.get_queue_familly_index())
