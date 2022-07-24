@@ -91,6 +91,21 @@ namespace neam
           {
             o.vk_framebuffer = nullptr;
           }
+          framebuffer&operator = (framebuffer &&o)
+          {
+            if (&o == this) return *this;
+
+            vk_framebuffer = (o.vk_framebuffer);
+            create_info = (o.create_info);
+            pass = (o.pass);
+            vk_image_view_vector = (std::move(o.vk_image_view_vector));
+            image_view_vector = (std::move(o.image_view_vector));
+            fb_dimension = (o.fb_dimension);
+            sw = (o.sw);
+
+            o.vk_framebuffer = nullptr;
+            return *this;
+          }
 
           /// \brief Destructor
           ~framebuffer()
@@ -167,6 +182,8 @@ namespace neam
         public: // advanced
           /// \brief Return the Vulkan resource
           VkFramebuffer get_vk_framebuffer() const { return vk_framebuffer; }
+          const std::vector<const image_view *>& get_image_view_vector() const { return image_view_vector; }
+
         private:
           device &dev;
           VkFramebuffer vk_framebuffer = nullptr;

@@ -53,11 +53,12 @@ namespace neam
     namespace vk
     {
       /// \brief Wrap a vulkan image.
-      /// \todo That is not finished, and I really HATE the fact the image class holds the memory for the image
+      /// \todo That is not finished, and I really dislike that the image class holds the memory for the image
       class image
       {
         public: // advanced
           /// \brief Create from a vulkan image
+          /// \note _do_not_destroy is there for externally managed VkImages (swapchain)
           image(device &_dev, VkImage _vk_image, const VkImageCreateInfo &_ici, bool _do_not_destroy = false)
             : dev(_dev), vk_image(_vk_image), image_create_info(_ici),
               do_not_destroy(_do_not_destroy)
