@@ -162,7 +162,7 @@ namespace neam
           hydra_logo_img.bind_memory(*hydra_logo_img_allocation.mem(), hydra_logo_img_allocation.offset());
 
           uint8_t *pixels = new uint8_t[logo_size * logo_size * 4];
-          neam::hydra::generate_rgba_logo(pixels, logo_size, 5);
+          neam::hydra::generate_rgba_logo(pixels, logo_size, 5, 0xFFFFFF);
           context.transfers.add_transfer(hydra_logo_img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, logo_size * logo_size * 4, pixels);
           delete[] pixels;
         }
@@ -223,6 +223,8 @@ namespace neam
 
         return { .graphic = cr::construct<std::vector>(std::move(cmd_buf)) };
       }
+
+      neam::hydra::vk::image_view* get_hydra_logo_img_view() { return hydra_logo_img_view.get(); }
 
     private:
       neam::hydra::vk::render_pass vk_render_pass;

@@ -47,6 +47,8 @@ struct data_sample_t
     0u
   };
 
+  std::map<std::string, int> map;
+  std::vector<int> aré;
   neam::id_t key = neam::id_t::invalid;
   std::string command = "hello";
 };
@@ -54,9 +56,9 @@ N_METADATA_STRUCT(data_sample_ar_t)
 {
   using member_list = neam::ct::type_list
   <
-    N_MEMBER_DEF(truc, metadata::range<float>{.min = -100, .max = 100}),
-    N_MEMBER_DEF(truc2),
-    N_MEMBER_DEF(btruc, metadata::info{.description = c_string_t<"Checkboxes.\nYou want 'em? You got 'em">}),
+    N_MEMBER_DEF(truc, metadata::range<int8_t>{.min = -100, .max = 100, .step=3}),
+    N_MEMBER_DEF(truc2, metadata::range<float>{.step = 0.5f}),
+    N_MEMBER_DEF(btruc, metadata::info{.description = c_string_t<"Checkboxes.\nYou want 'em? We got 'em">}),
     N_MEMBER_DEF(stuff)
   >;
 };
@@ -65,11 +67,13 @@ N_METADATA_STRUCT(data_sample_t)
 {
   using member_list = ct::type_list
   <
-    N_MEMBER_DEF(force, metadata::range<uint32_t>{.min = 10, .max = 15, .step = 1},
-                        metadata::info{.description = c_string_t<"Does forcy stuff\nand multiple lines\nWelp, nice :D">, .doc_url = c_string_t<"https://en.wikipedia.org/wiki/Force">}),
-    N_MEMBER_DEF(length),
-    N_MEMBER_DEF(other),
+    N_MEMBER_DEF(force, metadata::range<uint32_t>{.min = 10, .max = 150, .step = 8},
+                        metadata::info{.description = c_string_t<"Does forcy stuff.\nDescriptions can be\nsplit on\nmultiple lines!!">, .doc_url = c_string_t<"https://en.wikipedia.org/wiki/Force">}),
+    N_MEMBER_DEF(length, metadata::range<float>{.step = 0.1f}),
+    N_MEMBER_DEF(other, metadata::range<uint16_t>{.step = 3}),
     N_MEMBER_DEF(parameters),
+    N_MEMBER_DEF(map),
+    N_MEMBER_DEF(aré),
     N_MEMBER_DEF(key),
     N_MEMBER_DEF(command)
   >;
@@ -115,8 +119,10 @@ namespace neam::hydra
 
         // we actualy create the window while the index is loading.
         // This may lead to cases where the window gets created before the index fail to load and needs to be closed.
-        window_state = engine->get_module<glfw::glfw_module>("glfw"_rid)->create_window(400_uvec2_xy);
-        window_state->pm.add_pass<fs_quad_pass>(*hctx);
+        cr::out().debug("creating application main window/render-context...");
+        window_state = engine->get_module<glfw::glfw_module>("glfw"_rid)->create_window(800_uvec2_xy);
+        cr::out().debug("created application main window and render-context");
+        fs_quad_pass& pass = window_state->pm.add_pass<fs_quad_pass>(*hctx);
 
         auto* imgui = engine->get_module<imgui::imgui_module>("imgui"_rid);
         imgui->create_context(*window_state.get());
@@ -124,11 +130,24 @@ namespace neam::hydra
         {
           ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
         });
-        imgui->register_function("main"_rid, [this]()
+        imgui->register_function("main"_rid, [this, &pass]()
         {
           ImGui::Begin("Conf", nullptr, 0);
-          ImGui::Text("Y A Y !!!");
-          ImGui::Text("Frame Count: %u", total_frame_cnt);
+          auto* img = pass.get_hydra_logo_img_view();
+          if (img)
+          {
+            float width = ImGui::GetContentRegionAvail().x;
+            ImGui::Image(img, ImVec2(width, width/5), ImVec2(0, 0.45f), ImVec2(1, 0.65f));
+          }
+          ImGui::Text("Avg Frame Time: %.3f ms", last_average_frametime * 1000);
+          ImGui::Text("Avg FPS: %.3f f/s", 1.0f / last_average_frametime);
+          ImGui::Text("Limit framerate:"); ImGui::SameLine(); ImGui::Checkbox("##limit-fps", &frametime_limiter);
+          if (ImGui::Button("force full shader refresh"))
+          {
+            hctx->shmgr.refresh();
+            hctx->ppmgr.refresh(hctx->vrd, hctx->gqueue);
+          }
+          ImGui::Separator();
           ser_data = hydra::imgui::generate_ui(ser_data, ser_metadata);
           ImGui::End();
         });
@@ -148,16 +167,18 @@ namespace neam::hydra
           {
             // hard sleep (FIXME: remove)
             // this only locks a single thread, making the frame at least that long (to not burn my cpu/gpu)
-            std::this_thread::sleep_for(std::chrono::microseconds(12000));
+            if (frametime_limiter)
+              std::this_thread::sleep_for(std::chrono::microseconds(12000));
 
             // print some debug:
             ++frame_cnt;
             ++total_frame_cnt;
-            const double max_dt_s = 4;
+            const double max_dt_s = 1.5f;
             if (chrono.get_accumulated_time() >= max_dt_s)
             {
               const double dt = chrono.delta();
-              cr::out().debug("{}s avg: ms/frame: {:6.3}ms [{:.2f} fps]", max_dt_s, (dt * 1000 / frame_cnt), (frame_cnt / dt));
+              last_average_frametime = (dt / frame_cnt);
+//               cr::out().debug("{}s avg: ms/frame: {:6.3}ms [{:.2f} fps]", max_dt_s, (dt * 1000 / frame_cnt), (frame_cnt / dt));
               frame_cnt = 0;
             }
           });
@@ -185,7 +206,9 @@ namespace neam::hydra
 
       uint32_t total_frame_cnt = 0;
       uint32_t frame_cnt = 0;
+      float last_average_frametime = 0;
       cr::chrono chrono;
+      bool frametime_limiter = true;
 
       imgui_log_window log_window;
 
@@ -206,7 +229,8 @@ int main(int, char **)
     neam::hydra::engine_t engine;
     engine.boot(neam::hydra::runtime_mode::hydra_context, "caca"_rid);
 
-    engine.get_core_context().thread_main(engine.get_core_context());
+    // make the main thread participate in the task manager
+    neam::hydra::core_context::thread_main(engine.get_core_context());
   }
 
   glfwTerminate();
