@@ -54,6 +54,7 @@ namespace neam::hydra::imgui
 
       void create_context(glfw::glfw_module::state_ref_t& viewport)
       {
+        check::debug::n_check(!context, "creating an imgui context over an existing imgui context");
         context.emplace(*hctx, *engine, viewport);
         viewport.pm.add_pass<imgui::render_pass>(get_imgui_context(), *hctx, ImGui::GetMainViewport());
         if (res_have_loaded)
@@ -66,7 +67,7 @@ namespace neam::hydra::imgui
       static bool is_compatible_with(runtime_mode m)
       {
         // we need vulkan for imgui to be active
-        if ((m & runtime_mode::hydra_context) == runtime_mode::none)
+        if ((m & runtime_mode::hydra_context) != runtime_mode::hydra_context)
           return false;
         return true;
       }

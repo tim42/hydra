@@ -61,7 +61,7 @@ namespace neam::hydra::imgui
 
       const rle::type_reference* ref = nullptr;
 
-      uint64_t id = 0;
+      uint32_t id = 0;
     };
     using payload_arg_t = payload_t&;
 
@@ -139,4 +139,27 @@ namespace neam::hydra::imgui
         static_assert(&_reg == &_reg);
     };
   }
+
+  // ImGui elements for generic-ui
+  // Can only be used inside generic-ui
+  namespace generic_ui
+  {
+    /// \brief Push a new (unique) ID to imgui
+    /// The normal PopID can be called
+    /// \note Calling imgui PushID with payload.id is incorrect and WILL result in collisions
+    void PushID(helpers::payload_arg_t payload);
+
+    /// \brief Start a collapsing header. EndCollapsingHeader must be called, independently of what Begin returns
+    bool BeginCollapsingHeader(helpers::payload_arg_t payload, const char* label);
+    void EndCollapsingHeader(helpers::payload_arg_t payload);
+
+    /// \brief Start a new table. EndEntryTable must be called, independently of what Begin returns
+    bool BeginEntryTable(helpers::payload_arg_t payload, const char* name = "table", uint32_t count = 2);
+    void EndEntryTable(helpers::payload_arg_t payload);
+
+    /// \brief Generate the UI for a member name (including the help text/some of metadata handling)
+    /// \note Uses payload.ref to generate the name.
+    void member_name_ui(helpers::payload_arg_t payload, const rle::type_metadata& type);
+  }
+
 }

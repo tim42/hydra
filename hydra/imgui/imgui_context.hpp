@@ -29,6 +29,9 @@
 
 #include <optional>
 #include <vulkan/vulkan.h>
+#ifdef IMGUI_ENABLE_FREETYPE
+  #include <imgui/misc/freetype/imgui_freetype.h>
+#endif
 
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -40,58 +43,14 @@
 #include <hydra/glfw/glfw_engine_module.hpp>
 #include <hydra/glfw/glfw_events.hpp>
 
+#include "ui_elements.hpp"
+
 namespace neam
 {
   namespace hydra
   {
     namespace imgui
     {
-      // indices:
-      static constexpr uint32_t regular = 0;
-      static constexpr uint32_t bold = 1;
-      static constexpr uint32_t italic = 2;
-      static constexpr uint32_t bold_italic = bold | italic;
-      static constexpr uint32_t _mode_count = 4;
-
-      // font types:
-      static constexpr uint32_t default_font = 0 * _mode_count;
-      static constexpr uint32_t monospace_font = 1 * _mode_count;
-      static constexpr uint32_t _font_count = 2 * _mode_count;
-
-      /// \brief Return the font corresponding to the given flags
-      static ImFont* get_font(uint32_t idx)
-      {
-        // first, try to fallback to the default_font, keeping the same mode
-        if (idx >= (uint32_t)ImGui::GetIO().Fonts->Fonts.size())
-          idx &= (_mode_count - 1);
-        // secondly, fallback to the default_font without keeping the mode (it means don't have a font familly loaded)
-        if (idx >= (uint32_t)ImGui::GetIO().Fonts->Fonts.size())
-          idx = 0;
-        return ImGui::GetIO().Fonts->Fonts[idx];
-      }
-
-      /// \brief Switch font (pop current + push new one) and adjust the vertical position if the size are not the same
-      /// \note You have to call switch_font_pop() + ImGui::NewLine() to correctly get a new line
-      static void switch_font_sameline(uint32_t idx, bool pop = true)
-      {
-        const float lh = ImGui::GetTextLineHeight();
-        if (pop)
-          ImGui::PopFont();
-        ImGui::SameLine();
-        ImGui::PushFont(get_font(idx));
-        const float nlh = ImGui::GetTextLineHeight();
-        const float cpy = ImGui::GetCursorPosY();
-        ImGui::SetCursorPosY(cpy + (lh-nlh)*0.75f);
-      }
-      static void switch_font_pop_sameline()
-      {
-        const float lh = ImGui::GetTextLineHeight();
-        ImGui::PopFont();
-        ImGui::SameLine();
-        const float nlh = ImGui::GetTextLineHeight();
-        const float cpy = ImGui::GetCursorPosY();
-        ImGui::SetCursorPosY(cpy - (lh-nlh)*0.75f);
-      }
 
       // NOTE: We cannot use the imgui vulkan implementation as the resource management is somewhat incorrect
       // (buffers are destroyed when they are still in use)
@@ -399,7 +358,7 @@ namespace neam
             io.ConfigViewportsNoAutoMerge = true;
             io.ConfigViewportsNoTaskBarIcon = true;
 
-            io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines;
+//             io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines;
 
             ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
             platform_io.Platform_CreateWindow = _t_platform_create_window;
@@ -512,7 +471,7 @@ namespace neam
                 io.FontGlobalScale = 1;
                 for (uint32_t i = 0; i < _font_count; i += _mode_count)
                 {
-                  const float default_font_size = 18;
+                  const float default_font_size = 17;
                   const float font_base_size = (i == monospace_font ? 13 : default_font_size);
                   if (ttf_fonts[i].data.size > 0)
                   {
@@ -523,6 +482,11 @@ namespace neam
                       cfg.FontDataOwnedByAtlas = false;
                       cfg.OversampleH = 1;
                       cfg.OversampleV = 1;
+
+#ifdef IMGUI_ENABLE_FREETYPE
+//                       cfg.FontBuilderFlags = ImGuiFreeTypeBuilderFlags_ForceAutoHint;
+                      cfg.FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
+#endif
                       //cfg.GlyphOffset.y = (default_font_size - font_base_size) * scale * ttf_fonts[i].scale * 0.75f;
                       io.Fonts->AddFontFromMemoryTTF(ttf_fonts[font_idx].data.data.get(), ttf_fonts[font_idx].data.size, std::roundf(font_base_size * scale * ttf_fonts[i].scale), &cfg);
                     }
@@ -555,7 +519,6 @@ namespace neam
               if (main_vp)
               {
                 // Setup display size (every frame to accommodate for window resizing)
-                int display_w, display_h;
                 glm::uvec2 sz = main_vp->ref->window.get_size();
                 glm::uvec2 fb_sz = main_vp->ref->window.get_framebuffer_size();
                 io.DisplaySize = ImVec2((float)sz.x, (float)sz.y);
@@ -714,20 +677,20 @@ namespace neam
           }
           static void _t_platform_show_window(ImGuiViewport* vp)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             vpref->window.show();
           }
 
           static void _t_platform_set_window_pos(ImGuiViewport* vp, ImVec2 pos)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             vpref->window.set_position({pos.x, pos.y});
           }
           static ImVec2 _t_platform_get_window_pos(ImGuiViewport* vp)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             glm::uvec2 r = vpref->window.get_position();
             return {(float)r.x, (float)r.y};
@@ -735,13 +698,13 @@ namespace neam
 
           static void _t_platform_set_window_size(ImGuiViewport* vp, ImVec2 size)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             vpref->window.set_size({size.x, size.y});
           }
           static ImVec2 _t_platform_get_window_size(ImGuiViewport* vp)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             glm::uvec2 r = vpref->window.get_size();
             return {(float)r.x, (float)r.y};
@@ -749,33 +712,33 @@ namespace neam
 
           static void _t_platform_set_window_focus(ImGuiViewport* vp)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             vpref->window.focus();
           }
           static bool _t_platform_get_window_focus(ImGuiViewport* vp)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             return vpref->window.is_focused();
           }
 
           static bool _t_platform_get_window_minimized(ImGuiViewport* vp)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             return vpref->window.is_iconified();
           }
 
           static void _t_platform_set_window_title(ImGuiViewport* vp, const char* title)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             vpref->window.set_title(title);
           }
           static void _t_platform_set_window_opacity(ImGuiViewport* vp, float alpha)
           {
-            imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
+//             imgui_context* ctx = (imgui_context*)ImGui::GetIO().BackendPlatformUserData;
             viewport_ref_t* vpref = (viewport_ref_t*)vp->PlatformHandle;
             vpref->window.set_opacity(alpha);
           }
@@ -840,7 +803,7 @@ namespace neam
             colors[ImGuiCol_NavHighlight]           = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
             colors[ImGuiCol_NavWindowingHighlight]  = ImVec4(1.00f, 0.00f, 0.00f, 0.70f);
             colors[ImGuiCol_NavWindowingDimBg]      = ImVec4(1.00f, 0.00f, 0.00f, 0.20f);
-            colors[ImGuiCol_ModalWindowDimBg]       = ImVec4(1.00f, 0.00f, 0.00f, 0.35f);
+            colors[ImGuiCol_ModalWindowDimBg]       = ImVec4(0.03f, 0.02f, 0.07f, 0.56f);
 
             ImGuiStyle& style = ImGui::GetStyle();
             style.WindowPadding                     = ImVec2(8.00f, 8.00f);
@@ -865,9 +828,9 @@ namespace neam
             style.GrabRounding                      = 2;
             style.TabRounding                       = 2;
             style.LogSliderDeadzone                 = 4;
-            style.AntiAliasedLines                  = false;
-            style.AntiAliasedFill                   = false;
-            style.AntiAliasedLinesUseTex            = false;
+            style.AntiAliasedLines                  = true;
+            style.AntiAliasedLinesUseTex            = true;
+            style.AntiAliasedFill                   = true;
           }
 
         private:
@@ -915,7 +878,7 @@ namespace neam
 
           double old_time = 0;;
 
-          vk::sampler font_sampler { ctx.device, VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0, -1000, 1000 }; std::optional<image_holder> font_texture;
+          vk::sampler font_sampler { ctx.device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0, -1000, 1000 }; std::optional<image_holder> font_texture;
           vk::descriptor_set font_texture_ds { ctx.device, VkDescriptorSet(nullptr) };
           friend class render_pass;
       };

@@ -57,10 +57,11 @@ namespace neam::hydra::imgui
           std::move(ds_layout),
           hydra::vk::descriptor_pool
           {
-            context.device, 100,
+            context.device, 512,
             {
               { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
-            }
+            },
+            VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT
           },
           std::move(p_layout)
         );
@@ -75,6 +76,7 @@ namespace neam::hydra::imgui
 
           pcr.get_vertex_input_state() = pvis;
           pcr.get_input_assembly_state().set_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+          pcr.get_pipeline_rasterization_state().set_cull_mode(VK_CULL_MODE_NONE);
         }
 
         pcr.get_viewport_state()
@@ -131,6 +133,8 @@ namespace neam::hydra::imgui
         related_context.set_font_as_regenerated();
 
         const ImDrawData* draw_data = imgui_viewport->DrawData;
+        if (!draw_data)
+          return;
 
         // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
         const int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
@@ -220,7 +224,10 @@ namespace neam::hydra::imgui
         context.transfers.add_transfer(related_context.font_texture->image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, upload_size, pixels);
 
         // update ds
-        related_context.font_texture_ds.write_descriptor_set(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {{ related_context.font_texture->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }});
+        related_context.font_texture_ds.write_descriptor_set(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        {
+          { related_context.font_texture->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+        });
       }
 
       render_pass_output draw(render_pass_context& rpctx)
@@ -230,6 +237,9 @@ namespace neam::hydra::imgui
           return {};
 
         const ImDrawData* draw_data = imgui_viewport->DrawData;
+        if (!draw_data)
+          return {};
+
         const int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
         const int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
         if (fb_width <= 0 || fb_height <= 0)
@@ -248,7 +258,7 @@ namespace neam::hydra::imgui
           });
         }
 
-        cbr.begin_render_pass(vk_render_pass, rpctx.final_fb, rpctx.viewport_rect, VK_SUBPASS_CONTENTS_INLINE, {});
+        cbr.begin_render_pass(vk_render_pass, rpctx.output(), rpctx.viewport_rect, VK_SUBPASS_CONTENTS_INLINE, {});
 
         {
           const glm::vec2 scale = glm::vec2(2.0f / draw_data->DisplaySize.x, 2.0f / draw_data->DisplaySize.y);
@@ -263,6 +273,10 @@ namespace neam::hydra::imgui
         // (Because we merged all buffers into a single one, we maintain our own offset into them)
         int global_vtx_offset = 0;
         int global_idx_offset = 0;
+
+        ImTextureID last_texture_id = nullptr; // default font texture
+        const vk::pipeline_layout& pipeline_layout = context.ppmgr.get_pipeline_layout("imgui::pipeline"_rid);
+
         for (int n = 0; n < draw_data->CmdListsCount; n++)
         {
           const ImDrawList* cmd_list = draw_data->CmdLists[n];
@@ -277,6 +291,7 @@ namespace neam::hydra::imgui
               {
                 const glm::vec2 scale = glm::vec2(2.0f / draw_data->DisplaySize.x, 2.0f / draw_data->DisplaySize.y);
                 setup_renderstate(cbr, scale, -1.0f - glm::vec2(draw_data->DisplayPos.x, draw_data->DisplayPos.y) * scale, {fb_width, fb_height});
+                last_texture_id = nullptr;
               }
               else
               {
@@ -303,6 +318,33 @@ namespace neam::hydra::imgui
               scissor.extent.width = (uint32_t)(clip_max.x - clip_min.x);
               scissor.extent.height = (uint32_t)(clip_max.y - clip_min.y);
 
+              ImTextureID current_texture_id = pcmd->GetTexID();
+              if (current_texture_id != last_texture_id)
+              {
+                last_texture_id = current_texture_id;
+                if (current_texture_id == nullptr || current_texture_id == &related_context.font_texture->view)
+                {
+                  // easy #1: the font texture
+                  cbr.bind_descriptor_set(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, { &related_context.font_texture_ds });
+                }
+                else if (auto it = textures_ds_cache.find(current_texture_id); it != textures_ds_cache.end())
+                {
+                  // easy #2: already in cache
+                  cbr.bind_descriptor_set(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, { &it->second });
+                }
+                else
+                {
+                  // not the font texture / not in the cache: create the descriptor-set and update it
+                  vk::descriptor_set current_texture_ds = context.ppmgr.allocate_descriptor_set("imgui::pipeline"_rid, true /*allow free*/);
+                  current_texture_ds.write_descriptor_set(0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                  {
+                    { *current_texture_id, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+                  });
+                  cbr.bind_descriptor_set(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, { &current_texture_ds });
+                  textures_ds_cache.emplace(current_texture_id, std::move(current_texture_ds));
+                }
+              }
+
               cbr.set_scissor(scissor);
               cbr.draw_indexed(pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
             }
@@ -314,7 +356,16 @@ namespace neam::hydra::imgui
         cbr.end_render_pass();
         cmd_buf.end_recording();
 
+
         return { .graphic = cr::construct<std::vector>(std::move(cmd_buf)) };
+      }
+
+      void cleanup() override
+      {
+        // Flush the ds cache when not used:
+        context.vrd.postpone_destruction_to_next_fence(context.gqueue, std::move(textures_ds_cache));
+        decltype(textures_ds_cache) tmp;
+        textures_ds_cache.swap(tmp);
       }
 
     private: // rendering stuff
@@ -365,5 +416,9 @@ namespace neam::hydra::imgui
 
       std::optional<buffer_holder> vertex_buffer;
       std::optional<buffer_holder> index_buffer;
+
+      // Temporary cache of texture ds, so we can simply pass image_view around,
+      // without having to deal with full-on descriptor sets
+      std::map<ImTextureID, vk::descriptor_set> textures_ds_cache;
   };
 }

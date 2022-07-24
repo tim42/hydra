@@ -32,185 +32,123 @@
 
 #include "imgui.hpp"
 #include "generic_ui.hpp"
+#include "ui_elements.hpp"
 
 namespace neam::hydra::imgui
 {
-  // FIXME: Move to a generic UI header
-  void link(const std::string& url, const std::string& text)
+  namespace generic_ui
   {
-    ImVec4 text_color = ImVec4(0.2f, 0.5f, 1.0f, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Text, text_color);
-    ImGui::TextUnformatted(text.c_str());
-    ImGui::PopStyleColor();
-    ImVec2 rect_min = ImGui::GetItemRectMin();
-    ImVec2 rect_max = ImGui::GetItemRectMax();
-    rect_max.y -= (rect_max.y - rect_min.y) * 0.1f; 
-    rect_min.y = rect_max.y;
-    if (ImGui::IsItemClicked())
+    void PushID(helpers::payload_arg_t payload)
     {
-      sys::open_url(url);
+      // IMGUI doesn't really want to change its hash function to a proper hash function
+      // So we have to scramble the bits before feeding the id to imgui
+      ImGui::PushID(ct::murmur_scramble(payload.id++));
     }
-    else if (ImGui::IsItemHovered())
+
+    void member_name_ui(helpers::payload_arg_t payload, const rle::type_metadata& type)
     {
-      ImGui::GetWindowDrawList()->AddLine(rect_min, rect_max, ImGui::GetColorU32(text_color), 1.0f);
-      ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-      if (&url != &text)
+      if (!payload.member_name.empty())
       {
-        ImGui::BeginTooltip();
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
-        ImGui::PushFont(get_font(default_font));
-        ImGui::Text("link to: %s", url.c_str());
-        ImGui::PopFont();
-        ImGui::PopTextWrapPos();
-        ImGui::EndTooltip();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(payload.member_name.c_str());
+        ImGui::SameLine();
+        help_marker_fnc([&]()
+        {
+          ImGui::PushFont(get_font(bold));
+          ImGui::TextUnformatted("type: ");
+          switch_font_sameline(monospace_font|italic);
+          ImGui::TextUnformatted(type.name.c_str());
+          switch_font_pop_sameline();
+          ImGui::NewLine();
+
+          if (payload.ref != nullptr)
+          {
+            const auto info = payload.ref->attributes.get<metadata::info::metadata>();
+            if (!info.description.empty())
+            {
+              ImGui::PushFont(get_font(bold));
+              ImGui::TextUnformatted("description: ");
+              switch_font_sameline(italic);
+              ImGui::TextUnformatted(info.description.c_str());
+              switch_font_pop_sameline();
+              ImGui::NewLine();
+            }
+            if (!info.doc_url.empty())
+            {
+              ImGui::PushFont(get_font(bold));
+              ImGui::TextUnformatted("documentation: ");
+              switch_font_sameline(italic);
+              link(info.doc_url, "link");
+              switch_font_pop_sameline();
+              ImGui::NewLine();
+            }
+          }
+        }, "...");
       }
     }
 
-  }
-  void link(const std::string& url)
-  {
-    link(url, url);
-  }
-
-  template<typename Fnc>
-  static void help_marker_fnc(Fnc&& fnc, const std::string& help_text = "(?)")
-  {
-    switch_font_sameline(monospace_font | italic, false);
-    ImGui::TextDisabled(help_text.c_str());
-    switch_font_pop_sameline();
-    ImGui::NewLine();
-    if (ImGui::IsItemClicked())
+    template<typename Fnc>
+    static bool BeginEntry(helpers::payload_arg_t payload, Fnc&& fnc)
     {
-      ImGui::OpenPopup("##help_text");
-    }
-    else if (!ImGui::IsPopupOpen("##help_text") && ImGui::IsItemHovered())
-    {
-      ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-      ImGui::BeginTooltip();
-      ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
-      fnc();
-      ImGui::PopTextWrapPos();
-      ImGui::EndTooltip();
-    }
-    if (ImGui::BeginPopup("##help_text"))
-    {
-      ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
-      fnc();
-      ImGui::PopTextWrapPos();
-      ImGui::EndPopup();
-    }
-  }
-  static void help_marker(const std::string& str)
-  {
-    help_marker_fnc([&]()
-    {
-      ImGui::TextUnformatted(str.c_str());
-    });
-  }
-
-  static void help_marker(const rle::type_metadata& type, const std::string& desc = "")
-  {
-    return help_marker(fmt::format("type: {}\n{}", type.name, desc));
-  }
-  static void member_name_ui(helpers::payload_arg_t payload, const rle::type_metadata& type)
-  {
-    if (!payload.member_name.empty())
-    {
-      ImGui::TextUnformatted(payload.member_name.c_str());
-      ImGui::SameLine();
-      help_marker_fnc([&]()
+      if (!payload.enabled)
       {
-        ImGui::PushFont(get_font(bold));
-        ImGui::TextUnformatted("type: ");
-        switch_font_sameline(monospace_font|italic);
-        ImGui::TextUnformatted(type.name.c_str());
-        switch_font_pop_sameline();
-        ImGui::NewLine();
+        ++payload.disabled_table_stack;
+        return false;
+      }
 
-        if (payload.ref != nullptr)
-        {
-          ImGui::PushFont(get_font(italic));
-          const auto info = payload.ref->attributes.get<metadata::info::metadata>();
-          if (!info.description.empty())
-          {
-            ImGui::PushFont(get_font(bold));
-            ImGui::TextUnformatted("description: ");
-            ImGui::PopFont();
-            ImGui::SameLine();
-            ImGui::TextUnformatted(info.description.c_str());
-          }
-          if (!info.doc_url.empty())
-          {
-            link(info.doc_url, "documentation");
-          }
-          ImGui::PopFont();
-        }
+      ++payload.table_stack;
+      payload.enabled = fnc();
+      return payload.enabled;
+    }
+
+    template<typename Fnc>
+    static void EndEntry(helpers::payload_arg_t payload, Fnc&& fnc)
+    {
+      if (payload.enabled)
+      {
+        --payload.table_stack;
+        fnc();
+        return;
+      }
+
+      if (payload.disabled_table_stack == 0)
+        payload.enabled = true;
+      else
+        --payload.disabled_table_stack;
+    }
+
+    bool BeginEntryTable(helpers::payload_arg_t payload, const char* name, uint32_t count)
+    {
+      return BeginEntry(payload, [=, &payload]
+      {
+        bool ret = ImGui::BeginTable(name, count, ImGuiTableFlags_BordersInner | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoSavedSettings);
+        if (ret)
+          PushID(payload);
+        return ret;
       });
     }
-  }
-
-  template<typename Fnc>
-  static bool BeginEntry(helpers::payload_arg_t payload, Fnc&& fnc)
-  {
-    ++payload.id;
-    if (!payload.enabled)
+    void EndEntryTable(helpers::payload_arg_t payload)
     {
-      ++payload.disabled_table_stack;
-      return false;
+      EndEntry(payload, []
+      {
+        ImGui::PopID();
+        ImGui::EndTable();
+      });
     }
-
-    ++payload.table_stack;
-    payload.enabled = fnc();
-    return payload.enabled;
-  }
-
-  template<typename Fnc>
-  static void EndEntry(helpers::payload_arg_t payload, Fnc&& fnc)
-  {
-    if (payload.enabled)
+    bool BeginCollapsingHeader(helpers::payload_arg_t payload, const char* label)
     {
-      --payload.table_stack;
-      fnc();
-      return;
+      return BeginEntry(payload, [label, &payload]
+      {
+        PushID(payload);
+        bool ret = ImGui::CollapsingHeader(label);
+        ImGui::PopID();
+        return ret;
+      });
     }
-
-    if (payload.disabled_table_stack == 0)
-      payload.enabled = true;
-    else
-      --payload.disabled_table_stack;
-  }
-
-  static bool BeginEntryTable(helpers::payload_arg_t payload, const char* name = "table", uint32_t count = 2)
-  {
-    return BeginEntry(payload, [=, &payload]
+    void EndCollapsingHeader(helpers::payload_arg_t payload)
     {
-      bool ret = ImGui::BeginTable(name, count, ImGuiTableFlags_BordersInner | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoSavedSettings);
-      if (ret)
-        ImGui::PushID(ct::fold32(payload.id++));
-      return ret;
-    });
-  }
-  static void EndEntryTable(helpers::payload_arg_t payload)
-  {
-    EndEntry(payload, []
-    {
-      ImGui::PopID();
-      ImGui::EndTable();
-    });
-  }
-  static bool BeginCollapsingHeader(helpers::payload_arg_t payload, const char* label)
-  {
-    return BeginEntry(payload, [label, &payload]
-    {
-      ImGui::PushID(ct::fold32(payload.id++));
-      bool ret = ImGui::CollapsingHeader(label);
-      ImGui::PopID();
-      return ret;
-    });
-  }
-  static void EndCollapsingHeader(helpers::payload_arg_t payload)
-  {
-    EndEntry(payload, [] { });
+      EndEntry(payload, [] {});
+    }
   }
 
   template<uint32_t Count>
@@ -219,22 +157,22 @@ namespace neam::hydra::imgui
     bool v[Count];
     memcpy(&v, addr, sizeof(bool)*Count);
 
-    if (BeginEntryTable(payload))
+    if (generic_ui::BeginEntryTable(payload))
     {
       ImGui::TableNextRow();
       ImGui::TableSetColumnIndex(0);
-      member_name_ui(payload, type);
+      generic_ui::member_name_ui(payload, type);
       ImGui::TableSetColumnIndex(1);
 
       for (uint32_t i = 0; i < Count; ++i)
       {
-        ImGui::PushID(payload.id++);
+        ImGui::PushID(i);
         ImGui::Checkbox("", &v[i]);
         ImGui::SameLine();
         ImGui::PopID();
       }
     }
-    EndEntryTable(payload);
+    generic_ui::EndEntryTable(payload);
 
     memcpy(payload.ec.allocate(sizeof(bool) * Count), &v, sizeof(bool) * Count);
   }
@@ -244,11 +182,11 @@ namespace neam::hydra::imgui
   {
     T v = *(const T*)addr;
 
-    if (BeginEntryTable(payload))
+    if (generic_ui::BeginEntryTable(payload))
     {
       ImGui::TableNextRow();
       ImGui::TableSetColumnIndex(0);
-      member_name_ui(payload, type);
+      generic_ui::member_name_ui(payload, type);
       ImGui::TableSetColumnIndex(1);
       ImGui::PushItemWidth(-FLT_MIN);
       constexpr uint32_t format_len = sizeof(Format.string);
@@ -271,11 +209,11 @@ namespace neam::hydra::imgui
           if (((range.max - range.min) / (range.step == 0 ? 1 : range.step)) < VT(120))
             ImGui::SliderScalarN("", DT, &v, ComponentCount, &range.min, &range.max, format_len > 2 ? Format.string : nullptr);
           else
-            ImGui::DragScalarN("", DT, &v, ComponentCount, 1, &range.min, &range.max, format_len > 2 ? Format.string : nullptr);
+            ImGui::DragScalarN("", DT, &v, ComponentCount, range.step > 0 ? range.step : 1, &range.min, &range.max, format_len > 2 ? Format.string : nullptr);
         }
         else
         {
-          ImGui::DragScalarN("", DT, &v, ComponentCount, 1, nullptr, nullptr, format_len > 2 ? Format.string : nullptr);
+          ImGui::DragScalarN("", DT, &v, ComponentCount, range.step > 0 ? range.step : 1, nullptr, nullptr, format_len > 2 ? Format.string : nullptr);
         }
       }
       else
@@ -287,7 +225,7 @@ namespace neam::hydra::imgui
         switch_font_pop_sameline();
       }
     }
-    EndEntryTable(payload);
+    generic_ui::EndEntryTable(payload);
 
     memcpy(payload.ec.allocate(sizeof(T)), &v, sizeof(T));
   }
@@ -295,16 +233,16 @@ namespace neam::hydra::imgui
   template<typename T>
   static void raw_type_helper_char(const rle::serialization_metadata& md, const rle::type_metadata& type, helpers::payload_arg_t payload, const uint8_t* addr, size_t size)
   {
-    if (BeginEntryTable(payload))
+    if (generic_ui::BeginEntryTable(payload))
     {
       ImGui::TableNextRow();
       ImGui::TableSetColumnIndex(0);
-      member_name_ui(payload, type);
+      generic_ui::member_name_ui(payload, type);
       ImGui::TableSetColumnIndex(1);
       // FIXME
 //       memcpy(payload.ec.allocate(type.size), &v, type.size);
     }
-    EndEntryTable(payload);
+    generic_ui::EndEntryTable(payload);
     memcpy(payload.ec.allocate(sizeof(T)), addr, sizeof(T));
   }
 
@@ -400,16 +338,16 @@ namespace neam::hydra::imgui
         case 8: raw_type_helper<uint64_t, uint64_t, ImGuiDataType_U64, 1, "%016lX">(md, type, payload, addr, size); break;
         default:
         {
-          if (BeginEntryTable(payload))
+          if (generic_ui::BeginEntryTable(payload))
           {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            member_name_ui(payload, type);
+            generic_ui::member_name_ui(payload, type);
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("unknown %u byte data", (uint32_t)size);
             memcpy(payload.ec.allocate(type.size), addr, size);
           }
-          EndEntryTable(payload);
+          generic_ui::EndEntryTable(payload);
         }
         break;
       }
@@ -418,8 +356,9 @@ namespace neam::hydra::imgui
     static container_edit_t on_type_container_pre(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload,
                                       uint32_t count, const rle::type_metadata& sub_type)
     {
-      if (BeginCollapsingHeader(payload, payload.member_name.c_str()))
+      if (generic_ui::BeginCollapsingHeader(payload, payload.member_name.c_str()))
       {
+        generic_ui::PushID(payload);
         ImGui::Indent();
         ImGui::Text("size:");
         ImGui::SameLine();
@@ -429,6 +368,7 @@ namespace neam::hydra::imgui
         if (ImGui::Button("Clear"))
           count = 0;
         ImGui::Separator();
+        ImGui::PopID();
         payload.ec.encode(count);
       }
       else
@@ -442,7 +382,7 @@ namespace neam::hydra::imgui
     {
       if (payload.enabled)
         ImGui::Unindent();
-      EndCollapsingHeader(payload);
+      generic_ui::EndCollapsingHeader(payload);
       while (ed.resize_to > 0) // add missing elements:
       {
         --ed.resize_to;
@@ -483,30 +423,34 @@ namespace neam::hydra::imgui
       payload.ec.encode(version);
     }
 
-    static void on_type_tuple_pre(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload, uint32_t count)
+    static bool on_type_tuple_pre(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload, uint32_t count)
     {
-      if (count == 0) return;
-      if (!payload.enabled) return;
+      bool initial = payload.id == 0;
+      if (count == 0) return initial;
+      if (!payload.enabled) return initial;
 
-      member_name_ui(payload, type);
+      generic_ui::member_name_ui(payload, type);
 
-      ImGui::Indent();
+      if (!initial)
+        ImGui::Indent();
+      return initial;
     }
-    static void on_type_tuple_post(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload, uint32_t count)
+    static void on_type_tuple_post(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload, uint32_t count, bool initial)
     {
       if (count == 0) return;
       if (!payload.enabled) return;
 
-      ImGui::Unindent();
+      if (!initial)
+        ImGui::Unindent();
     }
     static void on_type_tuple_pre_entry(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload,
-                                        uint32_t index, uint32_t count, const rle::type_metadata& sub_type)
+                                        uint32_t index, uint32_t count, const rle::type_metadata& sub_type, bool initial)
     {
       payload.member_name = type.contained_types[index].name;
       payload.ref = &type.contained_types[index];
     }
     static void on_type_tuple_post_entry(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload,
-                                         uint32_t index, uint32_t count, const rle::type_metadata& sub_type)
+                                         uint32_t index, uint32_t count, const rle::type_metadata& sub_type, bool initial)
     {
       payload.ref = nullptr;
     }
@@ -514,11 +458,11 @@ namespace neam::hydra::imgui
     static void on_type_variant_empty(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload)
     {
 
-      if (BeginEntryTable(payload))
+      if (generic_ui::BeginEntryTable(payload))
       {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        member_name_ui(payload, type);
+        generic_ui::member_name_ui(payload, type);
         ImGui::TableSetColumnIndex(1);
         ImGui::Text("type:");
         ImGui::SameLine();
@@ -543,7 +487,7 @@ namespace neam::hydra::imgui
       {
         payload.ec.encode(uint32_t(0));
       }
-      EndEntryTable(payload);
+      generic_ui::EndEntryTable(payload);
       payload.member_name = {};
       payload.ref = nullptr;
     }
@@ -552,11 +496,11 @@ namespace neam::hydra::imgui
     {
       encoder_swap_t es;
       bool encoded = false;
-      if (BeginEntryTable(payload))
+      if (generic_ui::BeginEntryTable(payload))
       {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        member_name_ui(payload, type);
+        generic_ui::member_name_ui(payload, type);
         ImGui::TableSetColumnIndex(1);
         ImGui::Text("type:");
         ImGui::SameLine();
@@ -583,11 +527,11 @@ namespace neam::hydra::imgui
           payload.ec = {*es.oma};
         }
       }
+      generic_ui::EndEntryTable(payload);
       if (!encoded)
       {
         payload.ec.encode(index);
       }
-      EndEntryTable(payload);
 
       payload.member_name = {};
       payload.ref = nullptr;
@@ -644,23 +588,22 @@ namespace neam::hydra::imgui
       buff[count] = 0;
       dc.skip(count);
 
-
       if (!payload.enabled)
       {
         memcpy(payload.ec.encode_and_alocate(count), buff, count);
         return;
       }
 
-      if (BeginEntryTable(payload))
+      if (generic_ui::BeginEntryTable(payload))
       {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        member_name_ui(payload, type);
+        generic_ui::member_name_ui(payload, type);
         ImGui::TableSetColumnIndex(1);
         ImGui::PushItemWidth(-FLT_MIN);
         ImGui::InputText("", buff, k_buff_size);
       }
-      EndEntryTable(payload);
+      generic_ui::EndEntryTable(payload);
       count = strlen(buff);
       memcpy(payload.ec.encode_and_alocate(count), buff, count);
     }
