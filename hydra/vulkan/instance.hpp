@@ -226,7 +226,7 @@ namespace neam
 #undef _HYDRA_CASE
 
             // finally print the message:
-            neam::cr::out.log_fmt(s, std::source_location::current(),
+            neam::cr::out().log_fmt(s, std::source_location::current(),
                                   "VULKAN VALIDATION LAYER MESSAGE: {0}:\n"
                                   "[{1} / {2} / {3} ]: {4}:\n"
                                   "{5}",
