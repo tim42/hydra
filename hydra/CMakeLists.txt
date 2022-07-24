@@ -19,6 +19,7 @@ add_library(hydra SHARED
     imgui/imgui_engine_module.cpp
     imgui/imgui_context.cpp
     imgui/generic_ui.cpp
+    imgui/ui_elements.cpp
 
     #glfw/glfw_engine_module.cpp
     glfw/glfw_window.cpp

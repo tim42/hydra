@@ -6,7 +6,7 @@
 if(MSVC)
     set(PROJECT_CXX_FLAGS /W4)
 else()
-    set(PROJECT_CXX_FLAGS -Wall -Wextra -rdynamic)
+    set(PROJECT_CXX_FLAGS -Wall -rdynamic)
 endif()
 
 # Workaround kdevelop refusing the C++23 standard if set in cmake...
@@ -16,7 +16,7 @@ endif()
         set(PROJECT_CXX_FLAGS ${PROJECT_CXX_FLAGS} /std:c++latest)
     else()
         # kdevelop (and probably clang) requires 2b and not 23
-        set(PROJECT_CXX_FLAGS ${PROJECT_CXX_FLAGS} -std=gnu++2b -Wno-invalid-offsetof -Wno-unused-parameter)
+        set(PROJECT_CXX_FLAGS ${PROJECT_CXX_FLAGS} -std=gnu++2b -Wno-invalid-offsetof -Wno-unused-parameter -Wno-unused-function)
     endif()
 #else()
     # this is the proper way, but kdevelop does not like it
