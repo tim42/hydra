@@ -81,6 +81,47 @@ namespace neam::resources
     }
   }
 
+  std::set<std::filesystem::path> rel_db::get_dependent_files(const std::filesystem::path& file) const
+  {
+    std::set<std::filesystem::path> ret;
+    std::lock_guard _l(lock);
+    get_dependent_files_unlocked(file, ret);
+    return ret;
+  }
+
+  void rel_db::get_dependent_files(const std::filesystem::path& file, std::set<std::filesystem::path>& ret) const
+  {
+    std::lock_guard _l(lock);
+    get_dependent_files_unlocked(file, ret);
+  }
+
+  void rel_db::get_dependent_files_unlocked(const std::filesystem::path& file, std::set<std::filesystem::path>& ret) const
+  {
+    if (auto it = files_resources.find(file); it != files_resources.end())
+    {
+      for (const auto& dit : it->second.dependent)
+      {
+        if (!ret.contains(dit))
+        {
+          ret.insert(dit);
+          get_dependent_files_unlocked(dit, ret);
+        }
+      }
+    }
+  }
+
+  void rel_db::consolidate_files_with_dependencies(std::set<std::filesystem::path>& file_list) const
+  {
+    const std::set<std::filesystem::path> initial_list = file_list;
+
+    std::lock_guard _l(lock);
+    for (const auto& it : initial_list)
+    {
+      get_dependent_files_unlocked(it, file_list);
+    }
+  }
+
+
   std::set<std::filesystem::path> rel_db::get_removed_resources(const std::deque<std::filesystem::path>& file_list) const
   {
     std::lock_guard _l(lock);
@@ -88,6 +129,7 @@ namespace neam::resources
     std::set<std::filesystem::path> ret;
     for (const auto& it : files_resources)
     {
+      // only insert root files (actual FS files)
       if (it.second.parent_file.empty())
         ret.emplace_hint(ret.end(), it.first);
     }
@@ -110,25 +152,39 @@ namespace neam::resources
     return ret;
   }
 
+  raw_data rel_db::serialize() const
+  {
+    std::lock_guard _l(lock);
+    return rle::serialize(*this);
+  }
+
+
   void rel_db::add_file(const std::string& file)
   {
     std::lock_guard _l(lock);
-    remove_file_unlocked(file);
-    files_resources.insert_or_assign(file, file_info_t{});
+    if (auto it = files_resources.find(file); it != files_resources.end())
+      return repack_file_unlocked(file);
+    files_resources.emplace(file, file_info_t{});
   }
 
   void rel_db::add_file(const std::string& parent_file, const std::string& child_file)
   {
     std::lock_guard _l(lock);
-    remove_file_unlocked(child_file);
     files_resources[parent_file].child_files.insert(child_file);
-    files_resources.insert_or_assign(child_file, file_info_t{.parent_file = parent_file});
+    if (auto it = files_resources.find(child_file); it != files_resources.end())
+    {
+      it->second.parent_file = parent_file;
+      repack_file_unlocked(child_file);
+      return;
+    }
+    files_resources.emplace(child_file, file_info_t{.parent_file = parent_file});
   }
 
   void rel_db::add_file_to_file_dependency(const std::string& file, const std::string& dependent_on)
   {
     std::lock_guard _l(lock);
-    // TODO
+    files_resources[file].depend_on.insert(dependent_on);
+    files_resources[dependent_on].dependent.insert(file);
   }
 
   void rel_db::set_processor_for_file(const std::string& file, id_t version_hash)
@@ -149,6 +205,7 @@ namespace neam::resources
   {
     std::lock_guard _l(lock);
     root_resources[root_resource].sub_resources.insert(child_resource);
+    sub_resources.emplace(child_resource, root_resource);
   }
 
   void rel_db::set_pack_file(id_t root_resource, id_t pack_file_id)
@@ -173,10 +230,52 @@ namespace neam::resources
       // then remove it:
       files_resources.erase(it);
 
+      // remove all the depndencies:
+      for (auto& it : entry.dependent)
+      {
+        if (auto fit = files_resources.find(it); fit != files_resources.end())
+          fit->second.depend_on.erase(it);
+      }
+      for (auto& it : entry.depend_on)
+      {
+        if (auto fit = files_resources.find(it); fit != files_resources.end())
+          fit->second.dependent.erase(it);
+      }
+
       // we recursively call remove_file on all sub-files:
       // (which is why we removed ourselves first, to avoid potential infinite recursion
       for (const auto& cfit : entry.child_files)
         remove_file_unlocked(cfit);
+
+      for (auto crit : entry.child_resources)
+        remove_resource_unlocked(crit);
+    }
+  }
+
+  void rel_db::repack_file(const std::string& file)
+  {
+    std::lock_guard _l(lock);
+    repack_file_unlocked(file);
+  }
+
+  void rel_db::repack_file_unlocked(const std::string& file)
+  {
+    if (auto it = files_resources.find(file); it != files_resources.end())
+    {
+      // we grab a ref to the entry
+      file_info_t& entry = it->second;
+
+      // remove the depndencies: (only file -> other files)
+      for (auto& it : entry.depend_on)
+      {
+        if (auto fit = files_resources.find(it); fit != files_resources.end())
+          fit->second.dependent.erase(it);
+      }
+
+      // we recursively call repack_file_unlocked on all sub-files:
+      // (which is why we removed ourselves first, to avoid potential infinite recursion
+      for (const auto& cfit : entry.child_files)
+        repack_file_unlocked(cfit);
 
       for (auto crit : entry.child_resources)
         remove_resource_unlocked(crit);

@@ -233,7 +233,7 @@ namespace neam::resources
     public: // resource removal
       /// \brief Handle the removal of a source file and all its related metadata/resources/subresources/pack files/...
       /// \note File must be relative to the source folder
-      async::continuation_chain on_source_file_removed(const std::filesystem::path& file);
+      async::continuation_chain on_source_file_removed(const std::filesystem::path& file, bool reimport = false);
 
     public: // resource management
       /// \brief Return the files present in the index but missing in 'state'
@@ -247,6 +247,25 @@ namespace neam::resources
       {
         check::debug::n_assert(has_rel_db, "cannot return non imported sources without a rel db present");
         return db.get_absent_resources(state);
+      }
+
+      /// \brief consolidate a file list with files that are dependent (directly and indirectly) on them
+      void consolidate_files_with_dependencies(std::set<std::filesystem::path>& file_list) const
+      {
+        check::debug::n_assert(has_rel_db, "cannot call to consolidate_files_with_dependencies without a rel db present");
+        return db.consolidate_files_with_dependencies(file_list);
+      }
+
+      void consolidate_files_with_dependencies(const std::filesystem::path& file, std::set<std::filesystem::path>& file_list) const
+      {
+        check::debug::n_assert(has_rel_db, "cannot call to consolidate_files_with_dependencies without a rel db present");
+        return db.get_dependent_files(file, file_list);
+      }
+
+      raw_data _get_serialized_reldb() const
+      {
+        check::debug::n_assert(has_rel_db, "cannot call to _get_serialized_reldb without a rel db present");
+        return db.serialize();
       }
 
     private:

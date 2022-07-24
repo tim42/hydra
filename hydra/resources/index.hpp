@@ -141,12 +141,12 @@ namespace neam::resources
 
       void clear() { *this = index(); }
 
-      bool add_entry(const entry& e)
+      bool add_entry(const entry& e, raw_data _data = {})
       {
-        return add_entry(e.id, e);
+        return add_entry(e.id, e, std::move(_data));
       }
 
-      bool add_entry(id_t id, const entry& e)
+      bool add_entry(id_t id, const entry& e, raw_data _data = {})
       {
         if (!check_entry_consistency(id, e))
         {
@@ -160,10 +160,11 @@ namespace neam::resources
         if ((e.flags & flags::embedded_data) != flags::none)
         {
           // Will not replace an existing entry, only create one if it does not already exists
-          embedded_data.emplace(id, raw_data{});
+          embedded_data.emplace(id, std::move(_data));
         }
         else
         {
+          check::debug::n_check(_data.size == 0, "Specifying an embedded data for a resource without the flag");
           // we unset the flag, so we must remove the embedded data
           embedded_data.erase(id);
         }

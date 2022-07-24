@@ -38,6 +38,7 @@
 #include "metadata.hpp"
 
 namespace neam::hydra { class core_context; }
+namespace neam::resources { class rel_db; }
 
 namespace neam::resources::processor
 {
@@ -51,6 +52,8 @@ namespace neam::resources::processor
 
     raw_data data;
     metadata_t metadata;
+
+    rel_db& db;
   };
 
   /// \brief data sent to a processor
@@ -59,6 +62,8 @@ namespace neam::resources::processor
     std::filesystem::path file;
     raw_data file_data;
     metadata_t metadata;
+
+    rel_db& db;
   };
 
   /// \brief result of a processor.
@@ -121,6 +126,7 @@ namespace neam::resources::processor
 
       .data = std::move(input.file_data),
       .metadata = std::move(input.metadata),
+      .db = input.db,
     });
     return chain::create_and_complete({.to_pack = std::move(to_pack)}, status::success);
   }

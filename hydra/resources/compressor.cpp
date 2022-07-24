@@ -27,7 +27,9 @@
 
 #include "compressor.hpp"
 
-#include <lzma.h>
+#if N_RES_LZMA_COMPRESSION
+  #include <lzma.h>
+#endif
 
 namespace neam::resources
 {

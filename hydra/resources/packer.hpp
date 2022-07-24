@@ -35,6 +35,8 @@
 #include "processor.hpp"
 
 namespace neam::hydra { class core_context; }
+namespace neam::resources { class rel_db; }
+
 namespace neam::resources::packer
 {
   struct data

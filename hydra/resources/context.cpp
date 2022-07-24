@@ -253,7 +253,9 @@ namespace neam::resources
 
   context::status_chain context::save_index() const
   {
-    check::debug::n_assert(has_index, "Trying to save while no index has been ever loaded. Are you loading and saving right away?");
+    check::debug::n_check(has_index, "Trying to save while no index has been ever loaded. Are you loading and saving right away?");
+    check::debug::n_check(io_context.is_file_mapped(index_file_id), "Index file is not mapped to io, will not save index");
+    
     io::context::write_chain chn = write_index(index_file_id, root);
 
     // save the rel-db too
@@ -263,7 +265,7 @@ namespace neam::resources
       const id_t reldb_fid = reldb_entry.pack_file;
       if (reldb_entry.is_valid() && io_context.is_file_mapped(reldb_fid))
       {
-        io::context::write_chain rel_chn = io_context.queue_write(reldb_fid, 0, rle::serialize(db));
+        io::context::write_chain rel_chn = io_context.queue_write(reldb_fid, 0, db.serialize());
         return async::multi_chain<bool>(true, [](bool & state, bool ret)
         {
           state = state && ret;
@@ -345,10 +347,10 @@ namespace neam::resources
 
       return io::context::read_chain::create_and_complete(std::move(data), success);
     })
-    .then([](raw_data&& data, bool success)
+    .then([this](raw_data&& data, bool success)
     {
       // TODO: unxor data properly
-      return uncompress(std::move(data))
+      return uncompress(std::move(data), &ctx.tm, threading::k_non_transient_task_group)
              .then([success](raw_data && data)
       {
         return io::context::read_chain::create_and_complete(std::move(data), success);
@@ -437,6 +439,8 @@ namespace neam::resources
 
   void context::remove_from_file_map(const std::set<id_t>& rids)
   {
+    if (rids.empty())
+      return;
     std::lock_guard _l(file_map_lock);
     for (id_t rid : rids)
     {
@@ -486,7 +490,7 @@ namespace neam::resources
 
     // queue the metadata read:
     auto md_chn = io_context.queue_read(mdfid, 0, io::context::whole_file)
-    .then(&ctx.tm, threading::k_non_transient_task_group, [=](raw_data&& raw_metadata, bool success)
+    .then(/*&ctx.tm, threading::k_non_transient_task_group, */[=](raw_data&& raw_metadata, bool success)
     {
       metadata_t metadata;
 
@@ -503,10 +507,17 @@ namespace neam::resources
     });
 
     // queue the resource removal/file cleanup (in case of a re-import)
-    async::chain<bool> rmv_chain = on_source_file_removed(resource)
-    .then([]
+    async::chain<bool> rmv_chain;
+    ctx.tm.get_long_duration_task([this, resource, state = rmv_chain.create_state()] mutable
     {
-      return true;
+      on_source_file_removed(resource, true /* reimport */)
+      .then([this, resource]
+      {
+        // add the file back to the rel-db now
+        // (it's not done in the other import-resource at it can be called recursively and add_file(file) clear the entries for it)
+        db.add_file(resource);
+        return true;
+      }).use_state(state);
     });
 
     // multi-chain state:
@@ -516,9 +527,6 @@ namespace neam::resources
       raw_data res;
     };
 
-    // add the file back to the rel-db now
-    // (it's not done in the other import-resource at it can be called recursively and add_file(file) clear the entries for it)
-    db.add_file(resource);
 
     // as we perform both metadata and resource reads at the same time, we wait for them both:
     return async::multi_chain<state_t>(state_t{}, []<typename Arg>(state_t& state, Arg&& arg)
@@ -532,7 +540,7 @@ namespace neam::resources
         static_assert(!sizeof(Arg), "Unknown type received");
     }, res_chn, md_chn, rmv_chain)
     // the chain the next step in the import process:
-    .then([=, this](state_t&& state)
+    .then(/*&ctx.tm, threading::k_non_transient_task_group, */[=, this](state_t&& state)
     {
       if (!state.res.data)
         return status_chain::create_and_complete(status::failure);
@@ -547,26 +555,27 @@ namespace neam::resources
 
     cr::out().debug("import_resource: importing resource: {}", resource.c_str());
 
-    // initial step: we process the resource:
-    const processor::function proc = processor::get_processor(data, resource);
-    if (!proc)
-    {
-      // not really an error, in normal mode we skip the file, but in debug we send a warn message
-      if (cr::out.min_severity == cr::logger::severity::debug)
-      {
-        cr::out().warn("import_resource: resource {}: could not find a processor (mimetype: {}, extension: {})",
-                       resource.c_str(), mime::get_mimetype(data), resource.extension().c_str());
-      }
-      return status_chain::create_and_complete(status::failure);
-    }
-
     // we got our processor:
     processor::chain chn;
-    ctx.tm.get_long_duration_task([proc, this, resource, data = std::move(data), metadata = std::move(metadata), state = chn.create_state()] mutable
+    ctx.tm.get_long_duration_task([/*proc, */this, resource, data = std::move(data), metadata = std::move(metadata), state = chn.create_state()] mutable
     {
-      proc(ctx, {resource, std::move(data), std::move(metadata)}).use_state(state);
+      // initial step: we process the resource:
+      const processor::function proc = processor::get_processor(data, resource);
+      if (!proc)
+      {
+        // not really an error, in normal mode we skip the file, but in debug we send a warn message
+        if (cr::out.min_severity == cr::logger::severity::debug)
+        {
+          cr::out().warn("import_resource: resource {}: could not find a processor (mimetype: {}, extension: {})",
+                         resource.c_str(), mime::get_mimetype(data), resource.extension().c_str());
+        }
+        state.complete({}, status::failure);
+        return;
+      }
+
+      proc(ctx, {resource, std::move(data), std::move(metadata), db}).use_state(state);
     });
-    return chn.then([=, this](processor::processed_data&& pd, status s)
+    return chn.then(/*&ctx.tm, threading::k_non_transient_task_group, */[=, this](processor::processed_data&& pd, status s)
     {
       // FIXME: should handle caching results to avoid re-processing data
 
@@ -626,7 +635,7 @@ namespace neam::resources
     {
       pack(ctx, std::move(proc_data)).use_state(state);
     });
-    return chain.then([=, this](std::vector<packer::data>&& v, id_t pack_id, status s)
+    return chain.then(/*&ctx.tm, threading::k_non_transient_task_group, */[=, this](std::vector<packer::data>&& v, id_t pack_id, status s)
     {
       // we forward the failure status, but partial success is ok (we will still forward the partial success status)
       if (s == status::failure)
@@ -666,7 +675,7 @@ namespace neam::resources
         if (it.data.size > N_RES_MAX_SIZE_TO_EMBED)
         {
           // compress and write to disk:
-          chains.emplace_back(compress(std::move(it.data))
+          chains.emplace_back(compress(std::move(it.data), v.size() > 1 ? &ctx.tm : nullptr, threading::k_non_transient_task_group)
           .then([=, this, id = it.id](raw_data&& data)
           {
             const uint64_t sz = data.size;
@@ -677,7 +686,7 @@ namespace neam::resources
               return sz;
             });
           })
-          .then([=, this, id = it.id](uint64_t sz)
+          .then(/*&ctx.tm, threading::k_non_transient_task_group, */[=, this, id = it.id](uint64_t sz)
           {
             if (!sz) // a size of 0 is impossible (as we check for > N_RES_MAX_SIZE_TO_EMBED)
             {
@@ -707,9 +716,7 @@ namespace neam::resources
           {
             .id = it.id,
             .flags = flags::type_data | flags::embedded_data,
-          });
-          // we don't compress embedded data, as the index is compressed (we might also end-up with extra data, as it's a very small emtry
-          root.set_embedded_data(it.id, std::move(it.data));
+          }, std::move(it.data));
         }
 
         // save/remove the metadata file:
@@ -750,34 +757,38 @@ namespace neam::resources
       })
       .then([res_id, sub_res_count = v.size()](status s)
       {
-        cr::out().log("pack_resource: packed resource {} (with {} sub-resources)", res_id, sub_res_count);
+        cr::out().debug("pack_resource: packed resource {} (with {} sub-resources)", res_id, sub_res_count);
         return s;
       });
     });
   }
 
-  async::continuation_chain context::on_source_file_removed(const std::filesystem::path& file)
+  async::continuation_chain context::on_source_file_removed(const std::filesystem::path& file, bool reimport)
   {
     check::debug::n_assert(has_rel_db, "cannot handle a removed source file without a rel db present");
 
     // FIXME: should be one call
     const std::set<id_t> packs = db.get_pack_files(file);
     const std::set<id_t> resources = db.get_resources(file);
-    db.remove_file(file);
 
+      if (reimport)
+        db.repack_file(file);
+      else
+        db.remove_file(file);
 
     std::vector<async::continuation_chain> chains;
     chains.reserve(packs.size() + 1);
 
-    remove_from_file_map(packs);
-
+    for (id_t res : resources)
+      root.remove_entry(res);
     for (id_t pack : packs)
       chains.push_back(io_context.queue_deferred_remove(pack).to_continuation());
 
-    for (id_t res : resources)
-      root.remove_entry(res);
-
-    return async::multi_chain(std::move(chains));
+    // once everything is removed, remove those files from the file-map
+    return async::multi_chain(std::move(chains)).then([this, packs = std::move(packs)]
+    {
+      remove_from_file_map(packs);
+    });
   }
 }
 
