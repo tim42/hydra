@@ -75,7 +75,7 @@ namespace neam::hydra
       mod.second->set_engine(this);
 
     // create the vulkan instance then create the actual context (vk or hydra)
-    if ((mode & runtime_mode::vulkan_context) != runtime_mode::none)
+    if ((mode & runtime_mode::vulkan_context) == runtime_mode::vulkan_context)
     {
       cr::out().debug("creating vulkan instance...");
       neam::hydra::gen_feature_requester gfr;
@@ -146,7 +146,7 @@ namespace neam::hydra
       neam::hydra::temp_queue_familly_id_t compute_queue = *temp_compute_queue;
 
       // create the actual context:
-      if ((mode & runtime_mode::hydra_context) != runtime_mode::none)
+      if ((mode & runtime_mode::hydra_context) == runtime_mode::hydra_context)
         context.emplace<hydra_context>(std::move(vk_instance), hydra_init, graphic_queue, transfer_queue, compute_queue);
       else // vk_context:
         context.emplace<internal_vk_context>(std::move(vk_instance), hydra_init, graphic_queue, transfer_queue, compute_queue);
@@ -164,13 +164,13 @@ namespace neam::hydra
       for (auto& mod : modules)
         mod.second->set_core_context(&cctx);
     }
-    if ((mode & runtime_mode::vulkan_context) != runtime_mode::none)
+    if ((mode & runtime_mode::vulkan_context) == runtime_mode::vulkan_context)
     {
       vk_context& vctx = get_vulkan_context();
       for (auto& mod : modules)
         mod.second->set_vk_context(&vctx);
     }
-    if ((mode & runtime_mode::hydra_context) != runtime_mode::none)
+    if ((mode & runtime_mode::hydra_context) == runtime_mode::hydra_context)
     {
       hydra_context& hctx = get_hydra_context();
       for (auto& mod : modules)
@@ -196,7 +196,7 @@ namespace neam::hydra
     std::lock_guard _lg (init_lock);
     auto tree = tgd.compile_tree();
     tree.print_debug();
-    auto ret = cctx.boot(std::move(tree), index_key, index_file).then(&cctx.tm, threading::k_non_transient_task_group, [this, &cctx](resources::status st)
+    auto ret = cctx.boot(std::move(tree), index_key, index_file, false /*unlock tm*/).then(&cctx.tm, threading::k_non_transient_task_group, [this, &cctx](resources::status st)
     {
       cr::out().debug("engine boot: index loaded");
       if (st == resources::status::failure)
@@ -208,12 +208,15 @@ namespace neam::hydra
 
       // NOTE: partial success is ok
 
-      std::lock_guard _lg(init_lock);
+      {
+        std::lock_guard _lg(init_lock);
 
-      for (auto& mod : modules)
-        mod.second->on_resource_index_loaded();
+        for (auto& mod : modules)
+          mod.second->on_resource_index_loaded();
 
-      cr::out().debug("engine boot: engine has fully booted");
+        cr::out().log("engine boot: engine has fully booted");
+      }
+      cctx.tm.get_frame_lock()._unlock();
       return st;
     });
 
@@ -247,14 +250,14 @@ namespace neam::hydra
       while (cctx.tm.has_pending_tasks())
         cctx.tm.run_a_task();
 
-      if ((mode & runtime_mode::vulkan_context) != runtime_mode::none)
+      if ((mode & runtime_mode::vulkan_context) == runtime_mode::vulkan_context)
       {
         vk_context& vctx = get_vulkan_context();
 
         cr::out().debug("engine tear-down: syncing vulkan device...");
         vctx.device.wait_idle();
 
-        if ((mode & runtime_mode::hydra_context) != runtime_mode::none)
+        if ((mode & runtime_mode::hydra_context) == runtime_mode::hydra_context)
         {
           hydra_context& hctx = get_hydra_context();
 
@@ -267,11 +270,11 @@ namespace neam::hydra
       for (auto& mod : modules)
         mod.second->on_start_shutdown();
 
-      if ((mode & runtime_mode::vulkan_context) != runtime_mode::none)
+      if ((mode & runtime_mode::vulkan_context) == runtime_mode::vulkan_context)
       {
         vk_context& vctx = get_vulkan_context();
         vctx.device.wait_idle();
-        if ((mode & runtime_mode::hydra_context) != runtime_mode::none)
+        if ((mode & runtime_mode::hydra_context) == runtime_mode::hydra_context)
         {
           hydra_context& hctx = get_hydra_context();
           hctx.vrd._force_full_cleanup();

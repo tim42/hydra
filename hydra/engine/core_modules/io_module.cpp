@@ -32,6 +32,15 @@ namespace neam::hydra
   class io_module final : public engine_module<io_module>
   {
     public:
+      // instead of calling process() (a non-blocking call),
+      // call _wait_for_submit_queries which will stall the io task-group
+      // until everything submit has been completed (including stuff submit during the call)
+      //
+      // the default is false (it's a realtime engine after all),
+      // but specific tools can require to have it set to true to enforce io completion
+      bool wait_for_submit_queries = false;
+
+    private:
       static constexpr const char* module_name = "io";
 
       // the io module should always be present
@@ -46,10 +55,16 @@ namespace neam::hydra
           // (if we did do the process in the start callback, the dispatched tasks would only run after process() returned)
           cctx->tm.get_task([this]
           {
-            cctx->io.process();
+            if (wait_for_submit_queries)
+              cctx->io._wait_for_submit_queries();
+            else
+              cctx->io.process();
           });
         });
       }
+
+      friend class engine_t;
+      friend engine_module<io_module>;
   };
 }
 

@@ -90,15 +90,15 @@ namespace neam::hydra
       /// \brief Return the hydra context. Kill the app if the context does not exist.
       hydra_context& get_hydra_context()
       {
-        check::debug::n_assert((mode & runtime_mode::hydra_context) != runtime_mode::none, "Trying to get the hydra-context in a mode that doesn't provide it");
+        check::debug::n_assert((mode & runtime_mode::hydra_context) == runtime_mode::hydra_context, "Trying to get the hydra-context in a mode that doesn't provide it");
         return get_context<hydra_context>("hydra-context");
       }
 
       /// \brief Return the vulkan context. Kill the app if the context does not exist.
       vk_context& get_vulkan_context()
       {
-        check::debug::n_assert((mode & runtime_mode::vulkan_context) != runtime_mode::none, "Trying to get the vulkan-context in a mode that doesn't provide it");
-        if ((mode & runtime_mode::hydra_context) != runtime_mode::none)
+        check::debug::n_assert((mode & runtime_mode::vulkan_context) == runtime_mode::vulkan_context, "Trying to get the vulkan-context in a mode that doesn't provide it");
+        if ((mode & runtime_mode::hydra_context) == runtime_mode::hydra_context)
           return get_context<hydra_context>("hydra-context");
         return get_context<internal_vk_context>("vk-context");
       }
@@ -106,10 +106,10 @@ namespace neam::hydra
       /// \brief Return the core context. Kill the app if the context does not exist.
       core_context& get_core_context()
       {
-        check::debug::n_assert((mode & runtime_mode::core) != runtime_mode::none, "Trying to get the core-context in a mode that doesn't provide it");
-        if ((mode & runtime_mode::hydra_context) != runtime_mode::none)
+        check::debug::n_assert((mode & runtime_mode::core) == runtime_mode::core, "Trying to get the core-context in a mode that doesn't provide it");
+        if ((mode & runtime_mode::hydra_context) == runtime_mode::hydra_context)
           return get_context<hydra_context>("hydra-context");
-        if ((mode & runtime_mode::vulkan_context) != runtime_mode::none)
+        if ((mode & runtime_mode::vulkan_context) == runtime_mode::vulkan_context)
           return get_context<internal_vk_context>("vk-context");
         return get_context<core_context>("core-context");
       }

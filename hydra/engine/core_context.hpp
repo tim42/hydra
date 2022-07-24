@@ -28,6 +28,7 @@
 
 #include <ntools/io/context.hpp>
 #include <ntools/threading/threading.hpp>
+#include <ntools/sys_utils.hpp>
 
 #include <resources/context.hpp>
 
@@ -41,8 +42,9 @@ namespace neam::hydra
       io::context io;
       resources::context res = { io, *this };
 
-      resources::context::status_chain boot(threading::resolved_graph&& task_graph, id_t index_key, const std::string& index_file = "root.index", uint32_t thread_count = std::thread::hardware_concurrency() - 2)
+      resources::context::status_chain boot(threading::resolved_graph&& task_graph, id_t index_key, const std::string& index_file = "root.index", bool auto_unlock_tm = true, uint32_t thread_count = std::thread::hardware_concurrency() - 1)
       {
+        never_started = false;
         should_stop = false;
         can_return = false;
 
@@ -51,13 +53,16 @@ namespace neam::hydra
         auto chn = res.boot(index_key, index_file);
 
         // do the resource boot process asynchronously
-        tm.get_long_duration_task([this]
+        tm.get_long_duration_task([this, auto_unlock_tm]
         {
           // perform IO stuff:
           io._wait_for_submit_queries();
 
-          // there should not be any outstanding io tasks, so start the task-graph
-          tm.get_frame_lock()._unlock();
+          if (auto_unlock_tm)
+          {
+            // there should not be any outstanding io tasks, so start the task-graph
+            tm.get_frame_lock()._unlock();
+          }
         });
 
         // start the threads: (we have a minimum requirement of 4 threads)
@@ -65,7 +70,7 @@ namespace neam::hydra
         threads.reserve(thread_count);
         for (uint32_t i = 0; i < thread_count; ++i)
         {
-          threads.emplace_back([this] { thread_main(*this); });
+          threads.emplace_back([this, i] { thread_main(*this, i); });
         }
 
         halted = false;
@@ -75,6 +80,8 @@ namespace neam::hydra
 
       ~core_context()
       {
+        if (never_started)
+          return;
         if (!halted)
           stop_app();
         for (auto& it : threads)
@@ -91,12 +98,15 @@ namespace neam::hydra
         tm.get_frame_lock().unlock();
       }
 
-      static void thread_main(core_context& ctx)
+      static void thread_main(core_context& ctx, uint32_t index = ~0u)
       {
+        if (index != ~0u)
+          sys::set_cpu_affinity(index % std::thread::hardware_concurrency());
+
         while (!ctx.should_stop)
         {
           ctx.tm.wait_for_a_task();
-          ctx.tm.run_a_task();
+          ctx.tm.run_a_task(index < 2);
         }
       }
 
@@ -117,7 +127,10 @@ namespace neam::hydra
         return ret;
       }
 
-      bool is_stopped() const { return halted; }
+      /// \brief Return the number of threads manager by the core context
+      uint32_t get_thread_count() const { return (uint32_t)threads.size(); }
+
+      bool is_stopped() const { return halted && !never_started; }
 
     private:
       std::vector<std::thread> threads;
@@ -125,6 +138,7 @@ namespace neam::hydra
       bool should_stop = false;
       bool can_return = false;
       bool halted = false;
+      bool never_started = true;
     };
 }
 
