@@ -27,6 +27,7 @@
 #pragma once
 
 #include <ntools/chrono.hpp>
+#include <ntools/enum.hpp>
 
 #include <hydra/hydra_debug.hpp>
 #include <hydra/engine/engine.hpp>
@@ -42,6 +43,16 @@
 
 namespace neam::hydra
 {
+  enum class packer_state_t
+  {
+    none = 0,
+    has_error = 1<<0,
+    has_warnings = 1<<1,
+    packing = 1<<2,
+    idle = 1<<3
+  };
+  N_ENUM_FLAG(packer_state_t);
+
   class packer_ui_module : private engine_module<packer_ui_module>
   {
     public:
@@ -67,11 +78,18 @@ namespace neam::hydra
 
       void on_context_initialized() override
       {
-        window_state = engine->get_module<glfw::glfw_module>("glfw"_rid)->create_window(glm::uvec2{800, 200}, "HYDRA RESOURCE SERVER");
-        window_state->window.iconify();
-
         auto* pck = engine->get_module<packer_engine_module>("packer"_rid);
         pck->stall_task_manager = false;
+
+        on_resource_queued_tk = pck->on_resource_queued.add(*this, &packer_ui_module::on_resource_queued);
+        on_resource_packed_tk = pck->on_resource_packed.add(*this, &packer_ui_module::on_resource_packed);
+        on_index_saved_tk = pck->on_index_saved.add(*this, &packer_ui_module::on_index_saved);
+        on_packing_started_tk = pck->on_packing_started.add(*this, &packer_ui_module::on_packing_started);
+        on_packing_ended_tk = pck->on_packing_ended.add(*this, &packer_ui_module::on_packing_ended);
+
+        window_state = engine->get_module<glfw::glfw_module>("glfw"_rid)->create_window(glm::uvec2{800, 300}, "HYDRA RESOURCE SERVER");
+        window_state->window.iconify();
+        set_window_icon();
 
         auto* imgui = engine->get_module<imgui::imgui_module>("imgui"_rid);
         imgui->register_function("dockspace"_rid, [this]()
@@ -83,39 +101,120 @@ namespace neam::hydra
         {
           ImGui::ShowDemoWindow();
 
-          ImGui::Begin("RelDB", nullptr, 0);
-          imgui::generate_ui(cctx->res._get_serialized_reldb(), rel_db_metadata);
+          if (ImGui::Begin("RelDB", nullptr, 0))
+          {
+            imgui::generate_ui(cctx->res._get_serialized_reldb(), rel_db_metadata);
+          }
+          ImGui::End();
+          if (ImGui::Begin("Controls", nullptr, 0))
+          {
+            if (ImGui::Button("Force Repack Everything", ImVec2(-1, 0)))
+            {
+              pck->packer_options.force = true;
+            }
+
+            ImGui::Separator();
+            ImGui::Text("io: in flight: %u, pending: %u", cctx->io.get_in_flight_operations_count(), cctx->io.get_pending_operations_count());
+            ImGui::Text("io: read: %.3f kb/s, write: %.3f kb/s", last_average_read_rate/1000, last_average_write_rate/1000);
+            ImGui::Text("tm: pending tasks: %u", cctx->tm.get_pending_tasks_count());
+            ImGui::Text("frametime: %.3f ms framerate: %.3f fps", last_average_frametime * 1000, 1.0f / last_average_frametime);
+          }
           ImGui::End();
 
-          ImGui::Begin("Packer", nullptr, 0);
-          if (pck->is_packing())
+          if (ImGui::Begin("Resource Messages", nullptr, ImGuiWindowFlags_AlwaysHorizontalScrollbar))
           {
-            const uint32_t total = (uint32_t)(pck->get_total_entry_to_pack() == 0 ? 1 : pck->get_total_entry_to_pack());
-            const uint32_t current_count = (uint32_t)(pck->get_packed_entries() == 0 ? 1 : pck->get_packed_entries());
-            ImGui::Text("Status: Packing in progress : %u%%...", current_count * 100 / total);
-            ImGui::ProgressBar((float)current_count / (float)total, ImVec2(-1, 0),
-                               fmt::format("{} / {}", pck->get_packed_entries(), pck->get_total_entry_to_pack()).c_str());
+            if (selected_res.empty())
+            {
+              ImGui::TextUnformatted("No resource selected");
+            }
+            else
+            {
+              ImGui::Text("file %s:", selected_res.c_str());
+              ImGui::Indent();
+              const auto& db = cctx->res.get_db();
+              const std::set<id_t> subres = db.get_resources(selected_res, true);
+              for (const id_t it : subres)
+              {
+                const auto msg_list = db.get_messages(it).list;
+                if (!msg_list.empty())
+                {
+                  ImGui::Text("sub-resource: %s:", cctx->res.resource_name(it).c_str());
+                  ImGui::Indent();
+                  for (auto& msg : msg_list)
+                  {
+                    if (msg.severity == cr::logger::severity::error)
+                      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.05f, 0.00f, 1.0f));
+                    if (msg.severity == cr::logger::severity::warning)
+                      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.72f, 0.00f, 1.0f));
+                    if (msg.severity == cr::logger::severity::debug)
+                      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.50f, 0.50f, 0.50f, 1.0f));
+
+                    ImGui::TextUnformatted(msg.message.c_str());
+
+                    if (msg.severity == cr::logger::severity::error
+                      || msg.severity == cr::logger::severity::warning
+                      || msg.severity == cr::logger::severity::debug)
+                      ImGui::PopStyleColor();
+                  }
+                  ImGui::Unindent();
+                }
+              }
+              ImGui::Unindent();
+            }
           }
-          else
+          ImGui::End();
+
+          if (ImGui::Begin("Packer", nullptr, 0))
           {
-            ImGui::TextUnformatted("Status: Idle");
-            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, 0xFF606060);
-            ImGui::ProgressBar(1, ImVec2(-1, 0), "idle");
-            ImGui::PopStyleColor();
+            if (pck->is_packing())
+            {
+              const uint32_t total = (uint32_t)(pck->get_total_entry_to_pack() == 0 ? 1 : pck->get_total_entry_to_pack());
+              const uint32_t current_count = (uint32_t)(pck->get_packed_entries() == 0 ? 1 : pck->get_packed_entries());
+              ImGui::Text("Status: Packing in progress : %u%%...", current_count * 100 / total);
+              ImGui::ProgressBar((float)current_count / (float)total, ImVec2(-1, 0),
+                                 fmt::format("{} / {}", pck->get_packed_entries(), pck->get_total_entry_to_pack()).c_str());
+            }
+            else
+            {
+              ImGui::TextUnformatted("Status: Idle");
+              ImGui::PushStyleColor(ImGuiCol_PlotHistogram, 0xFF606060);
+              ImGui::ProgressBar(1, ImVec2(-1, 0), "idle");
+              ImGui::PopStyleColor();
+            }
+
+            if (ImGui::BeginChildFrame(ImGui::GetID("log frame"), ImVec2(-1, -1), ImGuiWindowFlags_AlwaysHorizontalScrollbar))
+            {
+              std::lock_guard _l(res_lock);
+              ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.05f, 0.00f, 1.0f));
+              for (auto& it : resources_with_errors)
+              {
+                if (ImGui::Selectable(it.c_str(), it == selected_res))
+                  selected_res = it;
+              }
+              ImGui::PopStyleColor();
+
+              ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.72f, 0.00f, 1.0f));
+              for (auto& it : resources_with_warnings)
+              {
+                if (ImGui::Selectable(it.c_str(), it == selected_res))
+                  selected_res = it;
+              }
+              ImGui::PopStyleColor();
+
+              if (!resources_in_progress.empty())
+              {
+                ImGui::Separator();
+                ImGui::Text("Packing %u resources...", (uint32_t)resources_in_progress.size());
+                ImGui::BeginDisabled();
+                for (auto& it : resources_in_progress)
+                {
+                  ImGui::Text("packing %s...", it.c_str());
+                }
+                ImGui::EndDisabled();
+              }
+            }
+            ImGui::EndChildFrame();
           }
-
-          if (ImGui::Button("Force Repack Everything"))
-          {
-            pck->packer_options.force = true;
-          }
-
-
-          ImGui::Separator();
-          ImGui::Text("io: in flight: %u, pending: %u", cctx->io.get_in_flight_operations_count(), cctx->io.get_pending_operations_count());
-          ImGui::Text("io: read: %.3f kb/s, write: %.3f kb/s", last_average_read_rate/1000, last_average_write_rate/1000);
-          ImGui::Text("tm: pending tasks: %u", cctx->tm.get_pending_tasks_count());
-          ImGui::Text("frametime: %.3f ms framerate: %.3f fps", last_average_frametime * 1000, 1.0f / last_average_frametime);
-
           ImGui::End();
 
           if (window_state->window.should_close())
@@ -138,7 +237,7 @@ namespace neam::hydra
             }
 
             ImGui::Separator();
-            if (ImGui::Button("Cancel", ImVec2(200, 0)))
+            if (ImGui::Button("Cancel", ImVec2(100, 0)))
             {
               window_state->window.should_close(false);
               ImGui::CloseCurrentPopup();
@@ -147,9 +246,11 @@ namespace neam::hydra
 
             ImGui::SameLine();
 
-            ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - 200);
-            if (ImGui::Button("Exit", ImVec2(200, 0)))
-              engine->sync_teardown();
+            ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - 100);
+            if (ImGui::Button("Exit", ImVec2(100, 0)))
+            {
+              is_quiting = true;
+            }
             ImGui::EndPopup();
           }
         });
@@ -180,34 +281,38 @@ namespace neam::hydra
             }
 
 
-            // window:
-            if (pck->is_packing())
+            if (is_quiting)
             {
-              current_state = packer_state_t::packing;
-              renderer->min_frame_time = 0.016f;
+              engine->sync_teardown();
+              is_quiting = false;
             }
             else
             {
-              current_state = packer_state_t::idle;
-              renderer->min_frame_time = 0.0f;
-              if (window_state->window.is_focused())
+              // window:
+              if (pck->is_packing())
               {
-                std::this_thread::sleep_for(std::chrono::milliseconds{16});
+                renderer->min_frame_time = 0.016f;
               }
               else
               {
-                cctx->tm.request_stop([this]()
+                renderer->min_frame_time = 0.0f;
+                if (window_state->window.is_focused())
                 {
-                  std::this_thread::sleep_for(std::chrono::milliseconds{100});
-                  cctx->tm.get_frame_lock().unlock();
-                });
+                  std::this_thread::sleep_for(std::chrono::milliseconds{16});
+                }
+                else
+                {
+                  cctx->tm.request_stop([this]()
+                  {
+                    std::this_thread::sleep_for(std::chrono::milliseconds{100});
+                    cctx->tm.get_frame_lock().unlock();
+                  });
+                }
               }
             }
 
             if (!is_setup && window_state)
               window_state->window.iconify();
-
-            set_window_icon();
           });
         });
       }
@@ -222,6 +327,11 @@ namespace neam::hydra
 
       void on_start_shutdown() override
       {
+        on_packing_started_tk.release();
+        on_resource_packed_tk.release();
+        on_index_saved_tk.release();
+        on_packing_ended_tk.release();
+
         window_state.reset();
       }
 
@@ -234,24 +344,19 @@ namespace neam::hydra
         if (icon_state == current_state)
           return;
         icon_state = current_state;
-        uint32_t color = 0x00;
-        switch (icon_state)
-        {
-          case packer_state_t::none:
-          case packer_state_t::idle:
-            color = 0x636363;
-            break;
-          case packer_state_t::has_error:
-            color = 0x0034e0;
-            break;
-          case packer_state_t::has_warnings:
-            color = 0x00bbe0;
-            break;
-          case packer_state_t::packing:
-            color = 0xffffff;
-            break;
-        };
-        window_state->window._set_hydra_icon(color);
+        glm::u8vec4 color = {0, 0, 0, 0};
+
+        if ((icon_state & packer_state_t::has_error) != packer_state_t::none)
+            color = { 0xe0, 0x34, 0x00, 0x00 };
+        else if ((icon_state & packer_state_t::has_warnings) != packer_state_t::none)
+            color = { 0xe0, 0xbb, 0x00, 0x00 };
+        else if (icon_state != packer_state_t::none)
+            color = { 0xff, 0xff, 0xff, 0x00 };
+
+        if ((icon_state & packer_state_t::idle) != packer_state_t::none)
+          color /= 2;
+
+        window_state->window._set_hydra_icon(*reinterpret_cast<uint32_t*>(&color));
       }
 
       void setup_window()
@@ -282,6 +387,67 @@ namespace neam::hydra
         }
       }
 
+      void on_resource_queued(const std::filesystem::path& res)
+      {
+        std::lock_guard _l(res_lock);
+        resources_in_progress.emplace(res);
+      }
+
+      void on_resource_packed(const std::filesystem::path& res, resources::status st)
+      {
+        std::lock_guard _l(res_lock);
+        resources_in_progress.erase(res);
+
+        if (st == resources::status::failure)
+        {
+          current_state |= packer_state_t::has_error;
+          resources_with_errors.emplace(res);
+          resources_with_warnings.erase(res);
+        }
+        else if (st == resources::status::partial_success)
+        {
+          resources_with_errors.erase(res);
+          resources_with_warnings.emplace(res);
+          current_state |= packer_state_t::has_warnings;
+        }
+        else
+        {
+          resources_with_errors.erase(res);
+          resources_with_warnings.erase(res);
+        }
+        if (resources_with_errors.empty())
+          current_state &= ~packer_state_t::has_error;
+        if (resources_with_warnings.empty())
+          current_state &= ~packer_state_t::has_warnings;
+        set_window_icon();
+      }
+
+      void on_index_saved(resources::status st)
+      {
+        // reload shaders / fonts:
+        auto* imgui = engine->get_module<imgui::imgui_module>("imgui"_rid);
+        imgui->reload_fonts();
+
+        hctx->shmgr.refresh().then([this]
+        {
+          hctx->ppmgr.refresh(hctx->vrd, hctx->gqueue);
+        });
+      }
+
+      void on_packing_started(uint32_t /* modified */, uint32_t /* indirect_mod */,  uint32_t /* added */, uint32_t /* to_remove */)
+      {
+        current_state &= ~packer_state_t::idle;
+        current_state |= packer_state_t::packing;
+        set_window_icon();
+      }
+
+      void on_packing_ended()
+      {
+        current_state &= ~packer_state_t::packing;
+        current_state |= packer_state_t::idle;
+        set_window_icon();
+      }
+
     private:
       cr::chrono chrono;
       uint32_t frame_cnt = 0;
@@ -291,20 +457,25 @@ namespace neam::hydra
       float last_average_read_rate = 0;
       float last_average_write_rate = 0;
 
+      spinlock res_lock;
+      std::set<std::filesystem::path> resources_in_progress;
+      std::set<std::filesystem::path> resources_with_errors;
+      std::set<std::filesystem::path> resources_with_warnings;
+      std::filesystem::path selected_res;
 
       rle::serialization_metadata rel_db_metadata = rle::generate_metadata<resources::rel_db>();
 
       std::unique_ptr<glfw::glfw_module::state_ref_t> window_state;
-      bool is_setup = false;
 
-      enum class packer_state_t
-      {
-        none,
-        has_error,
-        has_warnings,
-        packing,
-        idle
-      };
+      cr::event_token_t on_packing_started_tk;
+      cr::event_token_t on_resource_queued_tk;
+      cr::event_token_t on_resource_packed_tk;
+      cr::event_token_t on_index_saved_tk;
+      cr::event_token_t on_packing_ended_tk;
+
+      bool is_setup = false;
+      bool is_quiting = false;
+
       packer_state_t icon_state = packer_state_t::none;
       packer_state_t current_state = packer_state_t::idle;
 

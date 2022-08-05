@@ -38,25 +38,40 @@ namespace neam::hydra::processor
 
     static resources::processor::chain process_resource(hydra::core_context& /*ctx*/, resources::processor::input_data&& input)
     {
+      const string_id res_id = get_resource_id(input.file);
+      input.db.resource_name(res_id, input.file);
+      input.db.set_processor_for_file(input.file, processor_hash);
+
       glm::uvec2 size;
       uint8_t* temp_ret = nullptr;
       unsigned lode_ret_code = lodepng_decode32(&temp_ret, &size.x, &size.y, (const uint8_t*)input.file_data.data.get(), input.file_data.size);
       if (lode_ret_code)
       {
-        neam::cr::out().error("process_resource(image/png): file: {}, lodePNG error: {}", input.file.c_str(), lodepng_error_text(lode_ret_code));
+        input.db.error<png_processor>(res_id, "lodePNG error: {}", lodepng_error_text(lode_ret_code));
         if (temp_ret)
           free(temp_ret);
-        return resources::processor::chain::create_and_complete({}, resources::status::failure);
+        std::vector<resources::processor::data> ret;
+        ret.emplace_back(resources::processor::data
+        {
+          .resource_id = res_id,
+          .resource_type = assets::image::type_name,
+          .data = {},
+          .metadata = std::move(input.metadata),
+          .db = input.db,
+        });
+
+        return resources::processor::chain::create_and_complete({.to_pack = std::move(ret)}, resources::status::failure);
       }
 
       raw_data rd = raw_data::allocate(size.x * size.y * 4 /*RGBA*/);
       memcpy(rd.data.get(), temp_ret, rd.size);
       free(temp_ret); // erk
 
+
       std::vector<resources::processor::data> ret;
       ret.emplace_back(resources::processor::data
         {
-          .resource_id = get_resource_id(input.file),
+          .resource_id = res_id,
           .resource_type = assets::image::type_name,
           .data = rle::serialize(packer::image_packer_input
           {

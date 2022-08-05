@@ -205,6 +205,10 @@ namespace neam::hydra::processor
 
     static resources::processor::chain process_resource(hydra::core_context& ctx, resources::processor::input_data&& input)
     {
+      const string_id res_id = get_resource_id(input.file);
+      input.db.resource_name(res_id, input.file);
+      input.db.set_processor_for_file(input.file, processor_hash);
+
       // get the shader file:
       std::string shader_file;
       shader_file += std::string_view((const char*)input.file_data.data.get(), input.file_data.size);
@@ -235,12 +239,13 @@ namespace neam::hydra::processor
           state.ret = in;
         }
       }, chain, proc_chain)
-      .then([&ctx, input = std::move(input)](state_t&& out) mutable
+      .then([&ctx, input = std::move(input), res_id](state_t&& out) mutable
       {
         replace_all(out.cpp.messages, "<stdin>", input.file.c_str());
         replace_all(out.cpp.output, "<stdin>", input.file.c_str());
 
         // output preprocessor messages: (lock the logger to avoid interleaved stuff)
+        bool has_warnings = false;
         {
           const auto msgs = split_string(out.cpp.messages, "\n");
           auto logger = neam::cr::out(true);
@@ -249,18 +254,36 @@ namespace neam::hydra::processor
           {
             if (!msg.size()) continue;
             if (msg.find("error: ") != std::string::npos)
-              logger.error("{}", msg);
+            {
+              has_warnings = true;
+              input.db.error<hsf_processor>(res_id, "{}", msg);
+            }
             else if (msg.find("warning: ") != std::string::npos)
-              logger.warn("{}", msg);
+            {
+              has_warnings = true;
+              input.db.warning<hsf_processor>(res_id, "{}", msg);
+            }
             else
-              logger.log("{}", msg);
+            {
+              input.db.message<hsf_processor>(res_id, "{}", msg);
+            }
           }
 
           // preprocessor failed: fail
           if (out.ret != 0)
           {
-            logger.error("failed to pre-process shader file: {} (see errors above)", input.file.c_str());
-            return resources::processor::chain::create_and_complete({}, resources::status::failure);
+            input.db.error<hsf_processor>(res_id, "failed to pre-process shader file");
+            std::vector<resources::processor::data> ret;
+            ret.emplace_back(resources::processor::data
+            {
+              .resource_id = res_id,
+              .resource_type = assets::spirv_shader::type_name,
+              .data = {},
+              .metadata = std::move(input.metadata),
+              .db = input.db,
+            });
+
+            return resources::processor::chain::create_and_complete({.to_pack = std::move(ret)}, resources::status::failure);
           }
         }
 
@@ -299,14 +322,15 @@ namespace neam::hydra::processor
         std::vector<resources::processor::data> ret;
         ret.emplace_back(resources::processor::data
         {
-          .resource_id = get_resource_id(input.file),
+          .resource_id = res_id,
           .resource_type = assets::spirv_shader::type_name,
           .data = rle::serialize(packer::spirv_packer_input{ .shader_code = (k_final_shader_prefix + out.cpp.output), .constant_id = std::move(index_map), .variations = std::move(entry_points)}),
           .metadata = std::move(input.metadata),
           .db = input.db,
         });
-        return resources::processor::chain::create_and_complete({.to_pack = std::move(ret)}, resources::status::success);
-      });
+        return resources::processor::chain::create_and_complete({.to_pack = std::move(ret)},
+      has_warnings ? resources::status::partial_success : resources::status::success);
+    });
     }
   };
 }

@@ -33,6 +33,7 @@
 
 #include <ntools/id/id.hpp>
 #include <ntools/rle/rle.hpp>
+#include <ntools/type_id.hpp>
 
 namespace neam::resources
 {
@@ -47,12 +48,25 @@ namespace neam::resources
   /// and is stored outside the index/pack files to be easily stripped from final builds.
   class rel_db
   {
+    public: // types:
+      struct message_t
+      {
+        cr::logger::severity severity;
+        std::string source;
+        std::string message;
+      };
+
+      struct message_list_t
+      {
+        std::vector<message_t> list;
+      };
+
     public: // query:
       /// \brief recursively get all pack files related to file
       std::set<id_t> get_pack_files(const std::string& file) const;
 
       /// \brief recursively get all resources related to file
-      std::set<id_t> get_resources(const std::string& file) const;
+      std::set<id_t> get_resources(const std::string& file, bool include_files_id = false) const;
 
       /// \brief return all the files that \e directly \e and \e indirectly depend on the given file
       std::set<std::filesystem::path> get_dependent_files(const std::filesystem::path& file) const;
@@ -73,12 +87,50 @@ namespace neam::resources
       /// \brief Serialize the data, ensuring everything is fine (locks the instance whil'e its serializing)
       raw_data serialize() const;
 
-    public: // setup (should not be used directly !!):
+      /// \brief Return the resource name for the corresponding RID
+      std::string resource_name(id_t rid) const;
+
+      /// \brief Return the messages for the corresponding RID
+      message_list_t get_messages(id_t rid) const;
+
+    public: // processor&packers entries:
+      void resource_name(id_t rid, std::string name);
+
+      template<typename Prov, typename... Args>
+      void error(id_t res, fmt::format_string<Args...> str, Args&&... args)
+      {
+        _log<Prov>(cr::logger::severity::error, res, str, std::forward<Args>(args)...);
+      }
+      template<typename Prov, typename... Args>
+      void warning(id_t res, fmt::format_string<Args...> str, Args&&... args)
+      {
+        _log<Prov>(cr::logger::severity::warning, res, str, std::forward<Args>(args)...);
+      }
+      template<typename Prov, typename... Args>
+      void message(id_t res, fmt::format_string<Args...> str, Args&&... args)
+      {
+        _log<Prov>(cr::logger::severity::message, res, str, std::forward<Args>(args)...);
+      }
+      template<typename Prov, typename... Args>
+      void debug(id_t res, fmt::format_string<Args...> str, Args&&... args)
+      {
+        _log<Prov>(cr::logger::severity::debug, res, str, std::forward<Args>(args)...);
+      }
+
+      template<typename Prov, typename... Args>
+      void _log(cr::logger::severity s, id_t res, fmt::format_string<Args...> str, Args&&... args)
+      {
+        log_str(s, res, ct::type_name<Prov>.str, fmt::format(str, std::forward<Args>(args)...));
+      }
+
+    public: // processor spcific entries:
+      void add_file_to_file_dependency(const std::string& file, const std::string& dependent_on);
+      void set_processor_for_file(const std::string& file, id_t version_hash);
+
+    public: // setup (should not be used directly unless in internal resource code !!):
       void add_file(const std::string& file);
       void add_file(const std::string& parent_file, const std::string& child_file);
-      void add_file_to_file_dependency(const std::string& file, const std::string& dependent_on);
 
-      void set_processor_for_file(const std::string& file, id_t version_hash);
 
       // root-resource / pack-file
       void add_resource(const std::string& parent_file, id_t root_resource);
@@ -90,13 +142,15 @@ namespace neam::resources
 
     private:
       void get_pack_files_unlocked(const std::string& file, std::set<id_t>& ret) const;
-      void get_resources_unlocked(const std::string& file, std::set<id_t>& ret) const;
+      void get_resources_unlocked(const std::string& file, std::set<id_t>& ret, bool include_files_id) const;
 
       void get_dependent_files_unlocked(const std::filesystem::path& file, std::set<std::filesystem::path>& ret) const;
 
       void remove_file_unlocked(const std::string& file);
       void repack_file_unlocked(const std::string& file);
       void remove_resource_unlocked(id_t root_resource);
+
+      void log_str(cr::logger::severity s, id_t res, std::string provider, std::string str);
 
     public:
       struct file_info_t
@@ -122,9 +176,11 @@ namespace neam::resources
       std::map<std::string, file_info_t> files_resources;
       std::map<id_t, root_resource_info_t> root_resources;
       std::map<id_t, id_t> sub_resources; // sub-resource -> root-resource
+      std::map<id_t, std::string> resources_names;
+      std::map<id_t, message_list_t> resources_messages;
 
     private: // non-serialized:
-      mutable spinlock lock;
+      mutable shared_spinlock lock;
 
       friend N_METADATA_STRUCT_DECL(neam::resources::rel_db);
   };
@@ -153,12 +209,32 @@ N_METADATA_STRUCT(neam::resources::rel_db::root_resource_info_t)
   >;
 };
 
+N_METADATA_STRUCT(neam::resources::rel_db::message_t)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(severity),
+    N_MEMBER_DEF(source),
+    N_MEMBER_DEF(message)
+  >;
+};
+
+N_METADATA_STRUCT(neam::resources::rel_db::message_list_t)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(list)
+  >;
+};
+
 N_METADATA_STRUCT(neam::resources::rel_db)
 {
   using member_list = neam::ct::type_list
   <
     N_MEMBER_DEF(files_resources),
     N_MEMBER_DEF(root_resources),
-    N_MEMBER_DEF(sub_resources)
+    N_MEMBER_DEF(sub_resources),
+    N_MEMBER_DEF(resources_names),
+    N_MEMBER_DEF(resources_messages)
   >;
 };

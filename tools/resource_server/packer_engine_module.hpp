@@ -27,6 +27,7 @@
 #pragma once
 
 #include <ntools/chrono.hpp>
+#include <ntools/event.hpp>
 
 #include <hydra/resources/resources.hpp>
 #include <hydra/hydra_debug.hpp>
@@ -48,10 +49,18 @@ namespace neam::hydra
       // number of resources that will be queued at the same time
       uint32_t resources_to_queue = 512;
 
-      static constexpr std::array priority_list =
+      // entries that are necessary for the UI.
+      // Will be packed first, if they are dirty
+      static constexpr std::array k_priority_list =
       {
         "shaders/engine/imgui/imgui.hsf",
       };
+
+      cr::event<uint32_t /* modified */, uint32_t /* indirect_mod */,  uint32_t /* added */, uint32_t /* to_remove */> on_packing_started;
+      cr::event<const std::filesystem::path&> on_resource_queued;
+      cr::event<const std::filesystem::path&, resources::status> on_resource_packed;
+      cr::event<resources::status> on_index_saved;
+      cr::event<> on_packing_ended;
 
     public: // API
       bool is_packing() const { return state.in_progress; }
@@ -111,9 +120,12 @@ namespace neam::hydra
         if (index >= state.to_import.size())
           return;
 
+        on_resource_queued(state.to_import[index]);
+
         cctx->res.import_resource(state.to_import[index])
-        .then(&cctx->tm, threading::k_non_transient_task_group, [this](resources::status st)
+        .then(&cctx->tm, threading::k_non_transient_task_group, [this, path = state.to_import[index]](resources::status st)
         {
+          on_resource_packed(path, st);
           state.need_save = true;
           const size_t current = ++state.counter;
           if (current % 100 == 0)
@@ -121,7 +133,7 @@ namespace neam::hydra
             cr::out().log("{} out of {} entries processed ({} %)", current, state.entry_count, current * 100 / state.entry_count);
           }
           queue_import_resource(state.to_import_index++);
-          if (state.import_in_progress < resources_to_queue)
+          for (uint32_t i = 0; i < 8 && state.import_in_progress < resources_to_queue; ++i)
           {
             ++state.import_in_progress;
             queue_import_resource(state.to_import_index++);
@@ -213,7 +225,7 @@ namespace neam::hydra
         state.to_import.reserve(to_import_set.size());
 
         // start by pushing entries in the priority list first:
-        for (const auto& it : priority_list)
+        for (const auto& it : k_priority_list)
         {
           if (auto fit = to_import_set.find(it); fit != to_import_set.end())
           {
@@ -239,6 +251,8 @@ namespace neam::hydra
                         mod_files.size(), state.to_import.size() - initial_size, new_files.size(), to_rm_files.size(),
                         packer_options.source_folder.c_str());
 
+          on_packing_started(mod_files.size(), state.to_import.size() - initial_size, new_files.size(), to_rm_files.size());
+
           state.gbl_chains.reserve(1 + to_rm_files.size());
 
           state.entry_count = state.to_import.size();
@@ -254,7 +268,7 @@ namespace neam::hydra
             // do the resource import
             // (we increment to_import_index right away so that we do queue resources_to_queue
             // ((otherwise, if a resource is completed while we loop and it queues another one, we won't queue resources_to_queue resources)
-            constexpr uint32_t initial_resource_count = 64 + priority_list.size();
+            constexpr uint32_t initial_resource_count = 64 + k_priority_list.size();
             state.to_import_index += initial_resource_count;
             for (uint32_t i = 0; i < initial_resource_count && i < state.to_import.size(); ++i)
               queue_import_resource(i);
@@ -276,9 +290,12 @@ namespace neam::hydra
                 else
                   cr::out().log("index saved on disk");
 
+                on_index_saved(st);
+
                 chrono.reset();
                 state.in_progress = false;
                 state.is_packing = false;
+                on_packing_ended();
               });
             }
             else
@@ -286,6 +303,7 @@ namespace neam::hydra
               chrono.reset();
               state.in_progress = false;
               state.is_packing = false;
+              on_packing_ended();
             }
           });
           cr::out().debug("waiting to {} entry to complete...", state.entry_count);

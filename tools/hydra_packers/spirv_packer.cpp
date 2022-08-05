@@ -36,9 +36,11 @@
 
 namespace neam::hydra::packer
 {
+  struct spirv_packer;
+
   extern const TBuiltInResource glslang_default_builtin_resource;
 
-  static void glslang_print_log(std::string str)
+  static void glslang_print_log(resources::rel_db& db, id_t res_id, std::string str, bool* has_warnings = nullptr)
   {
     if (str.empty()) return;
     const auto msgs = split_string(str, "\n");
@@ -47,11 +49,19 @@ namespace neam::hydra::packer
     {
       if (!msg.size()) continue;
       if (msg.find("ERROR: ") != std::string::npos)
-        logger.error("{}", msg);
+      {
+        if (has_warnings) *has_warnings = true;
+        db.error<spirv_packer>(res_id, "{}", msg);
+      }
       else if (msg.find("WARNING: ") != std::string::npos)
-        logger.warn("{}", msg);
+      {
+        if (has_warnings) *has_warnings = true;
+        db.warning<spirv_packer>(res_id, "{}", msg);
+      }
       else
-        logger.log("{}", msg);
+      {
+        db.message<spirv_packer>(res_id, "{}", msg);
+      }
     }
   }
 
@@ -129,12 +139,17 @@ namespace neam::hydra::packer
     id_t res_index;
   };
 
-  static async::chain<spirv_compiled_shader_t&&, resources::status> compile_glsl_to_spirv(hydra::core_context& ctx, id_t root_id, std::string& in_source, spirv_shader_code&& code)
+  static async::chain<spirv_compiled_shader_t&&, resources::status> compile_glsl_to_spirv(core_context& ctx, resources::rel_db& db,
+                                                                                          id_t root_id, std::string& in_source,
+                                                                                          spirv_shader_code&& code)
   {
     async::chain<spirv_compiled_shader_t&&, resources::status> ret;
 
-    ctx.tm.get_long_duration_task([root_id, &in_source, code = std::move(code), state = ret.create_state()] mutable
+    ctx.tm.get_long_duration_task([&db, root_id, &in_source, code = std::move(code), state = ret.create_state()] mutable
     {
+      const id_t id = parametrize(root_id, code.entry_point.c_str(), code.entry_point.size());
+      db.resource_name(id, fmt::format("{}({})", db.resource_name(root_id), code.entry_point));
+
       std::string source = in_source;
 
       // do source code replacement:
@@ -190,17 +205,19 @@ namespace neam::hydra::packer
       shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_3);
       shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);
       glslang::TShader::ForbidIncluder includer;
-      const bool parse_success = shader.parse(&glslang_default_builtin_resource, 130, false, EShMsgDefault);
-      glslang_print_log(shader.getInfoLog());
+      EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules | EShMsgHlslEnable16BitTypes | EShMsgEnhanced);
+      const bool parse_success = shader.parse(&glslang_default_builtin_resource, 130, false, messages);
+      bool has_warnings = false;
+      glslang_print_log(db, id, shader.getInfoLog(), &has_warnings);
       if (!parse_success)
-        cr::out().error("spirv-packer: failed to compile {} (stage: {}, entry-point: {}) (see errors above)", root_id, code.mode, code.entry_point);
+        db.error<spirv_packer>(id, "failed to compile shader module (stage: {}, entry-point: {}) (see errors above)", code.mode, code.entry_point);
 
       glslang::TProgram program;
       program.addShader(&shader);
-      const bool link_success = program.link(EShMsgDefault);
-      glslang_print_log(program.getInfoLog());
+      const bool link_success = program.link(messages);
+      glslang_print_log(db, id, program.getInfoLog(), &has_warnings);
       if (!link_success)
-        cr::out().error("spirv-packer: failed to link {} (stage: {}, entry-point: {}) (see errors above)", root_id, code.mode, code.entry_point);
+        db.error<spirv_packer>(id, "failed to link shader module (stage: {}, entry-point: {}) (see errors above)", code.mode, code.entry_point);
 
       std::vector<unsigned int> spirv;
       spv::SpvBuildLogger logger;
@@ -212,14 +229,15 @@ namespace neam::hydra::packer
       if (parse_success && link_success)
       {
         glslang::GlslangToSpv(*program.getIntermediate(lang), spirv, &logger, &spvOptions);
-        glslang_print_log(logger.getAllMessages());
+        glslang_print_log(db, id, logger.getAllMessages(), &has_warnings);
 
-        cr::out().debug("spirv-packer: {} (stage: {}, entry-point: {}): spirv binary size: {}", root_id, code.mode, code.entry_point, spirv.size() * sizeof(unsigned int));
+        db.debug<spirv_packer>(id, "stage: {}, entry-point: {}: spirv binary size: {}", code.mode, code.entry_point, spirv.size() * sizeof(unsigned int));
       }
-      const id_t id = parametrize(root_id, code.entry_point.c_str(), code.entry_point.size());
-      cr::out().debug("spirv-packer: {} successfully compiled res {} (stage: {}, entry-point: {})", root_id, id, code.mode, code.entry_point);
+      db.debug<spirv_packer>(id, "successfully compiled shader module (stage: {}, entry-point: {})", db.resource_name(id), code.mode, code.entry_point);
       state.complete({std::move(spirv), std::move(code.entry_point), id},
-                     link_success && parse_success ? resources::status::success : resources::status::failure);
+                     link_success && parse_success
+                     ? (has_warnings ? resources::status::partial_success : resources::status::success)
+                     : resources::status::failure);
     });
     return ret;
   }
@@ -233,35 +251,39 @@ namespace neam::hydra::packer
 
     static resources::packer::chain pack_resource(hydra::core_context& ctx, resources::processor::data&& data)
     {
+      auto& db = data.db;
+      const id_t root_id = get_root_id(data.resource_id);
+      db.resource_name(root_id, get_root_name(db, data.resource_id));
+
       // cannot be const, data must be moved from
       spirv_packer_input in;
       if (rle::in_place_deserialize(data.data, in) == rle::status::failure)
       {
+        db.error<spirv_packer>(root_id, "failed to deserialize processor data");
         return resources::packer::chain::create_and_complete({}, id_t::invalid, resources::status::failure);
       }
-      const id_t root_id = get_root_id(data.resource_id);
 
       if (in.variations.size() > 0)
-        cr::out().debug("spirv-packer: received {} variations for {}", in.variations.size(), data.resource_id);
+        db.debug<spirv_packer>(root_id, "received {} variations", in.variations.size());
       else
-        cr::out().warn("spirv-packer: received {} variations for {}", in.variations.size(), data.resource_id);
+        db.warning<spirv_packer>(root_id, "received {} variations", in.variations.size());
 
-//       return resources::packer::chain::create_and_complete({}, root_id, resources::status::failure);
       std::vector<async::chain<spirv_compiled_shader_t&&, resources::status>> compilation_chains;
       compilation_chains.reserve(in.variations.size());
 
       std::unique_ptr source = std::make_unique<std::string>(in.shader_code);
       for (auto& it : in.variations)
       {
-        compilation_chains.push_back(compile_glsl_to_spirv(ctx, root_id, *source.get(), std::move(it)));
+        compilation_chains.push_back(compile_glsl_to_spirv(ctx, db, root_id, *source.get(), std::move(it)));
       }
 
       struct state_t
       {
         std::vector<resources::packer::data> res;
-        resources::status status = resources::status::success;
+        resources::status status;
       };
       state_t state;
+      state.status = (in.variations.size() == 0 ? resources::status::partial_success : resources::status::success);
 
       // insert the main resource:
       state.res.push_back(

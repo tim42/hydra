@@ -36,9 +36,9 @@
 #include "concepts.hpp"
 #include "enums.hpp"
 #include "metadata.hpp"
+#include "rel_db.hpp"
 
 namespace neam::hydra { class core_context; }
-namespace neam::resources { class rel_db; }
 
 namespace neam::resources::processor
 {
@@ -118,10 +118,14 @@ namespace neam::resources::processor
   inline chain basic_processor(hydra::core_context& /*ctx*/, input_data&& input)
   {
     const std::string pstr = input.file;
+    const string_id id = string_id::_runtime_build_from_string(pstr.c_str(), pstr.size());
+    input.db.resource_name(id, pstr);
+    input.db.set_processor_for_file(pstr, string_id(IDPacker));
+
     std::vector<data> to_pack;
     to_pack.push_back(
     {
-      .resource_id = string_id::_runtime_build_from_string(pstr.c_str(), pstr.size()),
+      .resource_id = id,
       .resource_type = string_id(IDPacker),
 
       .data = std::move(input.file_data),

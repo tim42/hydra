@@ -33,6 +33,9 @@
 
 namespace neam::resources
 {
+  // the removed header from the stream
+  constexpr unsigned int k_header[] = { 0x587a37fd, 0x0000005a, };
+
   async::chain<raw_data> compress(raw_data&& in, threading::task_manager* tm, threading::group_t group)
   {
 #if N_RES_LZMA_COMPRESSION
@@ -50,6 +53,12 @@ namespace neam::resources
         cr::out().error("resources::compress: lzma encoder failed (code: {})", ret);
         return async::chain<raw_data>::create_and_complete({});
       }
+
+      // Check that the header that we are going to remove is the correct one:
+      check::debug::n_check(((uint32_t*)out.data.get())[0] == k_header[0], "bad lzma header @0: got 0x{:X}, expected: 0x{:X}",
+                            ((uint32_t*)out.data.get())[0], k_header[0]);
+      check::debug::n_check(((uint32_t*)out.data.get())[1] == k_header[1], "bad lzma header @1: got 0x{:X}, expected: 0x{:X}",
+                            ((uint32_t*)out.data.get())[1], k_header[1]);
 
       // write the original size over the header (the uncompress restore the header):
       *(uint64_t*)out.data.get() = in.size;
@@ -78,34 +87,37 @@ namespace neam::resources
   async::chain<raw_data> uncompress(raw_data&& in, threading::task_manager* /*tm*/, threading::group_t /*group*/)
   {
 #if N_RES_LZMA_COMPRESSION
+    if (in.size < sizeof(uint64_t))
+    {
+      cr::out().error("resources::uncompress: cannot uncompress a data smaller than the minimal header (got {} bytes)", in.size);
+      return async::chain<raw_data>::create_and_complete({});
+    }
+
     // grab the original size:
     const uint64_t size = *(const uint64_t*)in.data.get();
 
-    // the removed header from the stream
-    const unsigned int header[] = { 0x587a37fd, 0x0000005a, };
-
     // write-back the header
-    ((uint32_t*)in.data.get())[0] = header[0];
-    ((uint32_t*)in.data.get())[1] = header[1];
+    ((uint32_t*)in.data.get())[0] = k_header[0];
+    ((uint32_t*)in.data.get())[1] = k_header[1];
 
     raw_data out = raw_data::allocate(size);
 
     size_t memlimit = UINT64_MAX;
     size_t in_end_pos = 0;
     size_t out_end_pos = 0;
-    lzma_ret ret = lzma_stream_buffer_decode(&memlimit, 0, nullptr,
+    lzma_ret ret = lzma_stream_buffer_decode(&memlimit, LZMA_IGNORE_CHECK, nullptr,
                                              (const uint8_t*)in.data.get(), &in_end_pos, in.size,
                                              (uint8_t*)out.data.get(), &out_end_pos, out.size);
 
     if (ret != LZMA_OK)
     {
-      cr::out().error("resources::compress: lzma encoder failed (code: {})", ret);
+      cr::out().error("resources::uncompress: lzma decoder failed (code: {})", ret);
       return async::chain<raw_data>::create_and_complete({});
     }
 
     if (out_end_pos != out.size)
     {
-      cr::out().error("resources::compress: uncompressed size is different from the expected size");
+      cr::out().error("resources::uncompress: uncompressed size is different from the expected size");
       return async::chain<raw_data>::create_and_complete({});
     }
 

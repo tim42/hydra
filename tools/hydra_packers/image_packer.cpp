@@ -34,6 +34,9 @@ namespace neam::hydra::packer
 
     static resources::packer::chain pack_resource(hydra::core_context& /*ctx*/, resources::processor::data&& data)
     {
+      const id_t root_id = get_root_id(data.resource_id);
+      data.db.resource_name(root_id, get_root_name(data.db, data.resource_id));
+
       // TODO: mip downsampling
       // TODO: format conversion/support
 
@@ -47,10 +50,10 @@ namespace neam::hydra::packer
       rst = rle::in_place_deserialize(data.data, in);
       if (rst == rle::status::failure)
       {
+        data.db.error<image_packer>(root_id, "failed to deserialize processor data");
         return resources::packer::chain::create_and_complete({}, id_t::invalid, resources::status::failure);
       }
 
-      const id_t root_id = get_root_id(data.resource_id);
 
       assets::image root;
       root.size = glm::uvec3(in.size, 0);
@@ -63,6 +66,7 @@ namespace neam::hydra::packer
 
       {
         const id_t mip_id = parametrize(specialize(root_id, assets::image_mip::type_name), "0");
+        data.db.resource_name(mip_id, fmt::format("{}:{}(0)", data.db.resource_name(root_id), assets::image_mip::type_name.string));
         root.mips.push_back(mip_id);
         resources::status st = resources::status::success;
         ret.emplace_back(resources::packer::data

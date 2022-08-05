@@ -84,6 +84,10 @@ namespace neam::resources::packer
       //  static constexpr id_t packer_hash = "my-company/my-packer:1.0.0"_rid; // can be any format, but should include provider and version
 
       static constexpr id_t get_root_id(id_t file_id) { return specialize(file_id, ResourceType::type_name); }
+      static std::string get_root_name(const rel_db& db, id_t file_id)
+      {
+        return fmt::format("{}:{}", db.resource_name(file_id), ResourceType::type_name.string);
+      }
 
   private:
       inline static raii_register<ResourceType::type_name, BaseType> _registration;

@@ -83,6 +83,10 @@ namespace neam::resources
     // the entry is to be stripped from the index before release (editor-only entries, debug data, ...)
     to_strip = 1 << 10,
 
+    // the entry (be it embedded or in a pack file) is compressed
+    // the entry _must_ have data (cannot be a virtual entry)
+    compressed = 1 << 11,
+
     // mask used to store random data in this field
     // NOTE: Modifying the crap-mask means a full rebuild of all indexes (as previously random bits become meaningful)
     crap_mask = 0xFFFFFFFFFFFF0000,
@@ -290,7 +294,7 @@ namespace neam::resources
 #if N_HYDRA_RESOURCES_STRIP_DEBUG
   #define N_HYDRA_RESOURCES_CHECK_FAIL(...) {return false;}
 #else
-  #define N_HYDRA_RESOURCES_CHECK_FAIL(...) { neam::cr::out().debug(__VA_ARGS__); return false;}
+  #define N_HYDRA_RESOURCES_CHECK_FAIL(...) { neam::cr::out().error(__VA_ARGS__); return false;}
 #endif
 
         // Basic check:
@@ -309,6 +313,7 @@ namespace neam::resources
         const bool is_virtual = masked_flags == flags::type_virtual;
         const bool is_plain_file = (e.flags & flags::standalone_file) != flags::none;
         const bool is_embedded = (e.flags & flags::embedded_data) != flags::none;
+        const bool is_compressed = (e.flags & flags::compressed) != flags::none;
 
         if (is_embedded && is_plain_file)
           N_HYDRA_RESOURCES_CHECK_FAIL("inconsistent resource: entry cannot be both embedded and plain file")
@@ -316,6 +321,9 @@ namespace neam::resources
           N_HYDRA_RESOURCES_CHECK_FAIL("inconsistent resource: entry cannot be embedded and not a data entry")
         if (is_embedded && e.pack_file != id_t::none)
           N_HYDRA_RESOURCES_CHECK_FAIL("inconsistent resource: entry is embedded yet has a pack_file set to something other than none")
+
+        if (is_virtual && is_compressed)
+          N_HYDRA_RESOURCES_CHECK_FAIL("inconsistent resource: entry is both compressed and virtual")
 
         // virtual entry validation stops here
         if (is_virtual)

@@ -56,6 +56,7 @@ namespace neam::resources
 
       static constexpr id_t k_initial_index = "/initial_index:file-id"_rid;
       static constexpr id_t k_reldb_index = "/rel-db:file-id"_rid;
+      static constexpr id_t k_self_index = "/self:file-id"_rid;
       static constexpr id_t k_boot_file_map = "/boot.file_map:file-map"_rid;
       static constexpr id_t k_index_key = "/index_key:id"_rid;
 
@@ -181,6 +182,18 @@ namespace neam::resources
       ///           a size limit is reached then creating a new pack file and continuing the process with it)
       /// \todo A better approach, probably based on access patterns to better use the iovec capabilities of io::context
       void repack_data();
+
+    public: // queries:
+      std::string resource_name(id_t rid) const;
+
+      /// \brief Return whether a db is loaded or not
+      /// \note Some operations (notably resource import and a few others) require a db to be loaded
+      ///       DB are stripped from builds as they contains un-necessary information
+      bool has_db() const { return has_rel_db; }
+
+      /// \brief Return a const ref to the rel-db.
+      /// \warning It is incorrect to call this function when has_db() is false
+      const rel_db& get_db() const;
 
     public: // resource handling stuff:
       /// \brief reads and decode a resource.

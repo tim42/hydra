@@ -44,6 +44,7 @@ namespace neam::hydra::packer
   struct image_metadata
   {
     VkFormat target_format;
+    uint32_t mip_count;
   };
 }
 
@@ -60,6 +61,7 @@ N_METADATA_STRUCT(neam::hydra::packer::image_metadata)
 {
   using member_list = neam::ct::type_list
   <
-    N_MEMBER_DEF(target_format)
+    N_MEMBER_DEF(target_format),
+    N_MEMBER_DEF(mip_count)
   >;
 };
