@@ -1,23 +1,11 @@
 
 
-#include "yay.glsl"
-
-
+#include "engine/std.glsl"
+#include "engine/random.glsl"
 
 // raymarcher defines
 layout(constant_id = hydra::id(max_steps)) const int k_max_steps = 12;
 layout(constant_id = hydra::id(inside_step_distance)) const float k_inside_step_distance = 0.35f;
-
-
-// prog defines
-#define ROTATION_SPEED                  0.2000
-
-#define CAM_DISTANCE                    30.
-#define CAM_DISTANCE_MVT                10.
-
-// glow
-layout(constant_id = hydra::id(glow_max_distance)) const float k_glow_max_distance = 1.0f;
-layout(constant_id = hydra::id(glow_strength)) const float k_glow_strength = 0.04f;
 
 
 // in/out:
@@ -50,54 +38,6 @@ layout(std140, binding = 1) uniform ubo_t
 hydra::entry_point(main_vs, vert)
 hydra::entry_point(main_fs, frag)
 
-const vec3 scene_color = vec3(0.7, 0.70, 1.5);
-
-mat3 rotation_matrix_xy(float angle)
-{
-  vec3 axis = vec3(0, 1, 0);
-  float s = sin(angle);
-  float c = cos(angle);
-  float oc = 1.0 - c;
-  return mat3
-  (
-    c,          0.0,                            axis.y * s,
-    0.0,        oc * axis.y * axis.y + c,       0.0,
-    -axis.y * s, 0.0,                           c
-  );
-}
-
-// where the computations (the distance field) are
-float map(vec3 position)
-{
-  const float c = 15.;
-
-  float d = length(mod(position, 50.) - 50. * 0.5) - c;
-
-  vec3 p = mod(position, c) - c * 0.5;
-  return max(-(length(p) - c / 1.8), d);
-}
-
-// do the raymarch
-vec3 raymarch(vec3 from, in vec3 dir, int max_steps/* = k_max_steps*/)
-{
-  vec3 color = vec3(0, 0, 0);
-
-  float dst_acc = 0.;
-  float dst_rmg = 0.;
-
-  for(int it = 0; it < max_steps; ++it)
-  {
-    dst_rmg = map(from + dir * dst_acc) * 1.0;
-    dst_acc += max(k_inside_step_distance, (dst_rmg));
-
-    if (abs(dst_rmg) <= k_glow_max_distance)
-      color += k_glow_strength * scene_color * (k_glow_max_distance - abs(dst_rmg)) * 10. / ((dst_acc + 1.)); // "glow"
-  }
-
-  return sqrt(color);
-}
-
-#define PI      3.1415927
 
 void main_vs()
 {
@@ -107,23 +47,43 @@ void main_vs()
   out_vertex_uv = vertex_in_uv;
 }
 
+
+
 void main_fs()
 {
   vec2 tuv = in_vertex_uv;
-  tuv.x *= ubo.screen_resolution.x / ubo.screen_resolution.y;
+  float ratio = ubo.screen_resolution.x / ubo.screen_resolution.y;
+  // center horizontaly:
+  tuv.x *= ratio;
+  tuv.x -= max(0,ratio-1) / 2;
+
+  // don't center vertically
+  tuv.y += 0.25;
+
   vec4 tex = texture(tex_sampler, tuv);
-  tex.a *= /*sin(ubo.time) + 1*/0.125f;
 
-  vec2 uv = (in_vertex_pos.xy);
-  uv.x *= ubo.screen_resolution.x / ubo.screen_resolution.y;
-  vec3 dir = normalize(vec3(uv * 1.0, 1.0));
+  float color = 0;
+  if (tex.a < 0.5)
+  {
+    const float k_scale = 0.1;
+    const float time_scale = (1 + sin(ubo.time * 0.5 + 2 * 3.1415 * to_snorm(rnd_seed(asuint(tuv))) ));
+    uint2 base_seed = uint2(abs(tuv) * 300 + 9928000 + (time_scale + 0.75) * to_unorm(rnd_split2(rnd_seed(asuint(tuv)))));
+    uint seed = rnd_seed((base_seed.x ^ base_seed.y) * 200);
+    const float2 hdir = to_hnorm(invwk_rnd2(seed));
 
-  mat3 rotmat = rotation_matrix_xy(mod(ubo.time * ROTATION_SPEED, 2. * PI));
+    for (uint i = 0; i < 20; ++i)
+    {
+      const float len = (0.05 + pow5(to_snorm(invwk_rnd(seed))));
+      const float2 dir = hdir * len;
+      color += texture(tex_sampler, saturate(tuv + dir * k_scale)).a;
+    }
+    color /= 15;
+  }
 
-  vec3 pos = vec3(0., 5., -1. * CAM_DISTANCE + sin(ubo.time * ROTATION_SPEED) * CAM_DISTANCE_MVT);
-  frag_out_color = vec4(raymarch(pos * rotmat, dir * rotmat, k_max_steps + int(200 * tex.a)), 1.0);
+  frag_out_color = vec4(color.rrr, 1.0);
 
 //   out_color.rgb = out_color.rgb * (1. - tex.a) + tex.a * vec3(1.);
-  frag_out_color.rgb = mix(frag_out_color.rgb, pow(frag_out_color.rgb, (1./3.).xxx), tex.a);
+//   frag_out_color.rgb = mix(frag_out_color.rgb, pow(frag_out_color.rgb, (1./3.).xxx), tex.a);
 //   out_color.a = tex.a;
+
 }

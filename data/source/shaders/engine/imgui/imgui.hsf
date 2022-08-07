@@ -3,29 +3,44 @@
 hydra::layout(vert(in), location = 0) vec2 attrib_pos;
 hydra::layout(vert(in), location = 1) vec2 attrib_uv;
 hydra::layout(vert(in), location = 2) vec4 attrib_color;
-hydra::layout(vert(out), location = 0) struct { vec4 color; vec2 uv; } vertex_out;
+hydra::layout(vert(out), location = 0) struct { vec4 color; vec2 uv; vec2 coord; } vertex_out;
 
-hydra::layout(frag(in), location = 0) struct { vec4 color; vec2 uv; } fragment_in;
+hydra::layout(frag(in), location = 0) struct { vec4 color; vec2 uv; vec2 coord; } fragment_in;
 hydra::layout(frag(out), location = 0) vec4 frag_out_color;
 
 
 layout(set=0, binding=0) uniform sampler2D s_texture;
+layout(set=0, binding=1) uniform sampler2D s_backbuffer;
 
 layout(push_constant) uniform push_constant { vec2 scale; vec2 translate; } pc;
+
+layout(constant_id = hydra::id(sample_backbuffer)) const bool k_sample_bacbuffer = true;
 
 hydra::entry_point(main_vs, vert)
 hydra::entry_point(main_fs, frag)
 
+//#warning o
 
 void main_vs()
 {
   vertex_out.color = attrib_color;
   vertex_out.uv = attrib_uv;
-  gl_Position = vec4(attrib_pos * pc.scale + pc.translate, 0, 1);
+  vertex_out.coord = attrib_pos * pc.scale + pc.translate;
+  gl_Position = vec4(vertex_out.coord, 0, 1);
 }
 
 void main_fs()
 {
-  frag_out_color = fragment_in.color * texture(s_texture, fragment_in.uv);
-}
+  const vec4 out_color = texture(s_texture, fragment_in.uv);
 
+  if (k_sample_bacbuffer)
+  {
+    float fct = fragment_in.color.a;
+    const vec3 back_color = texture(s_backbuffer, clamp(fragment_in.coord * 0.5 + 0.5, 0, 1)).rgb;
+    frag_out_color = vec4(mix(back_color.rgb, out_color.rgb * fragment_in.color.rgb, fct), out_color.a);
+  }
+  else
+  {
+    frag_out_color = out_color * fragment_in.color;
+  }
+}
