@@ -91,12 +91,12 @@ namespace neam
           VkPipeline vk_pipeline;
       };
 
-      /// \brief A pipeline creator object. Used to create pipelines
-      /// (wraps a VkGraphicsPipelineCreateInfo)
-      class pipeline_creator
+      /// \brief A pipeline creator object. It creates pipelines.
+      /// (wraps VkGraphicsPipelineCreateInfo)
+      class graphics_pipeline_creator
       {
         public:
-          pipeline_creator(device& _dev) : dev(_dev), pss(*this) {}
+          graphics_pipeline_creator(device& _dev) : dev(_dev), pss(*this) {}
 
           /// \brief Return the shader stages of the pipeline
           pipeline_shader_stage &get_pipeline_shader_stage() { return pss; }
@@ -209,9 +209,9 @@ namespace neam
             if (!pss.is_valid())
             {
               if (!pss.has_async_operations_in_process())
-                neam::cr::out().error("hydra::pipeline_creator: Trying to create a pipeline with invalid shader stages");
+                neam::cr::out().error("hydra::graphics_pipeline_creator: Trying to create a pipeline with invalid shader stages");
               else
-                neam::cr::out().debug("hydra::pipeline_creator: Waiting for async operation to finish (yielding empty pipeline)");
+                neam::cr::out().debug("hydra::graphics_pipeline_creator: Waiting for async operation to finish (yielding empty pipeline)");
               return pipeline(dev, nullptr);
             }
 
@@ -296,9 +296,121 @@ namespace neam
           bool dirty = true;
       };
 
+      /// \brief A pipeline creator object. It creates pipelines.
+      /// (wraps VkComputePipelineCreateInfo)
+      class compute_pipeline_creator
+      {
+        public:
+          compute_pipeline_creator(device& _dev) : dev(_dev), pss(*this) {}
+
+          /// \brief Return the shader stages of the pipeline
+          pipeline_shader_stage &get_pipeline_shader_stage() { return pss; }
+          /// \brief Return the shader stages of the pipeline
+          const pipeline_shader_stage &get_pipeline_shader_stage() const { return pss; }
+
+          /// \brief Return the pipeline layout
+          pipeline_layout &get_pipeline_layout() const { return *layout; }
+          /// \brief Set the pipeline layout
+          void set_pipeline_layout(pipeline_layout &_layout) { layout = &_layout; }
+
+          /// \brief Return the base pipeline (could be nullptr if none). Creating derivate pipelines
+          /// may allow faster transition between derivates of the same pipeline
+          pipeline *get_base_pipeline() const { return base_pipeline; }
+          /// \brief Set the base pipeline (could be nullptr if none). Creating derivate pipelines
+          /// may allow faster transition between derivates of the same pipeline
+          void set_base_pipeline(pipeline *_base_pipeline)
+          {
+            base_pipeline = _base_pipeline;
+
+//             if (base_pipeline)
+//               create_info.flags |= VK_PIPELINE_CREATE_DERIVATIVE_BIT;
+//             else
+//               create_info.flags &= ~VK_PIPELINE_CREATE_DERIVATIVE_BIT;
+          }
+
+          /// \brief Allow (or disallow) the pipeline to be derived (default: false)
+          void allow_derivate_pipelines(bool /*allow*/)
+          {
+//             if (allow)
+//               create_info.flags |= VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+//             else
+//               create_info.flags &= ~VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+          }
+
+          /// \brief Get the allow derivate state
+          bool allow_derivate_pipelines() const
+          {
+            return create_info.flags & VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+          }
+
+          /// \brief Set custom flags (the fags controlling the inheritence are set automatically)
+          void set_flags(VkPipelineCreateFlags flags) { create_info.flags = flags; }
+          /// \brief Get the pipeline flags
+          VkPipelineCreateFlags get_flags() const { return create_info.flags; }
+
+          /// \brief Create a new pipeline
+          pipeline create_pipeline(pipeline_cache *cache = nullptr)
+          {
+            // refresh structs
+            pss.refresh();
+
+            if (!pss.is_valid())
+            {
+              if (!pss.has_async_operations_in_process())
+                neam::cr::out().error("hydra::graphics_pipeline_creator: Trying to create a pipeline with invalid shader stages");
+              else
+                neam::cr::out().debug("hydra::graphics_pipeline_creator: Waiting for async operation to finish (yielding empty pipeline)");
+              return pipeline(dev, nullptr);
+            }
+
+            // update the create_info
+            check::on_vulkan_error::n_assert(pss.get_shader_stage_count() == 1, "could not create a compute pipeline with anything other than one stage (stage count: {})", pss.get_shader_stage_count());
+            create_info.stage = *pss;
+
+            check::on_vulkan_error::n_assert(layout != nullptr, "could not create a pipeline without a valid layout");
+
+            create_info.layout = layout->_get_vk_pipeline_layout();
+
+//             if (base_pipeline)
+//               create_info.basePipelineHandle = base_pipeline->get_vk_pipeline();
+//             else
+              create_info.basePipelineHandle = nullptr;
+            create_info.basePipelineIndex = (int32_t)-1;
+
+            VkPipeline p;
+            VkPipelineCache pcache = nullptr;
+            if (cache)
+              pcache = cache->get_vk_pipeline_cache();
+            check::on_vulkan_error::n_assert_success(dev._vkCreateComputePipelines(pcache, 1, &create_info, nullptr, &p));
+
+            return pipeline(dev, p);
+          }
+
+          bool is_dirty() const { return dirty; }
+          void set_dirty(bool _is_dirty = true) { dirty = _is_dirty; }
+
+
+        private:
+          device &dev;
+          VkComputePipelineCreateInfo create_info = VkComputePipelineCreateInfo
+          {
+            VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, nullptr, 0, {}, 0, 0, -1
+          };
+
+          pipeline_shader_stage pss;
+
+          pipeline_layout *layout = nullptr;
+
+          pipeline *base_pipeline = nullptr;
+          bool dirty = true;
+      };
+
       inline void pipeline_shader_stage::ask_pipeline_refresh()
       {
-        creator->set_dirty();
+        std::visit([](auto* c)
+        {
+          c->set_dirty();
+        }, creator);
       }
     } // namespace vk
   } // namespace hydra

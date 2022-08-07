@@ -276,11 +276,11 @@ namespace neam
           VkRenderPassCreateInfo create_info;
 
           std::vector<VkSubpassDescription> vk_subpasses;
-          std::deque<subpass> subpasses;
+          std::vector<subpass> subpasses;
           std::vector<VkAttachmentDescription> vk_attachments;
-          std::deque<attachment> attachments;
+          std::vector<attachment> attachments;
           std::vector<VkSubpassDependency> vk_subpass_dependencies;
-          std::deque<subpass_dependency> subpass_dependencies;
+          std::vector<subpass_dependency> subpass_dependencies;
       };
     } // namespace vk
   } // namespace hydra

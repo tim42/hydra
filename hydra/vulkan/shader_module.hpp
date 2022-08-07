@@ -75,7 +75,8 @@ namespace neam
 
           /// \brief Move constructor
           shader_module(shader_module &&o)
-           : dev(o.dev), vk_shader_module(o.vk_shader_module), entry_point(std::move(o.entry_point))
+           : dev(o.dev), vk_shader_module(o.vk_shader_module),
+              entry_point(std::move(o.entry_point)), constant_id(std::move(o.constant_id))
           {
             o.vk_shader_module = nullptr;
           }
@@ -91,6 +92,7 @@ namespace neam
             vk_shader_module = o.vk_shader_module;
             o.vk_shader_module = nullptr;
             entry_point = std::move(o.entry_point);
+            constant_id = std::move(o.constant_id);
             return *this;
           }
 
@@ -113,10 +115,15 @@ namespace neam
             return vk_shader_module;
           }
 
+          auto& _get_constant_id_map() { return constant_id; }
+          const auto& _get_constant_id_map() const { return constant_id; }
+
         private:
           device &dev;
           VkShaderModule vk_shader_module;
           std::string entry_point = "main";
+
+          std::map<id_t, uint32_t> constant_id;
       };
     } // namespace vk
   } // namespace hydra

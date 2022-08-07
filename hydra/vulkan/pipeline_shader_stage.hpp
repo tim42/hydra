@@ -41,26 +41,38 @@
 
 namespace neam::hydra::vk
 {
-  class pipeline_creator;
+  class graphics_pipeline_creator;
+  class compute_pipeline_creator;
 
   /// \brief Hold some information about shaders of a given pipeline.
   /// This is meant to be used in/with a pipeline object.
   class pipeline_shader_stage
   {
     public:
-      pipeline_shader_stage(pipeline_creator& _creator) : creator(&_creator) {}
+      pipeline_shader_stage(graphics_pipeline_creator& _creator) : creator(&_creator)
+      {
+        vk_pssci.reserve(4);
+        shader_modules.reserve(4);
+        specializations.reserve(4);
+      }
+      pipeline_shader_stage(compute_pipeline_creator& _creator) : creator(&_creator)
+      {
+        vk_pssci.reserve(4);
+        shader_modules.reserve(4);
+        specializations.reserve(4);
+      }
 
       ~pipeline_shader_stage() {}
 
-      pipeline_shader_stage &add_shader(async::chain<shader_module &>&& shader_chain, VkShaderStageFlagBits stage)
+      pipeline_shader_stage &add_shader(async::chain<shader_module &>&& shader_chain, VkShaderStageFlagBits stage, specialization&& spec = {})
       {
         unsigned current_version = version_count;
         ++in_process;
-        shader_chain.then([this, current_version, stage](shader_module& shader)
+        shader_chain.then([this, current_version, stage, spec = std::move(spec)](shader_module& shader)
         {
           if (version_count == current_version)
           {
-            add_shader(shader, stage);
+            add_shader(shader, stage, spec);
             --in_process;
             if (!in_process)
               ask_pipeline_refresh();
@@ -72,8 +84,10 @@ namespace neam::hydra::vk
       /// \brief Add a shader to the pipeline
       /// \note It is your duty to maintain the shader_module & the specialization_info (if specified) alive.
       ///       the entry_point parameter is kept alive by this class.
-      pipeline_shader_stage &add_shader(shader_module &shader, VkShaderStageFlagBits stage, specialization_info *nfo = nullptr)
+      pipeline_shader_stage &add_shader(shader_module &shader, VkShaderStageFlagBits stage, const specialization& spec = {})
       {
+        specializations.push_back({spec, shader._get_constant_id_map()});
+
         shader_modules.push_back(&shader);
         vk_pssci.push_back(VkPipelineShaderStageCreateInfo
         {
@@ -83,9 +97,30 @@ namespace neam::hydra::vk
           stage,
           shader.get_vk_shader_module(),
           shader.get_entry_point().c_str(),
-          (nfo ? & ((VkSpecializationInfo &)(*nfo)) : nullptr)
+          specializations.back(),
         });
         return *this;
+      }
+
+      /// \brief Apply the same specialization to all the stages. Is not cumulative. (previous stage is lost)
+      void specialize(const specialization& spec)
+      {
+        for (unsigned i = 0; i < vk_pssci.size(); ++i)
+        {
+          specializations[i].update(spec, shader_modules[i]->_get_constant_id_map());
+        }
+      }
+
+      /// \brief Apply a specialization to a set of stages
+      void specialize(VkShaderStageFlagBits stages, const specialization& spec)
+      {
+        for (unsigned i = 0; i < vk_pssci.size(); ++i)
+        {
+          if ((vk_pssci[i].stage & stages) == vk_pssci[i].stage)
+          {
+            specializations[i].update(spec, shader_modules[i]->_get_constant_id_map());
+          }
+        }
       }
 
       /// \brief For a better integration with the vulkan API
@@ -111,6 +146,7 @@ namespace neam::hydra::vk
         {
           vk_pssci[i].pName = shader_modules[i]->get_entry_point().c_str();
           vk_pssci[i].module = shader_modules[i]->get_vk_shader_module();
+          vk_pssci[i].pSpecializationInfo = specializations[i];
         }
       }
 
@@ -135,10 +171,11 @@ namespace neam::hydra::vk
       void ask_pipeline_refresh();
 
     private:
-      pipeline_creator* creator;
+      std::variant<graphics_pipeline_creator*, compute_pipeline_creator*> creator;
 
       std::vector<VkPipelineShaderStageCreateInfo> vk_pssci;
       std::vector<shader_module*> shader_modules;
+      std::vector<specialization_info> specializations;
       unsigned version_count = 0;
       unsigned in_process = 0;
   };

@@ -42,21 +42,166 @@ namespace neam
   {
     namespace vk
     {
+      /// \brief A map of parameters that can be used to provide specialization info for pipelines
+      ///        Is to be used with the shader module constant id map to generate what can be consumed by vulkan
+      class specialization
+      {
+        public:
+          class parameter
+          {
+            public:
+              parameter(parameter&& o)
+              {
+                size = o.size;
+                if (size <= k_embedded_size)
+                  value = o.value;
+                else
+                  new (&ext_value) raw_data { std::move(o.ext_value) };
+              }
+
+              template<typename T>
+              parameter(T&& o)
+              {
+                using type = std::remove_cvref_t<T>;
+                static_assert(!std::is_same_v<type, parameter>);
+
+                size = sizeof(type);
+                if constexpr (sizeof(type) <= k_embedded_size)
+                {
+                  memcpy(&value, &o, sizeof(type));
+                }
+                else
+                {
+                  new (&ext_value) raw_data { raw_data::allocate(sizeof(type)) };
+                  memcpy(ext_value, &o, sizeof(type));
+                }
+              }
+
+              parameter& operator = (parameter&& o)
+              {
+                if (this == &o) return *this;
+                if (size > k_embedded_size)
+                  ext_value.~raw_data();
+                size = o.size;
+                if (size <= k_embedded_size)
+                  value = o.value;
+                else
+                  new (&ext_value) raw_data { std::move(o.ext_value) };
+                return *this;
+              }
+
+              template<typename T>
+              parameter& operator = (T&& o)
+              {
+                using type = std::remove_cvref_t<T>;
+                static_assert(!std::is_same_v<type, parameter>);
+
+                if (size > k_embedded_size)
+                  ext_value.~raw_data();
+                size = sizeof(type);
+                if constexpr (sizeof(type) <= k_embedded_size)
+                {
+                  memcpy(value, &o, sizeof(type));
+                }
+                else
+                {
+                  new (&ext_value) raw_data { raw_data::allocate(sizeof(type)) };
+                  memcpy(ext_value.data.get(), &o, sizeof(type));
+                }
+                return *this;
+              }
+
+              ~parameter()
+              {
+                if (size > k_embedded_size)
+                  ext_value.~raw_data();
+              }
+
+              uint32_t get_size() const { return size; }
+              const void* get_data() const
+              {
+                if (size <= k_embedded_size)
+                  return &value;
+                return ext_value.data.get();
+              }
+
+              id_t hash() const { return string_id::_runtime_build_from_string((const char*)get_data(), get_size()); }
+
+            private:
+              // size above which a dyn allocation is necessary
+              static constexpr uint32_t k_embedded_size = sizeof(uint64_t) * 3;
+
+              union
+              {
+                std::array<uint64_t, k_embedded_size / sizeof(uint64_t)> value = {0};
+                raw_data ext_value;
+              };
+              uint32_t size = 0;
+          };
+
+        public:
+          specialization() = default;
+          specialization(specialization&&) = default;
+          specialization& operator=(specialization&&) = default;
+          ~specialization() = default;
+
+//           specialization(std::map<id_t, parameter>&& p) : parameters(std::move(p)) {}
+          template<size_t N>
+          specialization(std::pair<id_t, parameter> (&&p)[N])
+          {
+            for (auto& it : p)
+              parameters.emplace(it.first, std::move(it.second));
+          }
+
+          const parameter* get(id_t id) const
+          {
+            if (auto it = parameters.find(id); it != parameters.end())
+              return &it->second;
+            return nullptr;
+          }
+
+          template<typename T>
+          void set(id_t id, T&& value)
+          {
+            parameters.insert_or_assign(id, parameter{std::forward<T>(value)});
+          }
+
+          template<typename T>
+          T& add(id_t id)
+          {
+            return *(T*)parameters.insert_or_assign(id, parameter{T{}}).first->second.get_data();
+          }
+
+          size_t entry_count() const { return parameters.size(); }
+
+          id_t hash() const
+          {
+            id_t h = id_t::none;
+            for (const auto& it : parameters) { h = combine(h, it.second.hash()); }
+            return h;
+          }
+        private:
+          std::map<id_t, parameter> parameters;
+      };
+
       /// \brief Wraps operations around VkSpecializationInfo & VkSpecializationMapEntry
-      /// \note You have to keep that object alive if it is used in a hydra::vk::pipeline_shader_stage
       class specialization_info
       {
         public:
-          specialization_info() { clear(); }
+          specialization_info() = default;
+
+          specialization_info(const specialization& s, const std::map<id_t, uint32_t>& constant_id_map)
+          {
+            update(s, constant_id_map);
+          }
 
           /// \note a move invalidate the VkSpecializationInfo reference
           specialization_info(specialization_info &&o)
             : vk_specialization_info(o.vk_specialization_info), sme(std::move(o.sme)),
-              data(std::move(o.data)), dirty(o.dirty), data_is_copy(o.data_is_copy)
+              data(std::move(o.data))
           {
             o.vk_specialization_info.pData = nullptr;
-            o.data_is_copy = false;
-            o.clear();
+            o.vk_specialization_info.pMapEntries = nullptr;
           }
 
           /// \note a move invalidate the VkSpecializationInfo reference
@@ -64,113 +209,63 @@ namespace neam
           {
             if (&o == this)
               return *this;
-            clear();
             vk_specialization_info = o.vk_specialization_info;
             sme = std::move(o.sme);
             data = std::move(o.data);
-            dirty = o.dirty;
-            data_is_copy = o.data_is_copy;
 
-            o.data_is_copy = false;
             o.vk_specialization_info.pData = nullptr;
-            o.clear();
+            o.vk_specialization_info.pMapEntries = nullptr;
           }
 
-          ~specialization_info() {clear();}
-
-          /// \brief Add a new constant
-          /// \note Type is copy constructed
-          template<typename Type>
-          Type &add_constant(uint32_t ID, Type value)
-          {
-            void *ret = _add_constant(ID, sizeof(Type));
-
-            new (ret) Type(value); // copy construct the type
-
-            return *reinterpret_cast<Type *>(ret);
-          }
-
-          /// \brief Add a new constant
-          /// \note Type is default constructed
-          template<typename Type>
-          Type &add_constant(uint32_t ID)
-          {
-            void *ret = _add_constant(ID, sizeof(Type));
-
-            new (ret) Type(); // default construct the type
-
-            return *reinterpret_cast<Type *>(ret);
-          }
-
-          /// \brief Add a new constant, but the memory allocated in uninitialized and returned
-          /// \note Type is default constructed
-          void *_add_constant(uint32_t ID, size_t memory_size)
-          {
-            dirty = true;
-            sme.push_back({
-              ID,
-              (uint32_t)data.size(),
-              memory_size
-            });
-
-            void *ret = data.allocate(memory_size);
-            check::on_vulkan_error::n_assert(data.has_failed() == false, "can't allocate more memory");
-
-            return ret;
-          }
+          ~specialization_info() {}
 
           /// \brief Yield a reference to VkSpecializationInfo when needed
-          operator VkSpecializationInfo &() { update(); return vk_specialization_info; }
+          operator VkSpecializationInfo *() { return &vk_specialization_info; }
+          operator const VkSpecializationInfo *() const { return &vk_specialization_info; }
 
-          /// \brief Clear the specialization info
-          void clear()
+          void update(const specialization& s, const std::map<id_t, uint32_t>& constant_id_map)
           {
-            data.clear();
             sme.clear();
+            data.reset();
 
-            vk_specialization_info.dataSize = 0;
-            vk_specialization_info.mapEntryCount = 0;
-            if (data_is_copy)
-              operator delete((void *)vk_specialization_info.pData, std::nothrow);
-            vk_specialization_info.pData = nullptr;
-            vk_specialization_info.pMapEntries = nullptr;
+            std::vector<const specialization::parameter*> parameters;
+            parameters.reserve(s.entry_count());
+            uint32_t total_size = 0;
+            {
+              for (const auto& it : constant_id_map)
+              {
+                if (const auto* p = s.get(it.first); p != nullptr)
+                {
+                  parameters.emplace_back(p);
+                  sme.push_back(
+                  {
+                    .constantID = it.second,
+                    .offset = total_size,
+                    .size = p->get_size(),
+                  });
+                  total_size += p->get_size();
+                }
+              }
+            }
+            data = raw_data::allocate(total_size);
+            uint32_t offset = 0;
+            for (const auto* it : parameters)
+            {
+              memcpy((uint8_t*)data.get() + offset, it->get_data(), it->get_size());
+              offset += it->get_size();
+            }
 
-            data_is_copy = false;
-            dirty = false;
-          }
-
-          /// \brief Update the VkSpecializationInfo
-          /// \note This will also update every reference to it
-          void update()
-          {
-            if (!dirty)
-              return;
-            vk_specialization_info.dataSize = data.size();
+            vk_specialization_info.dataSize = data.size;
+            vk_specialization_info.pData = data;
             vk_specialization_info.mapEntryCount = sme.size();
             vk_specialization_info.pMapEntries = sme.data();
-
-            if (data_is_copy)
-              operator delete((void *)vk_specialization_info.pData, std::nothrow);
-
-            if (data.is_data_contiguous())
-            {
-              data_is_copy = false; // no need to free anything
-              vk_specialization_info.pData = data.get_contiguous_data();
-            }
-            else
-            {
-              data_is_copy = true; // will create a temporary copy
-              vk_specialization_info.pData = data.get_contiguous_data_copy();
-            }
           }
 
         private:
           VkSpecializationInfo vk_specialization_info;
 
           std::vector<VkSpecializationMapEntry> sme;
-          cr::memory_allocator data;
-          bool dirty = false;
-          bool data_is_copy = false;
+          raw_data data;
       };
     } // namespace vk
   } // namespace hydra

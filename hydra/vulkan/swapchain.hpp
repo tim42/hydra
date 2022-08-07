@@ -96,7 +96,7 @@ namespace neam
           /// \brief Create a swapchain, specifying some image configurations
           swapchain(device &_dev, surface &_surf, VkFormat image_format, glm::uvec2 image_size,
                     VkCompositeAlphaFlagBitsKHR composite_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-                    VkImageUsageFlags image_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+                    VkImageUsageFlags image_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
             : dev(_dev), surf(_surf), sw_viewport(glm::vec2(image_size.x, image_size.y)),
               sw_rect(glm::ivec2(0, 0), image_size)
           {
@@ -165,6 +165,18 @@ namespace neam
 
           /// \brief Return a const reference to the image vector of the swapchain
           const std::deque<image_view> &get_image_view_vector() const
+          {
+            return swapchain_image_views;
+          }
+
+          /// \brief Return a const reference to the image vector of the swapchain
+          std::deque<image> &get_image_vector()
+          {
+            return swapchain_images;
+          }
+
+          /// \brief Return a const reference to the image vector of the swapchain
+          std::deque<image_view> &get_image_view_vector()
           {
             return swapchain_image_views;
           }

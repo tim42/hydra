@@ -344,6 +344,15 @@ namespace neam
             dev._fn_vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), stage_flags, offset, sizeof(value), (const void *)&value);
           }
 
+          /// \brief Update the values of push constants
+          /// \note Use a stage_flags static member in Type to get the correct stage set
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdPushConstants.html">vulkan khr doc</a>
+          template<typename Type>
+          void push_constants(const pipeline_layout &pl, uint32_t offset, const Type &value)
+          {
+            dev._fn_vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), Type::stage_flags, offset, sizeof(value), (const void *)&value);
+          }
+
           /// \brief Begin a new render pass
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdBeginRenderPass.html">vulkan khr doc</a>
           void begin_render_pass(const render_pass &rp, const framebuffer &fb, const rect2D &area, VkSubpassContents sp_contents, const std::vector<clear_value> &cv)

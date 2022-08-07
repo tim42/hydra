@@ -68,9 +68,9 @@ namespace neam
             : vk_ib
           {
             src_subres,
-            { {src_st_offset.x, src_st_offset.y, 0}, {src_end_offset.x, src_end_offset.y, 0} },
+            { {src_st_offset.x, src_st_offset.y, 0}, {src_end_offset.x, src_end_offset.y, 1} },
             dst_subres,
-            { {dst_st_offset.x, dst_st_offset.y, 0}, {dst_end_offset.x, dst_end_offset.y, 0} },
+            { {dst_st_offset.x, dst_st_offset.y, 0}, {dst_end_offset.x, dst_end_offset.y, 1} },
           }
           {}
 
