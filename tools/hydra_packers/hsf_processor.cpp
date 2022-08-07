@@ -90,8 +90,13 @@ namespace neam::hydra::processor
     std::string dependencies;
   };
 
-  pid_t spawn_cpp(hydra::core_context& ctx, const std::string& input, const std::filesystem::path& file, async::chain<cpp_output_t&&>::state&& state)
+  pid_t spawn_cpp(hydra::core_context& ctx, const std::string& input, const std::filesystem::path& file, async::chain<cpp_output_t>::state&& state)
   {
+    // posix_spawn does not seem to be thread-safe
+    // to avoid failure cases, we lock the whole function
+    static spinlock lock;
+    std::lock_guard _l(lock);
+
     constexpr uint32_t read = 0;
     constexpr uint32_t write = 1;
 
@@ -106,26 +111,26 @@ namespace neam::hydra::processor
     ctx.io.create_pipe(file_pipe[read], file_pipe[write]);
 
     posix_spawn_file_actions_t file_actions;
-    posix_spawn_file_actions_init(&file_actions);
+    check::unx::n_check_success(posix_spawn_file_actions_init(&file_actions));
     // close the unused pipe fds:
     // we might have extra fds around, but all of io automanaged fds are close-on-exec, so it should be fine
     // the goal is to limit our bleeding into the other process
-    posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(output_pipe[read]));
-    posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(messages_pipe[read]));
-    posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(deps_pipe[read]));
-    posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(file_pipe[write]));
+    check::unx::n_check_success(posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(output_pipe[read])));
+    check::unx::n_check_success(posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(messages_pipe[read])));
+    check::unx::n_check_success(posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(deps_pipe[read])));
+    check::unx::n_check_success(posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(file_pipe[write])));
     // setup stdin/out/err fds: (and close all unused fds)
-    posix_spawn_file_actions_adddup2(&file_actions, ctx.io._get_fd(file_pipe[read]), 0);
-    posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(file_pipe[read]));
-    posix_spawn_file_actions_adddup2(&file_actions, ctx.io._get_fd(output_pipe[write]), 1);
-    posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(output_pipe[write]));
-    posix_spawn_file_actions_adddup2(&file_actions, ctx.io._get_fd(messages_pipe[write]), 2);
-    posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(messages_pipe[write]));
+    check::unx::n_check_success(posix_spawn_file_actions_adddup2(&file_actions, ctx.io._get_fd(file_pipe[read]), 0));
+    check::unx::n_check_success(posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(file_pipe[read])));
+    check::unx::n_check_success(posix_spawn_file_actions_adddup2(&file_actions, ctx.io._get_fd(output_pipe[write]), 1));
+    check::unx::n_check_success(posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(output_pipe[write])));
+    check::unx::n_check_success(posix_spawn_file_actions_adddup2(&file_actions, ctx.io._get_fd(messages_pipe[write]), 2));
+    check::unx::n_check_success(posix_spawn_file_actions_addclose(&file_actions, ctx.io._get_fd(messages_pipe[write])));
 
-    posix_spawn_file_actions_addchdir_np(&file_actions, ctx.res.source_folder.lexically_normal().c_str());
+    check::unx::n_check_success(posix_spawn_file_actions_addchdir_np(&file_actions, ctx.res.source_folder.lexically_normal().c_str()));
 
     pid_t cpp_pid;
-    posix_spawnp(&cpp_pid, "cpp", &file_actions, nullptr, (char*const*)(std::vector<const char*>{
+    check::unx::n_check_success(posix_spawnp(&cpp_pid, "cpp", &file_actions, nullptr, (char*const*)(std::vector<const char*>{
       {
         "cpp",
         "-x", "c",
@@ -146,8 +151,8 @@ namespace neam::hydra::processor
         "-E", "-",
 
         nullptr,
-      }}.data()), environ);
-    posix_spawn_file_actions_destroy(&file_actions);
+      }}.data()), environ));
+    check::unx::n_check_success(posix_spawn_file_actions_destroy(&file_actions));
 
     // close all the unused pipes: (close the write-end for when we only need read, ...)
     ctx.io.close(output_pipe[write]);
@@ -181,7 +186,7 @@ namespace neam::hydra::processor
     .then([fd = deps_pipe[read]](std::string&& content) { return pipe_chain::create_and_complete({std::move(content), fd}); });
 
     // perform the big wait:
-    async::multi_chain<cpp_output_t&&>({},
+    async::multi_chain<cpp_output_t>({},
      [messages_fd = messages_pipe[read], output_fd = output_pipe[read], deps_fd = deps_pipe[read]]
      (cpp_output_t& state, pipe_operation_t&& res)
     {
@@ -217,7 +222,7 @@ namespace neam::hydra::processor
       replace_all(shader_file, "#glsl:", "@glsl:");
 
       // spawn CPP (the C preprocessor) an post-process the result output:
-      async::chain<cpp_output_t&&> chain;
+      async::chain<cpp_output_t> chain;
       auto proc_chain = queue_process(ctx, [&ctx, file = input.file, shader_file = std::move(shader_file), state = chain.create_state()] mutable
       {
         return spawn_cpp(ctx, shader_file, file, std::move(state));
@@ -228,7 +233,7 @@ namespace neam::hydra::processor
         cpp_output_t cpp;
         int ret = 0;
       };
-      return async::multi_chain<state_t&&>({}, []<typename T>(state_t& state, T&& in)
+      return async::multi_chain<state_t>({}, []<typename T>(state_t& state, T&& in)
       {
         if constexpr (std::is_same_v<cpp_output_t, T>)
         {

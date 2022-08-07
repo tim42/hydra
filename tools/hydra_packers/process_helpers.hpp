@@ -39,9 +39,9 @@ namespace neam
   {
     constexpr uint32_t k_read_size = 1024;
     return ctx.io.queue_read(pipe_id, 0, k_read_size)
-    .then([&ctx, pipe_id, content = std::move(content)] (raw_data&& rd, bool) mutable
+    .then([&ctx, pipe_id, content = std::move(content)] (raw_data&& rd, bool st) mutable
     {
-      if (rd.size == 0)
+      if (rd.size == 0 || !st)
       {
         ctx.io.close(pipe_id);
         return async::chain<std::string&&>::create_and_complete(std::move(content));

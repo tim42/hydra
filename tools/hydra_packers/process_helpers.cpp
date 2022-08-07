@@ -66,11 +66,12 @@ namespace neam
     spawn_and_wait_for_process(process);
 
     process_queue_t& pq = get_process_queue();
+    process_t next_process;
     {
       std::lock_guard _l(pq.lock);
       if (pq.to_spawn.size() > 0)
       {
-        process = std::move(pq.to_spawn.front());
+        next_process = std::move(pq.to_spawn.front());
         pq.to_spawn.pop_front();
       }
       else
@@ -81,7 +82,7 @@ namespace neam
     }
 
     // launch another task that will spawn the process (let other tasks have a chance to run)
-    ctx.tm.get_long_duration_task([&ctx, process = std::move(process)] mutable
+    ctx.tm.get_long_duration_task([&ctx, process = std::move(next_process)] mutable
     {
       process_task(ctx, std::move(process));
     });

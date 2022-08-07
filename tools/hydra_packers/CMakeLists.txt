@@ -3,6 +3,7 @@
 add_library(hydra_packers SHARED
     png_processor.cpp
     hsf_processor.cpp
+    xz_processor.cpp
 
     raw_packer.cpp
     image_packer.cpp
