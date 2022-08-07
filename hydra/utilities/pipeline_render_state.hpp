@@ -47,7 +47,6 @@ namespace neam::hydra
         ds_layout = std::move(_ds_layout);
         ds_pool = std::move(_ds_pool);
         pipeline_layout = std::move(_pipeline_layout);
-        pcr.set_pipeline_layout(pipeline_layout);
 
         // we recreate the ds-layout, so we must invalidate the pipelines
         invalidate_pipelines();
@@ -80,76 +79,138 @@ namespace neam::hydra
 
       /// \brief Return the pipeline creator
       /// If you modify it, please call invalidate_pipelines() to force a reload of the pipelines
-      vk::pipeline_creator& get_pipeline_creator() { return pcr; }
+      vk::graphics_pipeline_creator& get_graphics_pipeline_creator()
+      {
+        if (std::holds_alternative<std::monostate>(pcr))
+        {
+          auto& gpcr = pcr.emplace<vk::graphics_pipeline_creator>(dev);
+          gpcr.set_pipeline_layout(pipeline_layout);
+          return gpcr;
+        }
+        if (std::holds_alternative<vk::graphics_pipeline_creator>(pcr))
+          return std::get<vk::graphics_pipeline_creator>(pcr);
+
+        check::on_vulkan_error::n_assert(false, "Trying to get a graphics pipeline on a PRS that hold something else");
+        __builtin_unreachable();
+      }
+
+      /// \brief Return the pipeline creator
+      /// If you modify it, please call invalidate_pipelines() to force a reload of the pipelines
+      vk::compute_pipeline_creator& get_compute_pipeline_creator()
+      {
+        if (std::holds_alternative<std::monostate>(pcr))
+        {
+          auto& cpcr = pcr.emplace<vk::compute_pipeline_creator>(dev);
+          cpcr.set_pipeline_layout(pipeline_layout);
+          return cpcr;
+        }
+        if (std::holds_alternative<vk::compute_pipeline_creator>(pcr))
+          return std::get<vk::compute_pipeline_creator>(pcr);
+
+        check::on_vulkan_error::n_assert(false, "Trying to get a graphics pipeline on a PRS that hold something else");
+        __builtin_unreachable();
+      }
 
       /// \brief Create or retrieve a pipeline that does not require a render-pass
-      const vk::pipeline& get_pipeline()
+      const vk::pipeline& get_pipeline(const vk::specialization& spec = {})
       {
-        const id_t hash = id_t::none;
-        if (pcr.is_dirty())
+        if (std::holds_alternative<std::monostate>(pcr))
+          check::on_vulkan_error::n_assert(false, "Trying to get a pipeline with a non-initialized pipeline creator");
+
+        const id_t hash = spec.hash();
+        std::visit([this](auto& xpcr)
         {
-          // fixme: non-immediate mode
-          invalidate_pipelines();
-          pcr.set_dirty(false);
-        }
+          if constexpr (std::is_same_v<std::monostate&, decltype(xpcr)>) __builtin_unreachable();
+          else
+          {
+            if (xpcr.is_dirty())
+            {
+              // fixme: non-immediate mode
+              invalidate_pipelines();
+              xpcr.set_dirty(false);
+            }
+          }
+        }, pcr);
         if (auto it = pipelines.find(hash); it != pipelines.end())
         {
           return it->second;
         }
 
-        pcr.clear_render_pass();
-        auto [it, inserted] = pipelines.emplace(hash, pcr.create_pipeline());
-        return it->second;
+        if (std::holds_alternative<vk::graphics_pipeline_creator>(pcr))
+          std::get<vk::graphics_pipeline_creator>(pcr).clear_render_pass();
+
+        return std::visit([this, hash, &spec](auto & xpcr) -> const vk::pipeline&
+        {
+          if constexpr (std::is_same_v<std::monostate&, decltype(xpcr)>) __builtin_unreachable();
+          else
+          {
+            xpcr.get_pipeline_shader_stage().specialize(spec);
+            auto [it, inserted] = pipelines.emplace(hash, xpcr.create_pipeline());
+            return it->second;
+          }
+        }, pcr);
       }
 
       /// \brief Create or retrieve a pipeline for a given render-pass/mesh
-      const vk::pipeline& get_pipeline(vk::render_pass& pass, uint32_t subpass, hydra::mesh& m /*TODO*/)
+      const vk::pipeline& get_pipeline(vk::render_pass& pass, uint32_t subpass, hydra::mesh& m /*TODO*/,
+                                       const vk::specialization& spec = {})
       {
-        const id_t hash = combine(pass.compute_subpass_hash(subpass), m.compute_vertex_description_hash());
-        if (pcr.is_dirty())
+        if (!std::holds_alternative<vk::graphics_pipeline_creator>(pcr))
+          check::on_vulkan_error::n_assert(false, "Trying to get a construct graphics pipeline with a PRS that hold something else");
+
+        auto& gpcr = std::get<vk::graphics_pipeline_creator>(pcr);
+        const id_t hash = combine(spec.hash(), combine(pass.compute_subpass_hash(subpass), m.compute_vertex_description_hash()));
+        if (gpcr.is_dirty())
         {
           // fixme: non-immediate mode
           invalidate_pipelines();
-          pcr.set_dirty(false);
+          gpcr.set_dirty(false);
         }
         if (auto it = pipelines.find(hash); it != pipelines.end())
         {
           return it->second;
         }
 
-        pcr.set_render_pass(pass);
-        pcr.set_subpass_index(subpass);
-        m.setup_vertex_description(pcr);
-        auto [it, inserted] = pipelines.emplace(hash, pcr.create_pipeline());
-        pcr.clear_render_pass();
+        gpcr.set_render_pass(pass);
+        gpcr.set_subpass_index(subpass);
+        gpcr.get_pipeline_shader_stage().specialize(spec);
+        m.setup_vertex_description(gpcr);
+        auto [it, inserted] = pipelines.emplace(hash, gpcr.create_pipeline());
+        gpcr.clear_render_pass();
         return it->second;
       }
 
       /// \brief Create or retrieve a pipeline for a given render-pass
-      const vk::pipeline& get_pipeline(vk::render_pass& pass, uint32_t subpass)
+      const vk::pipeline& get_pipeline(vk::render_pass& pass, uint32_t subpass, const vk::specialization& spec = {})
       {
-        const id_t hash = pass.compute_subpass_hash(subpass);
-        if (pcr.is_dirty())
+        if (!std::holds_alternative<vk::graphics_pipeline_creator>(pcr))
+          check::on_vulkan_error::n_assert(false, "Trying to get a construct graphics pipeline with a PRS that hold something else");
+
+        auto& gpcr = std::get<vk::graphics_pipeline_creator>(pcr);
+
+        const id_t hash = combine(spec.hash(), pass.compute_subpass_hash(subpass));
+        if (gpcr.is_dirty())
         {
           // fixme: non-immediate mode
           invalidate_pipelines();
-          pcr.set_dirty(false);
+          gpcr.set_dirty(false);
         }
         if (auto it = pipelines.find(hash); it != pipelines.end())
         {
           return it->second;
         }
 
-        pcr.set_render_pass(pass);
-        pcr.set_subpass_index(subpass);
-        auto [it, inserted] = pipelines.emplace(hash, pcr.create_pipeline());
-        pcr.clear_render_pass();
+        gpcr.set_render_pass(pass);
+        gpcr.set_subpass_index(subpass);
+        gpcr.get_pipeline_shader_stage().specialize(spec);
+        auto [it, inserted] = pipelines.emplace(hash, gpcr.create_pipeline());
+        gpcr.clear_render_pass();
         return it->second;
       }
 
     private:
       vk::device& dev;
-      vk::pipeline_creator pcr {dev};
+      std::variant<std::monostate, vk::graphics_pipeline_creator, vk::compute_pipeline_creator> pcr;
 
       vk::descriptor_set_layout ds_layout { dev, VkDescriptorSetLayout(nullptr) };
       vk::descriptor_pool ds_pool { dev, VkDescriptorPool(nullptr) };

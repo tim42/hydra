@@ -73,15 +73,31 @@ namespace neam::hydra
 
         // query the index for the module:
         return res_context.read_resource<assets::spirv_variation>(rid)
-        .then([rid, this](assets::spirv_variation&& mod, resources::status st) -> vk::shader_module&
+        .then([rid, this](assets::spirv_variation&& mod, resources::status st)
         {
           if (st == resources::status::failure)
           {
-            cr::out().error("failed to load shader module {}", rid);
-            return invalid_module;
+            cr::out().error("failed to load shader module {}", res_context.resource_name(rid));
+            return async::chain<vk::shader_module&>::create_and_complete(invalid_module);
           }
-          auto ret = module_map.insert_or_assign(rid, vk::shader_module(dev, (const uint32_t*)mod.module.data.get(), mod.module.size, mod.entry_point));
-          return ret.first->second;
+
+          vk::shader_module vkmod { dev, (const uint32_t*)mod.module.data.get(), mod.module.size, mod.entry_point };
+
+          return res_context.read_resource<assets::spirv_shader>(mod.root)
+          .then([this, rid, root_id = mod.root, vkmod = std::move(vkmod)]
+                       (assets::spirv_shader&& shader_info, resources::status st) mutable -> vk::shader_module &
+          {
+            if (st == resources::status::failure)
+            {
+              cr::out().warn("failed to load shader info {} (for {})", res_context.resource_name(root_id), res_context.resource_name(rid));
+            }
+            else // not a failure:
+            {
+              vkmod._get_constant_id_map() = std::move(shader_info.constant_id);
+            }
+            auto ret = module_map.insert_or_assign(rid, std::move(vkmod));
+            return ret.first->second;
+          });
         });
       }
 

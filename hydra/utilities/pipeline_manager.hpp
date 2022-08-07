@@ -69,6 +69,14 @@ namespace neam
             fnc(it->second);
           }
         }
+        template<typename Type, typename... Args>
+        void add_pipeline(Args&&... args)
+        {
+          add_pipeline(Type::pipeline_id, [&](pipeline_render_state &prs)
+          {
+            Type::make_pipeline(prs, std::forward<Args>(args)...);
+          });
+        }
 
         bool has_pipeline(id_t id) const
         {
@@ -86,6 +94,12 @@ namespace neam
         {
           return find_pipeline(id)->second.get_pipeline(std::forward<Args>(args)...);
         }
+        template<typename Type, typename... Args>
+        const vk::pipeline& get_pipeline(Args&&... args)
+        {
+          return get_pipeline(Type::pipeline_id, std::forward<Args>(args)...);
+        }
+
         const vk::pipeline_layout& get_pipeline_layout(const id_t id)
         {
           return find_pipeline(id)->second.get_pipeline_layout();
@@ -94,6 +108,12 @@ namespace neam
         {
           return find_pipeline(id)->second.get_pipeline_layout();
         }
+        template<typename Type>
+        const vk::pipeline_layout& get_pipeline_layout()
+        {
+          return get_pipeline_layout(Type::pipeline_id);
+        }
+
         template<typename... Args>
         vk::descriptor_set allocate_descriptor_set(const id_t id, Args&& ... args)
         {
@@ -103,6 +123,11 @@ namespace neam
         vk::descriptor_set allocate_descriptor_set(const string_id id, Args&& ... args)
         {
           return find_pipeline(id)->second.allocate_descriptor_set(std::forward<Args>(args)...);
+        }
+        template<typename Type, typename... Args>
+        vk::descriptor_set allocate_descriptor_set(Args&& ... args)
+        {
+          return allocate_descriptor_set(Type::pipeline_id, std::forward<Args>(args)...);
         }
 
         /// \brief Refresh a single pipeline
