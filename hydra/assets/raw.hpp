@@ -32,22 +32,22 @@
 
 namespace neam::hydra::assets
 {
-  struct raw_asset : public resources::rle_data_asset<"raw", raw_asset>
+  /// \brief Raw asset, .data contains directly what the resource contains, as-is.
+  struct raw_asset : public resources::asset<"raw", raw_asset>
   {
-    // handle versioning:
-    static constexpr uint32_t min_supported_version = 0;
-    static constexpr uint32_t current_version = 0;
-    using version_list = ct::type_list< raw_asset >;
-
     raw_data data;
+
+    static raw_asset from_raw_data(const raw_data& _data, resources::status& st)
+    {
+      st = resources::status::success;
+      return { .data = _data.duplicate() };
+    }
+
+    static raw_data to_raw_data(const raw_asset& _data, resources::status& st)
+    {
+      st = resources::status::success;
+      return _data.data.duplicate();
+    }
   };
 }
-
-N_METADATA_STRUCT(neam::hydra::assets::raw_asset)
-{
-  using member_list = neam::ct::type_list
-  <
-    N_MEMBER_DEF(data)
-  >;
-};
 
