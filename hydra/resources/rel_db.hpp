@@ -35,6 +35,8 @@
 #include <ntools/rle/rle.hpp>
 #include <ntools/type_id.hpp>
 
+#include "metadata.hpp"
+
 namespace neam::resources
 {
   /// \brief handle links between source files, resources, pack files and caches
@@ -68,6 +70,9 @@ namespace neam::resources
       /// \brief recursively get all resources related to file
       std::set<id_t> get_resources(const std::string& file, bool include_files_id = false) const;
 
+      /// \brief Return the referenced metadata types
+      std::set<id_t> get_referenced_metadata_types(const std::string& file) const;
+
       /// \brief return all the files that \e directly \e and \e indirectly depend on the given file
       std::set<std::filesystem::path> get_dependent_files(const std::filesystem::path& file) const;
 
@@ -84,6 +89,11 @@ namespace neam::resources
       /// \note might be super slow
       std::set<std::filesystem::path> get_absent_resources(const std::deque<std::filesystem::path>& file_list) const;
 
+      /// \brief get all the files that needs a repack because of a packer/processor change
+      /// \note it might reimport more than necessary (a packer change for a sub-resource will trigger a reimport of all resurces related to the source file).
+      /// \note might be super slow, but should only be done once
+      std::set<std::filesystem::path> get_files_requiring_reimport(const std::set<id_t>& processors, const std::set<id_t>& packers) const;
+
       /// \brief Serialize the data, ensuring everything is fine (locks the instance whil'e its serializing)
       raw_data serialize() const;
 
@@ -92,6 +102,9 @@ namespace neam::resources
 
       /// \brief Return the messages for the corresponding RID
       message_list_t get_messages(id_t rid) const;
+
+      /// \brief Return the metadata info for the given type
+      metadata_type_registration_t get_type_metadata(id_t type_id) const;
 
     public: // processor&packers entries:
       void resource_name(id_t rid, std::string name);
@@ -123,9 +136,17 @@ namespace neam::resources
         log_str(s, res, ct::type_name<Prov>.str, fmt::format(str, std::forward<Args>(args)...));
       }
 
-    public: // processor spcific entries:
+    public: // processor specific entries:
       void add_file_to_file_dependency(const std::string& file, const std::string& dependent_on);
       void set_processor_for_file(const std::string& file, id_t version_hash);
+
+      void reference_metadata_type(const std::string& file, id_t metadata_type);
+      // helper for types inheriting from base_metadata_entry
+      template<typename T>
+      void reference_metadata_type(const std::string& file)
+      {
+        return reference_metadata_type(file, string_id(T::k_metadata_entry_name));
+      }
 
     public: // setup (should not be used directly unless in internal resource code !!):
       void add_file(const std::string& file);
@@ -136,12 +157,26 @@ namespace neam::resources
       void add_resource(const std::string& parent_file, id_t root_resource);
       void add_resource(id_t root_resource, id_t child_resource);
       void set_pack_file(id_t root_resource, id_t pack_file_id);
+      void set_packer_for_resource(id_t root_resource, id_t packer_hash);
 
       void remove_file(const std::string& file);
       void repack_file(const std::string& file);
 
+      void reference_metadata_type(id_t root_resource, id_t metadata_type);
+      // helper for types inheriting from base_metadata_entry
+      template<typename T>
+      void reference_metadata_type(id_t root_resource)
+      {
+        return reference_metadata_type(root_resource, string_id(T::k_metadata_entry_name));
+      }
+
+    public:
+      void force_assign_registered_metadata_types();
+
     private:
       void get_pack_files_unlocked(const std::string& file, std::set<id_t>& ret) const;
+      std::string get_root_file_unlocked(const std::string& file) const;
+      std::string get_root_file_unlocked(id_t root_res) const;
       void get_resources_unlocked(const std::string& file, std::set<id_t>& ret, bool include_files_id) const;
 
       void get_dependent_files_unlocked(const std::filesystem::path& file, std::set<std::filesystem::path>& ret) const;
@@ -151,6 +186,9 @@ namespace neam::resources
       void remove_resource_unlocked(id_t root_resource);
 
       void log_str(cr::logger::severity s, id_t res, std::string provider, std::string str);
+
+      void reference_metadata_type_unlocked(const std::string& file, id_t metadata_type);
+      void reference_metadata_type_unlocked(id_t root_resource, id_t metadata_type);
 
     public:
       struct file_info_t
@@ -165,11 +203,15 @@ namespace neam::resources
 
         std::set<std::string> depend_on = {}; // file -> all files it depends on
         std::set<std::string> dependent = {}; // file -> all files that depend on it
+
+        std::set<id_t> referenced_metadata_types;
       };
       struct root_resource_info_t
       {
-        id_t pack_file;
-        std::set<id_t> sub_resources;
+        std::string parent_file = {};
+        id_t packer_hash = id_t::none;
+        id_t pack_file = id_t::none;
+        std::set<id_t> sub_resources = {};
       };
 
     private: // serialized:
@@ -179,6 +221,7 @@ namespace neam::resources
       std::map<id_t, std::string> resources_names;
       std::map<id_t, message_list_t> resources_messages;
 
+      std::unordered_map<id_t, metadata_type_registration_t> metadata_types;
     private: // non-serialized:
       mutable shared_spinlock lock;
 
@@ -196,7 +239,8 @@ N_METADATA_STRUCT(neam::resources::rel_db::file_info_t)
     N_MEMBER_DEF(child_resources),
     N_MEMBER_DEF(parent_file),
     N_MEMBER_DEF(depend_on),
-    N_MEMBER_DEF(dependent)
+    N_MEMBER_DEF(dependent),
+    N_MEMBER_DEF(referenced_metadata_types)
   >;
 };
 
@@ -204,6 +248,7 @@ N_METADATA_STRUCT(neam::resources::rel_db::root_resource_info_t)
 {
   using member_list = neam::ct::type_list
   <
+    N_MEMBER_DEF(packer_hash),
     N_MEMBER_DEF(pack_file),
     N_MEMBER_DEF(sub_resources)
   >;
@@ -235,6 +280,7 @@ N_METADATA_STRUCT(neam::resources::rel_db)
     N_MEMBER_DEF(root_resources),
     N_MEMBER_DEF(sub_resources),
     N_MEMBER_DEF(resources_names),
-    N_MEMBER_DEF(resources_messages)
+    N_MEMBER_DEF(resources_messages),
+    N_MEMBER_DEF(metadata_types)
   >;
 };

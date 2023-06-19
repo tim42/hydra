@@ -39,11 +39,20 @@ namespace neam::resources { class rel_db; }
 
 namespace neam::resources::packer
 {
+  enum class mode_t
+  {
+    data,
+    simlink,
+  };
+
   struct data
   {
     id_t id;
     raw_data data = {};
     metadata_t metadata = {};
+
+    id_t simlink_to_id = id_t::none;
+    mode_t mode = mode_t::data;
   };
 
   // vector: the sub-resources to write
@@ -61,6 +70,8 @@ namespace neam::resources::packer
 
   function get_packer(id_t type_id);
   id_t get_packer_hash(id_t type_id);
+
+  const std::set<id_t>& get_packer_hashs();
 
   // helpers:
   template<ct::string_holder IDName, typename Packer>
@@ -86,7 +97,12 @@ namespace neam::resources::packer
       static constexpr id_t get_root_id(id_t file_id) { return specialize(file_id, ResourceType::type_name); }
       static std::string get_root_name(const rel_db& db, id_t file_id)
       {
-        return fmt::format("{}:{}", db.resource_name(file_id), ResourceType::type_name.string);
+        return _get_root_name<ResourceType>(db, file_id);
+      }
+      template<typename Type>
+      static std::string _get_root_name(const rel_db& db, id_t file_id)
+      {
+        return fmt::format("{}:{}", db.resource_name(file_id), Type::type_name.string);
       }
 
   private:

@@ -28,6 +28,10 @@
 
 #include <ntools/async/chain.hpp>
 #include <ntools/io/context.hpp>
+#include <ntools/event.hpp>
+#include <ntools/rle/rle.hpp>
+
+#include <hydra/engine/conf/conf.hpp>
 
 #include "enums.hpp"
 #include "asset.hpp"
@@ -37,6 +41,30 @@
 #include "rel_db.hpp"
 
 namespace neam::hydra { class core_context; }
+
+namespace neam::resources
+{
+  struct resource_configuration : hydra::conf::hconf<resource_configuration>
+  {
+    std::vector<std::string> extensions_to_ignore;
+  };
+}
+
+N_METADATA_STRUCT(neam::resources::resource_configuration)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(extensions_to_ignore, neam::metadata::info{.description = c_string_t
+      <
+      "List of extensions (including the `.`) or file-types that will be not considered for import\n"
+      "To exclude all PNG files by extension, add an entry with `.png`\n"
+      "To exclude all PNG files by filetype, add an entry with: `image/png`\n\n"
+      "To get filetype of a file, use the command: `file --mime-type the-file-name-here`.\n"
+      "Beware of using a too generic file-type as it may prevent other files from being considered for import."
+      >})
+  >;
+};
+
 namespace neam::resources
 {
   namespace processor
@@ -63,6 +91,8 @@ namespace neam::resources
       static constexpr char k_metadata_extension[] = ".hrm";
       static constexpr char k_pack_extension[] = ".hpd";
       static constexpr char k_rel_db_extension[] = ".hrdb";
+
+      static constexpr string_id k_configuration_name = "configuration/resources_context.hcnf"_rid;
 
     public:
       context(io::context& io, hydra::core_context& _ctx) : io_context(io), ctx(_ctx) {}
@@ -96,7 +126,7 @@ namespace neam::resources
         return boot(boot_index_id, io_context.map_unprefixed_file(index_path));
       }
 
-      status_chain boot(id_t boot_index_id, id_t _index_file_id, unsigned max_depth = 5);
+      status_chain boot(id_t boot_index_id, id_t _index_file_id, unsigned max_depth = 5, bool reload = false);
 
       /// \brief Create base_index_path.index / base_index_path.pack so that they are self-bootable
       /// \note this will not override any loaded index but will alter the mapped files to contain the index / pack / file-map
@@ -134,7 +164,7 @@ namespace neam::resources
       /// \note the operation is asynchronous, all operation done before the index is actually reloaded are done with the current one
       status_chain reload_index()
       {
-        return reload_index(root.get_index_id(), index_file_id);
+        return boot(root.get_index_id(), index_file_id, 5, true);
       }
 
       /// \brief Additively load a new index.
@@ -150,9 +180,9 @@ namespace neam::resources
       /// \see index::add_index
       status_chain add_index(id_t index_id, id_t index_fid);
 
-      /// \brief Saves the index. The index must have been previously loaded with load_index. (even if it does not exists).
-      /// \note outside the serialization, the operation is asynchronous.
-      ///       Despite this, it is possible to save and immediatly load a new index without waiting for the IO to complete.
+      /// \brief Saves the current index and the rel-db if present (must have a loaded index)
+      /// \note This operation is asynchronous.
+      ///       It is possible to save and immediatly load another index without waiting for the IO to complete.
       status_chain save_index() const;
 
 
@@ -161,6 +191,9 @@ namespace neam::resources
 
       /// \brief Return whether a resource is present
       bool has_resource(id_t rid) const { return is_index_loaded() && root.has_entry(rid); }
+
+      /// \brief Return the created/modified time on the index
+      std::filesystem::file_time_type get_index_modified_time() const { return io_context.get_modified_or_created_time(index_file_id); }
 
     public:
       /// \brief Load a map-file. Map files contains the list of all the necessary files that io::context can use.
@@ -195,6 +228,10 @@ namespace neam::resources
       /// \warning It is incorrect to call this function when has_db() is false
       const rel_db& get_db() const;
 
+      /// \brief Return a ref to the rel-db.
+      /// \warning It is incorrect to call this function when has_db() is false
+      rel_db& _get_non_const_db();
+
     public: // resource handling stuff:
       /// \brief reads and decode a resource.
       /// \note asynchronous
@@ -214,11 +251,38 @@ namespace neam::resources
         });
       }
 
+      /// \brief encode and write a resource.
+      /// \see write_raw_resource
+      /// \note resource serialization is done synchronously for now
+      template<concepts::Asset T>
+      status_chain write_resource(id_t rid, const T& res)
+      {
+        // serialize the resource:
+        status st = status::success;
+        raw_data data = T::to_raw_data(res, st);
+        if (st == status::failure)
+          return status_chain::create_and_complete(st);
+
+        return write_raw_resource(rid, std::move(data)).then([st](status final_status)
+        {
+          // propagate partial_success:
+          return worst(final_status, st);
+        });
+      }
+
     public: // raw resource handling stuff:
       /// \brief reads a raw resource.
       /// \note asynchronous
       /// \note only resources with flags::type_data can be read this way
       io::context::read_chain read_raw_resource(id_t rid);
+
+      /// \brief write a raw resource.
+      /// \note asynchronous
+      /// \note only resources with flags::whole_file are guaranteed to be always modifiable this way.
+      /// (FIXME: support writing to packed resources when the data size is the same or smaller)
+      /// \warning The index is not/must not be modified by this function. Compression flag will also be respected.
+      ///          If writing a resource would require an index modification to work, the operation will fail
+      status_chain write_raw_resource(id_t rid, raw_data&& data);
 
     public: // importing/packing:
       /// \brief (re)Import (process and pack) a resource from a file on disk. The file must be a valid, readable file.
@@ -243,12 +307,17 @@ namespace neam::resources
       /// \brief Where the source folder is
       std::filesystem::path source_folder;
 
+
     public: // resource removal
       /// \brief Handle the removal of a source file and all its related metadata/resources/subresources/pack files/...
       /// \note File must be relative to the source folder
       async::continuation_chain on_source_file_removed(const std::filesystem::path& file, bool reimport = false);
 
     public: // resource management
+      /// \brief Return the files that require a repack because of processor/packer version change
+      /// Should be called only once
+      std::set<std::filesystem::path> get_sources_needing_reimport() const;
+
       /// \brief Return the files present in the index but missing in 'state'
       std::set<std::filesystem::path> get_removed_sources(const std::deque<std::filesystem::path>& state) const
       {
@@ -259,14 +328,14 @@ namespace neam::resources
       std::set<std::filesystem::path> get_non_imported_sources(const std::deque<std::filesystem::path>& state) const
       {
         check::debug::n_assert(has_rel_db, "cannot return non imported sources without a rel db present");
-        return db.get_absent_resources(state);
+        return filter_files(db.get_absent_resources(state));
       }
 
       /// \brief consolidate a file list with files that are dependent (directly and indirectly) on them
       void consolidate_files_with_dependencies(std::set<std::filesystem::path>& file_list) const
       {
         check::debug::n_assert(has_rel_db, "cannot call to consolidate_files_with_dependencies without a rel db present");
-        return db.consolidate_files_with_dependencies(file_list);
+        return db.consolidate_files_with_dependencies(filter_files(file_list));
       }
 
       void consolidate_files_with_dependencies(const std::filesystem::path& file, std::set<std::filesystem::path>& file_list) const
@@ -275,11 +344,19 @@ namespace neam::resources
         return db.get_dependent_files(file, file_list);
       }
 
+      /// \brief Remove files that have extensions to be ignored
+      std::set<std::filesystem::path> filter_files(std::set<std::filesystem::path>&& files) const;
+      std::set<std::filesystem::path>& filter_files(std::set<std::filesystem::path>& files) const;
+
       raw_data _get_serialized_reldb() const
       {
         check::debug::n_assert(has_rel_db, "cannot call to _get_serialized_reldb without a rel db present");
         return db.serialize();
       }
+
+    public: // events:
+      // Called after an index has been loaded/reloaded. Called asynchronously.
+      cr::event<> on_index_loaded;
 
     private:
       status_chain reload_index(id_t index_id, id_t fid);
@@ -292,7 +369,7 @@ namespace neam::resources
       /// Other lines: files to map (relatives to the prefix directory)
       void apply_file_map(const file_map& fm, bool additive = false);
 
-  private:
+    private:
       static std::string get_prefix_from_filename(const std::string& name);
 
     private:
@@ -310,5 +387,7 @@ namespace neam::resources
       file_map current_file_map;
       rel_db db;
       bool has_rel_db = false;
+
+      resource_configuration configuration;
   };
 }

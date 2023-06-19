@@ -33,9 +33,15 @@
 namespace neam::resources
 {
   /// \brief Compress the data, result may be asynchronous / delegated to another thread
+  /// \note the result is not a valid XZ stream, but instead can only be decoded with uncompress
   async::chain<raw_data> compress(raw_data&& in, threading::task_manager* tm = nullptr, threading::group_t group = threading::k_invalid_task_group);
 
   /// \brief uncompress the data, result may be asynchronous / delegated to another thread
+  /// \note the input is not a valid XZ stream, but instead something that compress produced
   async::chain<raw_data> uncompress(raw_data&& in, threading::task_manager* tm = nullptr, threading::group_t group = threading::k_invalid_task_group);
+
+  /// \brief uncompress the data, result may be asynchronous / delegated to another thread
+  /// \note this version only takes valid XZ data stream
+  async::chain<raw_data> uncompress_raw_xz(raw_data&& in, threading::task_manager* tm = nullptr, threading::group_t group = threading::k_invalid_task_group);
 }
 

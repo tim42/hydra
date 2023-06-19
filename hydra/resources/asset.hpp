@@ -45,9 +45,6 @@ namespace neam::resources
   template<ct::string_holder IDName, typename BaseType, typename Helper = BaseType>
   class asset
   {
-    private:
-      using this_t = asset<IDName, BaseType, Helper>;
-
     public:
       static constexpr id_t asset_type = string_id(IDName);
       static constexpr decltype(IDName) type_name = IDName;
@@ -58,17 +55,6 @@ namespace neam::resources
 
       /// \brief Saves the asset to packed data
       static raw_data to_raw_data(const BaseType& data, status& st) { return Helper::to_raw_data(data, st); }
-/*
-      /// \brief Convert the resource to a packed asset
-      static std::vector<packer::data> pack_resource(id_t root_id, raw_data&& data, status& st) requires concepts::AssetSimplifiedPacking<BaseType>
-      {
-        BaseType asset = BaseType::from_resource_data(std::move(data), st);
-        if (st != status::success)
-          return {};
-        std::vector<packer::data> ret;
-        ret.push_back({root_id, Helper::to_raw_data(asset, st)});
-        return ret;
-      }*/
   };
 
   /// \brief Simpler asset whose memory can be dumped as-is (or memcpy'd)

@@ -26,11 +26,14 @@
 
 #pragma once
 
+#include <unordered_map>
+
 #include <ntools/id/id.hpp>
 #include <ntools/id/string_id.hpp>
 #include <ntools/rle/rle.hpp>
 #include <ntools/raw_data.hpp>
 
+#include <hydra/hydra_debug.hpp>
 
 namespace neam::resources
 {
@@ -60,6 +63,24 @@ namespace neam::resources
       return false;
     }
 
+    /// \brief Retrieve a stored type in the metadata map
+    template<typename T>
+    bool try_get(T& out) const
+    {
+      return try_get<T>(T::k_metadata_entry_id, out);
+    }
+
+    /// \brief Return an empty raw_data if there's no entry
+    /// \warning Duplicates the raw-data inside the metadata
+    raw_data get_raw_data(id_t id) const
+    {
+      if (auto it = data.find(id); it != data.end())
+      {
+        return it->second.duplicate();
+      }
+      return {};
+    }
+
     /// \brief Retrieve a stored type metadata in the metadata map
     bool try_get_serialization_metadata(id_t id, rle::serialization_metadata& out) const
     {
@@ -85,8 +106,21 @@ namespace neam::resources
       return true;
     }
 
+    void set_raw_data(id_t id, raw_data&& d)
+    {
+      data.emplace(id, std::move(d));
+      check::debug::n_check(serialization_metadata.contains(id), "Trying to add raw-data without having provided first metadata for the type, which is invalid");
+    }
+
+    void set_raw_data(id_t id, raw_data&& d, rle::serialization_metadata&& metadata)
+    {
+      data.emplace(id, std::move(d));
+      serialization_metadata.emplace(id, std::move(metadata));
+    }
+
     /// \brief Check whether the type is contained in the metadata map
     bool contains(id_t id) const { return data.contains(id); }
+    bool contains_metadata(id_t id) const { return serialization_metadata.contains(id); }
 
     /// \brief Removes an element from the metadata maps
     void erase(id_t id)
@@ -143,4 +177,72 @@ namespace neam::resources
     }
     return ret;
   }
+
+
+  // What will be saved in the rel-db for automatic retrieval of metadata information
+  // (so metadata types can only live in the packer shared object, but metadata stuff can still be added)
+  struct metadata_type_registration_t
+  {
+    rle::serialization_metadata type_metadata;
+
+    id_t entry_name_id;
+    std::string entry_name;
+    std::string description;
+  };
+
+  void register_metadata_type(metadata_type_registration_t&& type);
+  void unregister_metadata_type(id_t entry_name_id);
+
+  // NOTE: it is invalid to use the result of this function to _use_ the metadata_types.
+  // The intended way to retrieve metadata types NOT in the metadata object is via the rel-db in the resource context
+  //  (which is contextualized and will contain information that may not be in the current binary)
+  // Types in the metadata object should use the type-metadata embedded in the metadata object itself (for correct type versioning handling)
+  std::unordered_map<id_t, metadata_type_registration_t>& get_metadata_type_map();
+
+
+  /// \brief Base class for metadata entries. Allows for the registration of the class and edition of the metadata.
+  /// Metadata classes _should_ inherit from this class, but it's not mandatory.
+  template<typename Class>
+  class base_metadata_entry
+  {
+    public:
+      // type must be respected:
+      static constexpr ct::string k_metadata_entry_description = "";
+      static constexpr ct::string k_metadata_entry_name = ct::type_name<Class>;
+      static constexpr id_t k_metadata_entry_id = string_id(Class::k_metadata_entry_name);
+
+      static metadata_type_registration_t generate_type_metadata()
+      {
+        return metadata_type_registration_t
+        {
+          .type_metadata = rle::generate_metadata<Class>(),
+
+          .entry_name_id = k_metadata_entry_id,
+          .entry_name = std::string(Class::k_metadata_entry_name.str, Class::k_metadata_entry_name.size),
+          .description = std::string(Class::k_metadata_entry_description.str, Class::k_metadata_entry_description.size),
+        };
+      }
+
+    private: // handle auto-registration/unregistration
+      struct raii_register
+      {
+        raii_register() { register_metadata_type(generate_type_metadata()); }
+        ~raii_register() { unregister_metadata_type(k_metadata_entry_id); }
+      };
+      static inline raii_register _registration;
+
+      // force instantiation of the static member: (and avoid a warning)
+      static_assert(&_registration == &_registration);
+  };
 }
+
+N_METADATA_STRUCT(neam::resources::metadata_type_registration_t)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(type_metadata),
+    N_MEMBER_DEF(entry_name_id),
+    N_MEMBER_DEF(entry_name),
+    N_MEMBER_DEF(description)
+  >;
+};

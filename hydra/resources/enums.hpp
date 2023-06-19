@@ -27,7 +27,9 @@
 #pragma once
 
 #define N_ENUM_UNARY_OPERATOR(name, op) constexpr name operator op (name a) { return (name)(op std::to_underlying(a)); }
-#define N_ENUM_BINARY_OPERATOR(name, op) constexpr name operator op (name a, name b) { return (name)(std::to_underlying(a) op std::to_underlying(b)); }
+#define N_ENUM_BINARY_OPERATOR(name, op) \
+          constexpr name operator op (name a, name b) { return (name)(std::to_underlying(a) op std::to_underlying(b)); } \
+          constexpr name& operator op##= (name& a, name b) { a = (name)(std::to_underlying(a) op std::to_underlying(b)); return a;}
 
 namespace neam::resources
 {
@@ -36,9 +38,10 @@ namespace neam::resources
     // Complete failure:
     failure,
 
-    // Not a complete failure.
+    // Not a complete failure, not a complete success.
     // Data has been produced and can be used, but there were some issues
-    // (for an index, partial_success could be "we received the file, but some entries were rejected as they were invalid")
+    // (for an index, partial_success could be "we received the file and could decode it, but some entries were rejected as they were invalid")
+    // Ultimately, whether partial_success is to be treated as a success or a failure is dependent on the receiver, hence the presence of this third state
     partial_success,
 
     // Complete success

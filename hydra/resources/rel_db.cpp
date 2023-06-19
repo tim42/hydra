@@ -28,6 +28,11 @@
 
 namespace neam::resources
 {
+  void rel_db::force_assign_registered_metadata_types()
+  {
+    metadata_types = get_metadata_type_map();
+  }
+
   std::set<id_t> rel_db::get_pack_files(const std::string& file) const
   {
     std::set<id_t> ret;
@@ -59,6 +64,16 @@ namespace neam::resources
     std::lock_guard _sl(spinlock_shared_adapter::adapt(lock));
     get_resources_unlocked(file, ret, include_files_id);
     return ret;
+  }
+
+  std::set<id_t> rel_db::get_referenced_metadata_types(const std::string& file) const
+  {
+    std::lock_guard _sl(spinlock_shared_adapter::adapt(lock));
+    if (auto it = files_resources.find(file); it != files_resources.end())
+    {
+      return it->second.referenced_metadata_types;
+    }
+    return {};
   }
 
   void rel_db::get_resources_unlocked(const std::string& file, std::set<id_t>& ret, bool include_files_id) const
@@ -155,6 +170,64 @@ namespace neam::resources
     return ret;
   }
 
+  std::set<std::filesystem::path> rel_db::get_files_requiring_reimport(const std::set<id_t>& processors, const std::set<id_t>& packers) const
+  {
+    std::lock_guard _sl(spinlock_shared_adapter::adapt(lock));
+
+    // first go over the files and check for processor changes
+    std::set<std::filesystem::path> ret;
+    for (const auto& it : files_resources)
+    {
+      if (!processors.contains(it.second.processor_hash) && it.second.processor_hash != id_t::none)
+      // if (!processors.contains(it.second.processor_hash) || it.second.processor_hash == id_t::none)
+      {
+        // found a processor change
+        ret.emplace(get_root_file_unlocked(it.first));
+      }
+    }
+
+    // go over all the root resources and check for packer changes
+    for (const auto& it : root_resources)
+    {
+      if (!packers.contains(it.second.packer_hash) || it.second.packer_hash == id_t::none)
+      {
+        // found a processor change (slow)
+        ret.emplace(get_root_file_unlocked(it.first));
+      }
+    }
+
+    return ret;
+  }
+
+  std::string rel_db::get_root_file_unlocked(const std::string& file) const
+  {
+    const std::string* it = &file;
+
+    while (true)
+    {
+      if (auto fit = files_resources.find(*it); fit != files_resources.end())
+      {
+        if (fit->second.parent_file.empty())
+          break;
+
+        it = &fit->second.parent_file;
+        continue;
+      }
+      break;
+    }
+    return *it;
+  }
+
+  std::string rel_db::get_root_file_unlocked(id_t root_res) const
+  {
+    for (const auto& it : files_resources)
+    {
+      if (it.second.child_resources.contains(root_res))
+        return get_root_file_unlocked(it.first);
+    }
+    return {};
+  }
+
   raw_data rel_db::serialize() const
   {
     std::lock_guard _sl(spinlock_shared_adapter::adapt(lock));
@@ -201,7 +274,7 @@ namespace neam::resources
   {
     std::lock_guard _el(spinlock_exclusive_adapter::adapt(lock));
     files_resources[parent_file].child_resources.insert(root_resource);
-    root_resources.insert_or_assign(root_resource, root_resource_info_t{});
+    root_resources.insert_or_assign(root_resource, root_resource_info_t{ .parent_file = parent_file });
   }
 
   void rel_db::add_resource(id_t root_resource, id_t child_resource)
@@ -215,6 +288,12 @@ namespace neam::resources
   {
     std::lock_guard _el(spinlock_exclusive_adapter::adapt(lock));
     root_resources[root_resource].pack_file = pack_file_id;
+  }
+
+  void rel_db::set_packer_for_resource(id_t root_resource, id_t packer_hash)
+  {
+    std::lock_guard _el(spinlock_exclusive_adapter::adapt(lock));
+    root_resources[root_resource].packer_hash = packer_hash;
   }
 
   void rel_db::remove_file(const std::string& file)
@@ -268,6 +347,8 @@ namespace neam::resources
       // we grab a ref to the entry
       file_info_t& entry = it->second;
 
+      entry.referenced_metadata_types.clear();
+
       // remove the depndencies: (only file -> other files)
       for (auto& it : entry.depend_on)
       {
@@ -304,11 +385,52 @@ namespace neam::resources
     }
   }
 
+  void rel_db::reference_metadata_type(const std::string& file, id_t metadata_type)
+  {
+    std::lock_guard _el(spinlock_exclusive_adapter::adapt(lock));
+    return reference_metadata_type_unlocked(file, metadata_type);
+  }
+
+  void rel_db::reference_metadata_type(id_t root_resource, id_t metadata_type)
+  {
+    std::lock_guard _el(spinlock_exclusive_adapter::adapt(lock));
+    return reference_metadata_type_unlocked(root_resource, metadata_type);
+  }
+
+  void rel_db::reference_metadata_type_unlocked(const std::string& file, id_t metadata_type)
+  {
+    if (auto it = files_resources.find(file); it != files_resources.end())
+    {
+      it->second.referenced_metadata_types.insert(metadata_type);
+
+      // propagate the change to parent files (FIXME: is it needed??)
+      // if (!it->second.parent_file.empty())
+        // return reference_metadata_type_unlocked(it->second.parent_file, metadata_type);
+    }
+  }
+
+  void rel_db::reference_metadata_type_unlocked(id_t root_resource, id_t metadata_type)
+  {
+    if (auto it = root_resources.find(root_resource); it != root_resources.end())
+    {
+      return reference_metadata_type_unlocked(it->second.parent_file, metadata_type);
+    }
+  }
+
   rel_db::message_list_t rel_db::get_messages(id_t rid) const
   {
     std::lock_guard _sl(spinlock_shared_adapter::adapt(lock));
     if (auto it = resources_messages.find(rid); it != resources_messages.end())
       return it->second;
+    return {};
+  }
+
+  metadata_type_registration_t rel_db::get_type_metadata(id_t type_id) const
+  {
+    if (auto it = metadata_types.find(type_id); it != metadata_types.end())
+    {
+      return it->second;
+    }
     return {};
   }
 
@@ -324,7 +446,7 @@ namespace neam::resources
 
   void rel_db::resource_name(id_t rid, std::string name)
   {
-    std::lock_guard _sl(spinlock_shared_adapter::adapt(lock));
+    std::lock_guard _sl(spinlock_exclusive_adapter::adapt(lock));
     resources_names[rid] = std::move(name);
   }
 

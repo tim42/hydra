@@ -25,14 +25,64 @@
 //
 
 #include "context.hpp"
+
 #include "packer.hpp"
 #include "processor.hpp"
 #include "file_map.hpp"
 #include "compressor.hpp"
 #include "mimetype/mimetype.hpp"
+
 #include <hydra/engine/core_context.hpp>
 
+#include <ntools/macro.hpp>
+#include <ntools/ct_string.hpp>
+
 #include <filesystem>
+
+namespace neam::resources
+{
+  // base resource metadata type: (currently private as it's only for internal use)
+  struct default_resource_metadata_t : public base_metadata_entry<default_resource_metadata_t>
+  {
+    static constexpr ct::string k_metadata_entry_description = "generic metadata used by the resource subsystem";
+    static constexpr ct::string k_metadata_entry_name = "resource_metadata";
+
+
+    bool strip_from_final_build = false;
+    bool embed_in_index = false;
+    bool skip_compression = false;
+  };
+}
+
+N_METADATA_STRUCT(neam::resources::default_resource_metadata_t)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(strip_from_final_build, neam::metadata::info{.description = c_string_t
+      <
+      "Whether this resource should be completely removed from the final build.\n"
+      "Please note that no reference check is done, and the resource is forcefully stripped from the data."
+      >}),
+    N_MEMBER_DEF(embed_in_index, neam::metadata::info{.description = c_string_t
+      <
+      "Whether this resource should be placed directly in the index instead of in a pack file\n"
+      "Doing so will increase the size of the index and will force the resources to always be loaded in memory\n"
+      "This also make sure that no filesystem access is needed to retrieve the resource\n"
+      "The default behavior (if false) is controlled by N_RES_MAX_SIZE_TO_EMBED (currently: " N_EXP_STRINGIFY(N_RES_MAX_SIZE_TO_EMBED) "b)."
+      >}),
+    N_MEMBER_DEF(skip_compression, neam::metadata::info{.description = c_string_t
+      <
+      "Whether this resource should skip compression.\n"
+      "Note that only resources bigger than " N_EXP_STRINGIFY(N_RES_MAX_SIZE_TO_COMPRESS) " bytes will be considered for compression\n"
+#if !N_RES_LZMA_COMPRESSION
+      "\n"
+      "NOTE: LZMA compression disabled, flag will not do anything as everything will skip compression.\n"
+      "Flag will be saved an honored when compression is enabled in the build.\n"
+#endif
+      >})
+  >;
+};
+
 
 namespace neam::resources
 {
@@ -42,14 +92,16 @@ namespace neam::resources
     return p.remove_filename();
   }
 
-  context::status_chain context::boot(id_t boot_index_id, id_t _index_file_id, unsigned max_depth)
+  context::status_chain context::boot(id_t boot_index_id, id_t _index_file_id, unsigned max_depth, bool reload)
   {
-    prefix = io_context.get_prefix_directory();
-    root = {};
-    has_index = false;
-    has_rel_db = false;
-    index_file_id = id_t::invalid;
-
+    if (!reload)
+    {
+      prefix = io_context.get_prefix_directory();
+      root = {};
+      has_index = false;
+      has_rel_db = false;
+      index_file_id = id_t::invalid;
+    }
     neam::cr::out().debug("boot: using base prefix: {}", prefix);
 
 
@@ -68,6 +120,8 @@ namespace neam::resources
           else
             neam::cr::out().warn("index does not possess a self-reference, index reload might not be possible");
 
+          configuration = {}; // reset the conf
+
           const index::entry reldb_entry = root.get_entry(k_reldb_index);
           const id_t reldb_fid = reldb_entry.pack_file;
           if (!reldb_entry.is_valid() || !io_context.is_file_mapped(reldb_fid))
@@ -76,9 +130,18 @@ namespace neam::resources
             return status_chain::create_and_complete(index_st);
           }
 
-          neam::cr::out().debug("index loaded, trying to load rel-db file...");
+          neam::cr::out().debug("index loaded, trying to load configuration and rel-db file...");
 
-          return io_context.queue_read(reldb_fid, 0, io::context::whole_file)
+          // NOTE: we only load the conf if there's a chance to have a rel-db
+          auto conf_chain =
+#if N_STRIP_DEBUG
+          ctx.hconf.read_conf(configuration, k_configuration_name)
+#else
+          ctx.hconf.read_or_create_conf(configuration, std::string(k_configuration_name.get_string_view()))
+#endif
+          .then([](bool res) { return res ? status::success : status::failure; });
+
+          auto rel_db_chain = io_context.queue_read(reldb_fid, 0, io::context::whole_file)
           .then([this, reldb_fid, index_st](raw_data&& file, bool success)
           {
             status final_status = index_st;
@@ -102,8 +165,20 @@ namespace neam::resources
               neam::cr::out().error("{}: rel-db file does not exist (please use strip_repack to strip unused resources)", io_context.get_filename(reldb_fid));
               has_rel_db = false;
             }
-            neam::cr::out().log("Boot process completed.");
+
             return status_chain::create_and_complete(final_status);
+          });
+
+          return async::multi_chain(status::success, cr::construct<std::vector>(std::move(conf_chain), std::move(rel_db_chain)), [](status& state, status add)
+          {
+            state = worst(state, add);
+          }).then([this](status st)
+          {
+            // send the event:
+            ctx.tm.get_task([this]() { on_index_loaded(); });
+
+            neam::cr::out().log("Boot process completed.");
+            return st;
           });
         }
         if (initial_index_file.pack_file == index_file_id)
@@ -131,6 +206,9 @@ namespace neam::resources
       }
 
       neam::cr::out().warn("Index does not match the bootable index format. Stopping the boot process with partial success.");
+
+      // send the event:
+      ctx.tm.get_task([this]() { on_index_loaded(); });
 
       return status_chain::create_and_complete(worst(index_st, status::partial_success));
     });
@@ -340,11 +418,20 @@ namespace neam::resources
     return db;
   }
 
+  rel_db& context::_get_non_const_db()
+  {
+    check::debug::n_assert(has_rel_db, "refusing to give a db when no db present");
+    return db;
+  }
+
   io::context::read_chain context::read_raw_resource(id_t rid)
   {
     const index::entry entry = root.get_entry(rid);
-    if (!entry.is_valid() || ((entry.flags & flags::type_mask) != flags::type_data))
+    if (!root.has_entry(rid) || !entry.is_valid() || ((entry.flags & flags::type_mask) != flags::type_data))
+    {
+      cr::out().warn("failed to load resource: {}: resource does not exist or is not a data resource", resource_name(rid));
       return io::context::read_chain::create_and_complete({}, false);
+    }
 
     // check for embedded data, as it's data already in memory
     if ((entry.flags & flags::embedded_data) != flags::none)
@@ -352,6 +439,7 @@ namespace neam::resources
       if (raw_data* data = root.get_embedded_data(rid); data != nullptr)
       {
         // duplicate and return the data
+        cr::out().debug("loaded resource: {} [size: {}b] (from embedded data)", resource_name(rid), data->size);
         return io::context::read_chain::create_and_complete(raw_data::duplicate(*data), true);
       }
       else
@@ -362,14 +450,17 @@ namespace neam::resources
     }
 
     if (!io_context.is_file_mapped(entry.pack_file))
+    {
+      cr::out().warn("failed to load resource: {}: pack file is not in the file-map", resource_name(rid));
       return io::context::read_chain::create_and_complete({}, false);
+    }
 
     return io_context.queue_read(entry.pack_file, entry.offset,
                                  (entry.flags & flags::standalone_file) != flags::none ? io::context::whole_file : entry.size)
            .then([rid, this](raw_data && data, bool success)
     {
       if (!success)
-        cr::out().warn("failed to load resource: {}", resource_name(rid));
+        cr::out().warn("failed to load resource: {} (read failed)", resource_name(rid));
       else
         cr::out().debug("loaded resource: {} [size: {}b]", resource_name(rid), data.size);
 
@@ -396,6 +487,55 @@ namespace neam::resources
       return io::context::read_chain::create_and_complete({}, status::failure);
 #endif // N_RES_LZMA_COMPRESSION
     });
+  }
+
+  context::status_chain context::write_raw_resource(id_t rid, raw_data&& data)
+  {
+    const index::entry entry = root.get_entry(rid);
+    if (!root.has_entry(rid) || !entry.is_valid() || ((entry.flags & flags::type_mask) != flags::type_data))
+    {
+      cr::out().warn("failed to write resource: {}: resource does not exist or is not a data resource", resource_name(rid));
+      return status_chain::create_and_complete(status::failure);
+    }
+
+    // check for embedded data, as it's invalid (would require an index modification)
+    if ((entry.flags & flags::embedded_data) != flags::none)
+    {
+      cr::out().warn("failed to write resource: {}: resource is an embedded resource (would require index modification)", resource_name(rid));
+      return status_chain::create_and_complete(status::failure);
+    }
+
+    // FIXME: support other modes of resources:
+    if ((entry.flags & flags::standalone_file) != flags::none)
+    {
+      // uncompressed resources are simply written as is for now:
+      if ((entry.flags & flags::compressed) == flags::none)
+      {
+        return io_context.queue_write(rid, 0, std::move(data)).then([](bool success)
+        {
+          return success ? status::success : status::failure;
+        });
+      }
+      else
+      {
+#if N_RES_LZMA_COMPRESSION
+        return compress(std::move(data), &ctx.tm, threading::k_non_transient_task_group)
+        .then([this, rid](raw_data&& data)
+        {
+          return io_context.queue_write(rid, 0, std::move(data)).then([](bool success)
+          {
+            return success ? status::success : status::failure;
+          });
+        });
+#else
+      cr::out().warn("failed to write resource: {}: resource is to be compressed, but engine is built without LZMA support", resource_name(rid));
+      return status_chain::create_and_complete(status::failure);
+#endif
+      }
+    }
+
+    cr::out().warn("failed to write resource: {}: resource is not a flags::standalone_file. Currently only standalone_file can be written to.", resource_name(rid));
+    return status_chain::create_and_complete(status::failure);
   }
 
   context::status_chain context::reload_index(id_t index_id, id_t fid)
@@ -508,6 +648,20 @@ namespace neam::resources
   {
     check::debug::n_assert(has_rel_db, "refusing to import resources without a rel db present");
 
+    // check for excluded resources (by extension):
+    {
+      const std::string extension = resource.extension();
+      for (const auto& it : configuration.extensions_to_ignore)
+      {
+        if (it == extension)
+        {
+          cr::out().debug("import_resource: skipping import for file: {}: extension is in the list of files to ignore", resource.c_str());
+          // indicate success as nothing has failed
+          return status_chain::create_and_complete(status::success);
+        }
+      }
+    }
+
     std::filesystem::path meta_resource = resource;
     meta_resource += k_metadata_extension;
 
@@ -593,6 +747,29 @@ namespace neam::resources
   {
     check::debug::n_assert(has_rel_db, "refusing to import resources without a rel db present");
 
+    // FIXME: maybe somewhere else:
+    // check for mimetype and extension:
+    {
+      const std::string mimetype = mime::get_mimetype(data);
+      const std::string extension = resource.extension();
+      for (const auto& it : configuration.extensions_to_ignore)
+      {
+        if (it == mimetype)
+        {
+          cr::out().debug("import_resource: skipping import for file: {}: mime type ({}) is in the list of types to ignore", resource.c_str(), mimetype);
+          // indicate success as nothing has failed
+          return status_chain::create_and_complete(status::success);
+        }
+        if (it == extension)
+        {
+          cr::out().debug("import_resource: skipping import for file: {}: extension is in the list of files to ignore", resource.c_str());
+          // indicate success as nothing has failed
+          return status_chain::create_and_complete(status::success);
+        }
+      }
+
+    }
+
     cr::out().debug("import_resource: importing resource: {}", resource.c_str());
 
     // we got our processor:
@@ -609,12 +786,16 @@ namespace neam::resources
           cr::out().warn("import_resource: resource {}: could not find a processor (mimetype: {}, extension: {})",
                          resource.c_str(), mime::get_mimetype(data), resource.extension().c_str());
         }
+
+        db.set_processor_for_file(resource, id_t::none);
+
         // failure to find a processor does not indicate a failure state
         // it just means the resource is unknown
         state.complete({}, status::success);
         return;
       }
 
+      db.set_processor_for_file(resource, processor::get_processor_hash(data, resource));
       proc(ctx, {resource, std::move(data), std::move(metadata), db}).use_state(state);
     });
     return chn.then([=, this](processor::processed_data&& pd, status s)
@@ -664,6 +845,8 @@ namespace neam::resources
     const string_id res_id = proc_data.resource_id;
 
     const packer::function pack = packer::get_packer(proc_data.resource_type);
+    const id_t packer_hash = packer::get_packer_hash(proc_data.resource_type);
+
     if (pack == nullptr)
     {
       cr::out().error("pack_resource: resource {}: failed to find packer for type: {}", resource_name(proc_data.resource_id), proc_data.resource_type);
@@ -706,8 +889,11 @@ namespace neam::resources
 
       for (uint32_t i = 0; i < v.size(); ++i)
       {
+        default_resource_metadata_t resource_metadata;
+        v[i].metadata.try_get<default_resource_metadata_t>(resource_metadata);
+
 #if N_RES_LZMA_COMPRESSION
-        if (v[i].data.size > N_RES_MAX_SIZE_TO_COMPRESS)
+        if (v[i].data.size > N_RES_MAX_SIZE_TO_COMPRESS && (v[i].mode == packer::mode_t::data) && !resource_metadata.skip_compression)
         {
           // compress
           compress_chains.push_back(compress(std::move(v[i].data), &ctx.tm, threading::k_non_transient_task_group)
@@ -738,6 +924,8 @@ namespace neam::resources
       const id_t pack_file = io_context.map_file(filename);
 
       db.set_pack_file(res_id, pack_file);
+      db.set_packer_for_resource(res_id, packer_hash);
+      db.reference_metadata_type<default_resource_metadata_t>(res_id);
       for (auto& it : v)
         db.add_resource(res_id, it.data.id);
 
@@ -766,76 +954,100 @@ namespace neam::resources
         static_assert(N_RES_MAX_SIZE_TO_EMBED > 0, "N_RES_MAX_SIZE_TO_EMBED must be > 0");
 
         auto& pack_data = it.data;
+        default_resource_metadata_t resource_metadata;
+        pack_data.metadata.try_get<default_resource_metadata_t>(resource_metadata);
+
+        flags extra_flags = flags::none;
+        if (resource_metadata.strip_from_final_build)
+          extra_flags |= flags::to_strip;
+
+        if (pack_data.id == id_t::none || pack_data.id == id_t::invalid)
+        {
+          cr::out().error("pack_resource: sub-resource of pack-file: {} has an invalid resource-id", filename);
+          continue;
+        }
         db.add_resource(res_id, pack_data.id);
 
-        // save the resource + add it to the index:
-        if (pack_data.data.size > N_RES_MAX_SIZE_TO_EMBED)
+        if (pack_data.mode == packer::mode_t::data)
         {
-          const uint64_t sz = pack_data.data.size;
-          const uint64_t file_offset = offset;
-          offset += sz;
-
-          // write to disk:
-          chains.emplace_back(io_context.queue_write(pack_file, file_offset, std::move(pack_data.data), false)
-            .then([=, this, id = pack_data.id, is_compressed = it.is_compressed](bool success)
+          // save the resource + add it to the index:
+          if (pack_data.data.size > N_RES_MAX_SIZE_TO_EMBED && !resource_metadata.embed_in_index)
           {
-            if (!success)
-            {
-              cr::out().error("pack_resource: failed to write sub-resource to pack-file: {} (sub resource: {})", filename, resource_name(id));
-              return status_chain::create_and_complete(status::failure);
-            }
+            const uint64_t sz = pack_data.data.size;
+            const uint64_t file_offset = offset;
+            offset += sz;
 
+            // write to disk:
+            chains.emplace_back(io_context.queue_write(pack_file, file_offset, std::move(pack_data.data), false)
+              .then([=, this, id = pack_data.id, is_compressed = it.is_compressed](bool success)
+            {
+              if (!success)
+              {
+                cr::out().error("pack_resource: failed to write sub-resource to pack-file: {} (sub resource: {})", filename, resource_name(id));
+                return status_chain::create_and_complete(status::failure);
+              }
+
+              const bool index_success = root.add_entry(index::entry
+              {
+                .id = id,
+                .flags = flags::type_data | extra_flags | (is_compressed ? flags::compressed : flags::none),
+                .pack_file = pack_file,
+                .offset = file_offset,
+                .size = sz,
+              });
+              return status_chain::create_and_complete(index_success ? status::success : status::failure);
+            }));
+          }
+          else // size <= N_RES_MAX_SIZE_TO_EMBED
+          {
+            // entries of size 0 should always be embedded (it's a smaller footprint than a full index entry):
+            // having max size to embed being too big may cause memory issues as those resources will always be in memory
             root.add_entry(index::entry
             {
-              .id = id,
-              .flags = flags::type_data | (is_compressed ? flags::compressed : flags::none),
-              .pack_file = pack_file,
-              .offset = file_offset,
-              .size = sz,
-            });
-            return status_chain::create_and_complete(status::success);
-          }));
-        }
-        else // size <= N_RES_MAX_SIZE_TO_EMBED
-        {
-          // entries of size 0 should always be embedded (it's a smaller footprint than a full index entry):
-          // having max size to embed being too big may cause memory issues as those resources will always be in memory
-          root.add_entry(index::entry
-          {
-            .id = pack_data.id,
-            .flags = flags::type_data | flags::embedded_data | (it.is_compressed ? flags::compressed : flags::none),
-          }, std::move(pack_data.data));
-        }
+              .id = pack_data.id,
+              .flags = flags::type_data | extra_flags | flags::embedded_data | (it.is_compressed ? flags::compressed : flags::none),
+            }, std::move(pack_data.data));
+          }
 
-        // save/remove the metadata file:
-        if (pack_data.metadata.file_id != id_t::invalid)
+          // save/remove the metadata file:
+          if (pack_data.metadata.file_id != id_t::invalid)
+          {
+            if (pack_data.metadata.empty())
+            {
+              if (pack_data.metadata.initial_hash != id_t::none)
+              {
+                chains.push_back(io_context.queue_deferred_remove(pack_data.metadata.file_id)
+                .then([](bool)
+                {
+                  // we don't care about whether we succeded or not (the file might not even exist)
+                  return status::success;
+                }));
+              }
+            }
+            else
+            {
+              // write the metadata, but only if it has chanegd
+              raw_data raw_metadata = rle::serialize(pack_data.metadata);
+              const id_t final_hash = (id_t)ct::hash::fnv1a<64>((const uint8_t*)raw_metadata.data.get(), raw_metadata.size);
+              if (final_hash != pack_data.metadata.initial_hash)
+              {
+                chains.push_back(io_context.queue_write(pack_data.metadata.file_id, 0, std::move(raw_metadata))
+                .then([](bool res)
+                {
+                  return res ? status::success : status::failure;
+                }));
+              }
+            }
+          }
+        }
+        else if (pack_data.mode == packer::mode_t::simlink)
         {
-          if (pack_data.metadata.empty())
-          {
-            if (pack_data.metadata.initial_hash != id_t::none)
+            root.add_entry(index::entry
             {
-              chains.push_back(io_context.queue_deferred_remove(pack_data.metadata.file_id)
-              .then([](bool)
-              {
-                // we don't care about whether we succeded or not (the file might not even exist)
-                return status::success;
-              }));
-            }
-          }
-          else
-          {
-            // write the metadata, but only if it has chanegd
-            raw_data raw_metadata = rle::serialize(pack_data.metadata);
-            const id_t final_hash = (id_t)ct::hash::fnv1a<64>((const uint8_t*)raw_metadata.data.get(), raw_metadata.size);
-            if (final_hash != pack_data.metadata.initial_hash)
-            {
-              chains.push_back(io_context.queue_write(pack_data.metadata.file_id, 0, std::move(raw_metadata))
-              .then([](bool res)
-              {
-                return res ? status::success : status::failure;
-              }));
-            }
-          }
+              .id = pack_data.id,
+              .flags = flags::type_simlink | extra_flags,
+              .pack_file = pack_data.simlink_to_id,
+            }, std::move(pack_data.data));
         }
       }
 
@@ -877,6 +1089,48 @@ namespace neam::resources
     {
       remove_from_file_map(packs);
     });
+  }
+
+  std::set<std::filesystem::path> context::get_sources_needing_reimport() const
+  {
+    check::debug::n_assert(has_rel_db, "cannot return sources needing reimport without a rel db present");
+    return filter_files(db.get_files_requiring_reimport(processor::get_processor_hashs(), packer::get_packer_hashs()));
+  }
+
+  std::set<std::filesystem::path> context::filter_files(std::set<std::filesystem::path>&& files) const
+  {
+    for (auto it = files.begin(); it != files.end();)
+    {
+      const std::string extension = it->extension();
+      for (const auto& ext : configuration.extensions_to_ignore)
+      {
+        if (ext == extension)
+        {
+          it = files.erase(it);
+          continue;
+        }
+      }
+      ++it;
+    }
+    return files;
+  }
+
+  std::set<std::filesystem::path>& context::filter_files(std::set<std::filesystem::path>& files) const
+  {
+    for (auto it = files.begin(); it != files.end();)
+    {
+      const std::string extension = it->extension();
+      for (const auto& ext : configuration.extensions_to_ignore)
+      {
+        if (ext == extension)
+        {
+          it = files.erase(it);
+          continue;
+        }
+      }
+      ++it;
+    }
+    return files;
   }
 }
 

@@ -111,6 +111,8 @@ namespace neam::resources::processor
   function _get_processor(id_t id);
   id_t _get_processor_hash(id_t id);
 
+  const std::set<id_t>& get_processor_hashs();
+
   /// \brief Basic processor that simply forwards data to a packer:
   /// for example:
   ///   processors::register_processor("file-ext:.txt"_rid, "passthrough"_rid, basic_processor<"raw-data">);
@@ -120,7 +122,6 @@ namespace neam::resources::processor
     const std::string pstr = input.file;
     const string_id id = string_id::_runtime_build_from_string(pstr.c_str(), pstr.size());
     input.db.resource_name(id, pstr);
-    input.db.set_processor_for_file(pstr, string_id(IDPacker));
 
     std::vector<data> to_pack;
     to_pack.push_back(

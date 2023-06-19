@@ -22,10 +22,20 @@ namespace neam::resources::processor
     static std::unordered_map<id_t, processor_map_entry_t> map;
     return map;
   }
+  static std::set<id_t>& get_processor_hash_set()
+  {
+    static std::set<id_t> set;
+    return set;
+  }
 
   bool register_processor(id_t name_id, id_t version_hash, function processor)
   {
     get_processor_map().insert_or_assign(name_id, processor_map_entry_t{processor, version_hash});
+
+    if (version_hash == id_t::none)
+      cr::out().warn("register_processor: processor {} doesn't have a version hash: resources will be treated as always dirty.", name_id);
+
+    get_processor_hash_set().emplace(version_hash);
     return true;
   }
 
@@ -76,5 +86,10 @@ namespace neam::resources::processor
     if (auto it = get_processor_map().find(id); it != get_processor_map().end())
       return it->second.hash;
     return id_t::invalid;
+  }
+
+  const std::set<id_t>& get_processor_hashs()
+  {
+    return get_processor_hash_set();
   }
 }
