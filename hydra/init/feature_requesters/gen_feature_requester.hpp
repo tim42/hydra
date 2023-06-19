@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2530138312652924671_396823700_GEN_FEATURE_REQUESTER_HPP__
-#define __N_2530138312652924671_396823700_GEN_FEATURE_REQUESTER_HPP__
+#pragma once
+
 
 #include <list>
 #include <string>
@@ -96,7 +96,7 @@ namespace neam
         /// \brief Require for specific device layers
         void require_device_layers(std::initializer_list<std::string> list)
         {
-          device_layers.insert(device_extensions.end(), list.begin(), list.end());
+          device_layers.insert(device_layers.end(), list.begin(), list.end());
         }
         /// \brief Require for a specific device layer
         void require_device_layer(std::string layer)
@@ -117,7 +117,7 @@ namespace neam
             can_be_shared
           });
 
-          temporary_ids.push_back(0);
+          temporary_ids.push_back(~temp_queue_familly_id_t(0));
           return &temporary_ids.back();
         }
 
@@ -132,7 +132,7 @@ namespace neam
             can_be_shared
           });
 
-          temporary_ids.push_back(0);
+          temporary_ids.push_back(~temp_queue_familly_id_t(0));
           return &temporary_ids.back();
         }
 
@@ -184,5 +184,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_2530138312652924671_396823700_GEN_FEATURE_REQUESTER_HPP__
+
 

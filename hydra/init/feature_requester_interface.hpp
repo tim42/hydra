@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_19988267012501112031_521026960_FEATURE_REQUESTER_INTERFACE_HPP__
-#define __N_19988267012501112031_521026960_FEATURE_REQUESTER_INTERFACE_HPP__
+#pragma once
+
 
 namespace neam
 {
@@ -54,4 +54,4 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_19988267012501112031_521026960_FEATURE_REQUESTER_INTERFACE_HPP__
+

@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_7880295321249221110_2854922646_HYDRA_DEVICE_CREATOR_HPP__
-#define __N_7880295321249221110_2854922646_HYDRA_DEVICE_CREATOR_HPP__
+#pragma once
+
 
 #include <string>
 #include <vector>
@@ -71,16 +71,23 @@ namespace neam
         /// aplication
         bool check_device(vk::instance& instance, const vk::physical_device &gpu) const
         {
+          cr::out().debug("found gpu: {} (type: {})", gpu.get_name(), (uint32_t)gpu.get_type());
           // check features
           if (requested_features.check_against(gpu.get_features()) == false)
+          {
+            cr::out().debug("  rejecting gpu {}: missing requested features", gpu.get_name(), (uint32_t)gpu.get_type());
             return false;
+          }
 
           // check limits
           const VkPhysicalDeviceLimits &device_limits = gpu.get_limits();
           for (auto &checker : device_limit_checkers)
           {
             if (!checker(device_limits))
+            {
+              cr::out().debug("  rejecting gpu {}: app does not fit in device limits", gpu.get_name(), (uint32_t)gpu.get_type());
               return false;
+            }
           }
 
           // check layers (this not optimal)
@@ -96,7 +103,10 @@ namespace neam
               }
             }
             if (!ok)
+            {
+              cr::out().debug("  rejecting gpu {}: missing layer", gpu.get_name());
               return false;
+            }
           }
 
           // check extensions (this not optimal)
@@ -112,7 +122,10 @@ namespace neam
               }
             }
             if (!ok)
+            {
+              cr::out().debug("  rejecting gpu {}: missing extension", gpu.get_name());
               return false;
+            }
           }
 
           // init queues
@@ -128,7 +141,7 @@ namespace neam
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
               if ((qfp.queueFlags & it.flags) == it.flags && it.checker(instance, i, gpu)
-                  && qfp.queueCount > queue_consumption[i])
+                  /*&& qfp.queueCount > queue_consumption[i]*/)
               {
                 ++queue_consumption[i];
                 found = true;
@@ -136,7 +149,10 @@ namespace neam
               }
             }
             if (!found)
+            {
+              cr::out().debug("  rejecting gpu {}: missing requested shared queue", gpu.get_name());
               return false;
+            }
           }
           // non-shared queues
           for (const queue_caps &it : unique_queue_caps)
@@ -146,7 +162,7 @@ namespace neam
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
               if ((qfp.queueFlags & it.flags) == it.flags && it.checker(instance, i, gpu)
-                  && qfp.queueCount > queue_consumption[i])
+                  /*&& qfp.queueCount > queue_consumption[i]*/)
               {
                 ++queue_consumption[i];
                 found = true;
@@ -154,17 +170,26 @@ namespace neam
               }
             }
             if (!found)
+            {
+              cr::out().debug("  rejecting gpu {}: missing requested queue (flags: {:X})", gpu.get_name(), (uint32_t)it.flags);
               return false;
+            }
           }
 
           // done, everything matched
           return true;
         }
 
+        enum filter_device_preferences
+        {
+          prefer_discrete_gpu,
+          prefer_integrated_gpu,
+        };
+
         /// \brief Return the list of devices that are compatible with the
         /// requirements of the application
         /// \note the result is a vector of device sorted from discrete/dedicated to integrated to others
-        std::vector<vk::physical_device> filter_devices() const
+        std::vector<vk::physical_device> filter_devices(filter_device_preferences prefs = prefer_discrete_gpu) const
         {
           std::vector<vk::physical_device> result;
           result.reserve(instance.get_device_count());
@@ -178,8 +203,8 @@ namespace neam
 
           std::map<VkPhysicalDeviceType, int> prios
           ({
-            {VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU, 5},
-            {VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU, 4},
+            {VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU, 4 + (prefs == prefer_discrete_gpu ? 1 : 0)},
+            {VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU, 4 + (prefs == prefer_integrated_gpu ? 1 : 0)},
 
             {VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU, 2},
             {VK_PHYSICAL_DEVICE_TYPE_CPU, 1},
@@ -319,39 +344,65 @@ namespace neam
           // shared queues
           for (const queue_caps &it : shared_queue_caps)
           {
+            bool found = false;
+            uint32_t best_match = 0;
+            uint32_t best_match_popcnt = 100;
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
               if ((qfp.queueFlags & it.flags) == it.flags && it.checker(instance, i, gpu)
                   && qfp.queueCount > queue_consumption[i])
               {
-                id_to_fq[it.id] = std::make_pair(i, queue_consumption[i]);
-                ++queue_consumption[i];
-                break;
+                const uint32_t current_popcnt = __builtin_popcount(qfp.queueFlags);
+                if (current_popcnt < best_match_popcnt)
+                {
+                  best_match_popcnt = current_popcnt;
+                  best_match = i;
+                  found = true;
+                }
               }
+            }
+            check::on_vulkan_error::n_assert(found, "could not find a device queue");
+            if (found)
+            {
+              id_to_fq[it.id] = std::make_pair(best_match, queue_consumption[best_match]);
+              ++queue_consumption[best_match];
             }
           }
           // non-shared queues
           for (const queue_caps &it : unique_queue_caps)
           {
+            bool found = false;
+            uint32_t best_match = 0;
+            uint32_t best_match_popcnt = 100;
             for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             {
               const VkQueueFamilyProperties &qfp = gpu.get_queue_properties(i);
               if ((qfp.queueFlags & it.flags) == it.flags && it.checker(instance, i, gpu)
                   && qfp.queueCount > queue_consumption[i])
               {
-                id_to_fq[it.id] = std::make_pair(i, queue_consumption[i]);
-                ++queue_consumption[i];
-                break;
+                const uint32_t current_popcnt = __builtin_popcount(qfp.queueFlags);
+                if (current_popcnt < best_match_popcnt)
+                {
+                  best_match_popcnt = current_popcnt;
+                  best_match = i;
+                  found = true;
+                }
               }
+            }
+            check::on_vulkan_error::n_assert(found, "could not find a device queue");
+            if (found)
+            {
+              id_to_fq[it.id] = std::make_pair((size_t)best_match, queue_consumption[best_match]);
+              ++queue_consumption[best_match];
             }
           }
 
           // create the queue create info array
           std::vector<VkDeviceQueueCreateInfo> queue_info;
-          queue_info.resize(gpu.get_queue_count());
+          queue_info.resize(shared_queue_caps.size() + unique_queue_caps.size());
           std::vector<std::vector<float>> queue_prios;
-          queue_prios.resize(gpu.get_queue_count());
+          queue_prios.resize(shared_queue_caps.size() + unique_queue_caps.size());
 
           uint32_t queue_info_count = 0;
           for (size_t i = 0; i < gpu.get_queue_count(); ++i)
@@ -359,7 +410,7 @@ namespace neam
             if (queue_consumption[i] == 0) // no queue here
               continue;
 
-            queue_prios[i].resize(queue_consumption[i], 0.f);
+            queue_prios[i].resize(queue_consumption[i], 1.f);
             queue_info[queue_info_count].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
             queue_info[queue_info_count].flags = 0;
             queue_info[queue_info_count].pNext = nullptr;
@@ -381,15 +432,15 @@ namespace neam
           std::vector<const char *> device_extensions_c_str;
           device_extensions_c_str.reserve(device_extensions.size());
           for (const std::string &it : device_extensions)
+          {
+            cr::out().debug("log requesting dev ext: {}", it);
             device_extensions_c_str.push_back(it.c_str());
-
-          // features
-          VkPhysicalDeviceFeatures features = requested_features._to_vulkan();
+          }
 
           // create the device create info struct
           VkDeviceCreateInfo device_info;
           device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-          device_info.pNext = nullptr;
+          device_info.pNext = requested_features._get_VkDeviceCreateInfo_pNext();
           device_info.flags = 0;
           device_info.queueCreateInfoCount = queue_info_count;
           device_info.pQueueCreateInfos = queue_info.data();
@@ -397,12 +448,12 @@ namespace neam
           device_info.ppEnabledExtensionNames = device_extensions_c_str.data();
           device_info.enabledLayerCount = device_layers_c_str.size();
           device_info.ppEnabledLayerNames = device_layers_c_str.data();
-          device_info.pEnabledFeatures = &features;
+          device_info.pEnabledFeatures = &requested_features.get_device_features();
 
           VkDevice device;
           check::on_vulkan_error::n_assert_success(vkCreateDevice(gpu._get_vk_physical_device(), &device_info, nullptr, &device));
 
-          return vk::device(instance, device, gpu, id_to_fq);
+          return vk::device(instance, device, gpu, std::move(id_to_fq));
         }
 
       private:
@@ -428,5 +479,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_7880295321249221110_2854922646_HYDRA_DEVICE_CREATOR_HPP__
+
 

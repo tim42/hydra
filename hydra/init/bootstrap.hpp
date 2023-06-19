@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_8425856979821857_753717183_BOOTSTRAP_HPP__
-#define __N_8425856979821857_753717183_BOOTSTRAP_HPP__
+#pragma once
+
 
 #include <deque>
 
@@ -84,18 +84,19 @@ namespace neam
         }
 
         /// \brief Create a vulkan instance with the default parameters
-        vk::instance create_instance(std::string application_name, size_t application_version = 1)
+        template<typename... VkEXTArgs>
+        vk::instance create_instance(std::string application_name, size_t application_version = 1, VkEXTArgs&&... args)
         {
-          vk::instance instance = request_instance_creator(application_name, application_version).create_instance();
+          vk::instance instance = request_instance_creator(application_name, application_version).create_instance(std::forward<VkEXTArgs>(args)...);
           new_instance_created(instance);
           return instance;
         }
 
         /// \brief Create a vulkan logical device with the default parameters
-        vk::device create_device(vk::instance &instance)
+        vk::device create_device(vk::instance &instance, hydra_device_creator::filter_device_preferences prefs = hydra_device_creator::prefer_discrete_gpu)
         {
           hydra_device_creator hdc = request_device_creator(instance);
-          auto compatible_gpu_list = hdc.filter_devices();
+          auto compatible_gpu_list = hdc.filter_devices(prefs);
           check::on_vulkan_error::n_assert(compatible_gpu_list.size() > 0, "could not find a GPU compatible with the requirements of the application");
 
           vk::device device = hdc.create_device(instance, compatible_gpu_list[0]);
@@ -168,5 +169,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_8425856979821857_753717183_BOOTSTRAP_HPP__
+
 

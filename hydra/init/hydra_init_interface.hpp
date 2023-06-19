@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_36986591700713807_658417094_HYDRA_INIT_INTERFACE_HPP__
-#define __N_36986591700713807_658417094_HYDRA_INIT_INTERFACE_HPP__
+#pragma once
+
 
 namespace neam
 {
@@ -75,5 +75,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_36986591700713807_658417094_HYDRA_INIT_INTERFACE_HPP__
+
 

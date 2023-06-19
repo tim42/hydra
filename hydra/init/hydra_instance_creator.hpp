@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_258106574877730109_846630854_HYDRA_INSTANCE_CREATOR_HPP__
-#define __N_258106574877730109_846630854_HYDRA_INSTANCE_CREATOR_HPP__
+#pragma once
+
 
 #include <initializer_list>
 #include <vector>
@@ -204,8 +204,12 @@ namespace neam
         }
 
         /// \brief Create the hydra/vulkan instance
-        vk::instance create_instance() const
+        template<typename... VkEXTArgs>
+        vk::instance create_instance(VkEXTArgs&&... args) const
         {
+          void* last_vk_param = nullptr;
+          ((args.pNext = last_vk_param, last_vk_param = &args), ...);
+
           VkApplicationInfo app_info = {};
           app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
           app_info.pNext = nullptr;
@@ -227,7 +231,7 @@ namespace neam
 
           VkInstanceCreateInfo inst_info = {};
           inst_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-          inst_info.pNext = nullptr;
+          inst_info.pNext = last_vk_param;
           inst_info.flags = 0;
           inst_info.pApplicationInfo = &app_info;
           inst_info.enabledLayerCount = instance_layers.size();
@@ -273,5 +277,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_258106574877730109_846630854_HYDRA_INSTANCE_CREATOR_HPP__
+
 
