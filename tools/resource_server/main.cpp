@@ -132,18 +132,27 @@ int main(int argc, char **argv)
 
   {
     neam::hydra::engine_t engine;
+
+    neam::hydra::engine_settings_t settings = engine.get_engine_settings();
+    settings.vulkan_device_preferences = neam::hydra::hydra_device_creator::prefer_integrated_gpu;
+    engine.set_engine_settings(settings);
+
     neam::hydra::runtime_mode engine_mode = neam::hydra::runtime_mode::core;
     if (gbl_opt.ui)
       engine_mode = neam::hydra::runtime_mode::hydra_context;
 
-    engine.boot(engine_mode, gbl_opt.index_key, gbl_opt.index);
+    engine.init(engine_mode);
     {
       hydra::core_context& cctx = engine.get_core_context();
       cctx.res.source_folder = gbl_opt.source_folder;
 
+      cctx.hconf.register_watch_for_changes();
+
       auto* pck = engine.get_module<neam::hydra::packer_engine_module>("packer"_rid);
       pck->packer_options = gbl_opt;
     }
+
+    engine.boot(gbl_opt.index_key, gbl_opt.index);
 
     // make the main thread participate in the task manager
     neam::hydra::core_context::thread_main(engine.get_core_context());

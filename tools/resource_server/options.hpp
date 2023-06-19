@@ -44,8 +44,9 @@ namespace neam
     bool watch = true;
     bool help = false;
     bool ui = true;
-    uint32_t watch_delay = 1;
-    uint32_t thread_count = std::thread::hardware_concurrency() - 2;
+    bool print_source_name = false;
+    uint32_t watch_delay = 2;
+    uint32_t thread_count = std::thread::hardware_concurrency() - 4;
 
     std::vector<std::string_view> parameters;
 
@@ -68,7 +69,8 @@ N_METADATA_STRUCT(neam::global_options)
     N_MEMBER_DEF(silent, neam::metadata::info{.description = c_string_t<"Only show warning (and above) messages.">}),
     N_MEMBER_DEF(force, neam::metadata::info{.description = c_string_t<"Force rebuild the index and repack all the resources.">}),
     N_MEMBER_DEF(watch, neam::metadata::info{.description = c_string_t<"Watch for filesystem changes and repack those resources.\nIf false, will exit as soon as there's no more operations left to do.">}),
-    N_MEMBER_DEF(ui, neam::metadata::info{.description = c_string_t<"Launch in graphical mode.\nWill only launch after imgui shaders are successfuly packed.">}),
+    N_MEMBER_DEF(ui, neam::metadata::info{.description = c_string_t<"Launch in graphical mode.\nWill only open the window after imgui shaders are successfuly packed.">}),
+    N_MEMBER_DEF(print_source_name, neam::metadata::info{.description = c_string_t<"Will print file names that are being imported.">}),
     N_MEMBER_DEF(watch_delay, neam::metadata::info{.description = c_string_t<"Sleep duration when no changes are detected.">}),
     N_MEMBER_DEF(thread_count, neam::metadata::info{.description = c_string_t<"Number of thread the task manager will launch.">})
   >;

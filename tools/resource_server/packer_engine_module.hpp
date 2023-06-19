@@ -43,7 +43,7 @@ namespace neam::hydra
   class packer_engine_module : public engine_module<packer_engine_module>
   {
     public: // options
-      bool stall_task_manager = true;
+      bool stall_task_manager = false;
 
       global_options packer_options;
       // number of resources that will be queued at the same time
@@ -153,6 +153,10 @@ namespace neam::hydra
         if (chrono.get_accumulated_time() < packer_options.watch_delay && !packer_options.force && !initial_round)
           return;
 
+        std::set<std::filesystem::path> packer_proc_dirty_files;
+        if (initial_round)
+          packer_proc_dirty_files = cctx->res.get_sources_needing_reimport();
+
         initial_round = false;
 
         // reset the state
@@ -209,6 +213,8 @@ namespace neam::hydra
             to_import_set.insert(std::move(it));
           }
         }
+        for (auto& it : packer_proc_dirty_files)
+          to_import_set.insert(it);
 
         // handle dependencies:
         const size_t initial_size = to_import_set.size();
@@ -245,11 +251,35 @@ namespace neam::hydra
 
         if (state.to_import.size() > 0 || to_rm_files.size() > 0)
         {
+          cctx->unstall_all_threads();
+
           state.in_progress = true;
 
-          cr::out().log("found {} changed (+{} by dependency), {} new, and {} removed files in {}",
-                        mod_files.size(), state.to_import.size() - initial_size, new_files.size(), to_rm_files.size(),
+          cr::out().log("found {} changed (+{} by dependency, {} because of code change), {} new, {} removed files in {}",
+                        mod_files.size(), state.to_import.size() - initial_size, packer_proc_dirty_files.size(),
+                        new_files.size(), to_rm_files.size(),
                         packer_options.source_folder.c_str());
+
+          if (packer_options.print_source_name)
+          {
+            if (state.to_import.size() > 0)
+            {
+              cr::out().log("Modified/New files:");
+              for (auto& it: state.to_import)
+              {
+                cr::out().log("  {}   [new: {}, code change: {}]", it.c_str(), new_files.contains(it), packer_proc_dirty_files.contains(it));
+              }
+            }
+
+            if (to_rm_files.size() > 0)
+            {
+              cr::out().log("Removed files:");
+              for (auto& it: to_rm_files)
+              {
+                cr::out().log("  {}", it.c_str());
+              }
+            }
+          }
 
           on_packing_started(mod_files.size(), state.to_import.size() - initial_size, new_files.size(), to_rm_files.size());
 
@@ -283,6 +313,9 @@ namespace neam::hydra
           {
             if (state.need_save)
             {
+              // Assign the metadata types from this binary to the rel-db
+              cctx->res._get_non_const_db().force_assign_registered_metadata_types();
+
               cctx->res.save_index().then([this](resources::status st)
               {
                 if (st == resources::status::failure)
@@ -317,13 +350,14 @@ namespace neam::hydra
           {
             engine->sync_teardown();
           }
-          else if (stall_task_manager && !packer_options.ui)
+          else //if (!packer_options.ui)
           {
-            cctx->tm.request_stop([this]()
-            {
-              std::this_thread::sleep_for(std::chrono::seconds{packer_options.watch_delay});
-              cctx->tm.get_frame_lock().unlock();
-            });
+            cctx->stall_all_threads_except(2);
+//             cctx->tm.request_stop([this]()
+//             {
+//               std::this_thread::sleep_for(std::chrono::seconds{packer_options.watch_delay});
+//               cctx->tm.get_frame_lock().unlock();
+//             });
           }
         }
       }

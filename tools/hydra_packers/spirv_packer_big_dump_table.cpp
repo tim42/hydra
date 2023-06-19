@@ -29,6 +29,25 @@
 namespace neam::hydra::packer
 {
   extern const TBuiltInResource glslang_default_builtin_resource;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   const TBuiltInResource glslang_default_builtin_resource =
   {
     /* .MaxLights = */ 32,
@@ -123,6 +142,15 @@ namespace neam::hydra::packer
     /* .maxTaskWorkGroupSizeY_NV = */ 1,
     /* .maxTaskWorkGroupSizeZ_NV = */ 1,
     /* .maxMeshViewCountNV = */ 4,
+    /* .maxMeshOutputVerticesEXT = */ 256,
+    /* .maxMeshOutputPrimitivesEXT = */ 512,
+    /* .maxMeshWorkGroupSizeX_EXT = */ 32,
+    /* .maxMeshWorkGroupSizeY_EXT = */ 1,
+    /* .maxMeshWorkGroupSizeZ_EXT = */ 1,
+    /* .maxTaskWorkGroupSizeX_EXT = */ 32,
+    /* .maxTaskWorkGroupSizeY_EXT = */ 1,
+    /* .maxTaskWorkGroupSizeZ_EXT = */ 1,
+    /* .maxMeshViewCountEXT = */ 4,
     /* .maxDualSourceDrawBuffersEXT = */ 1,
 
     /* .limits = */ {

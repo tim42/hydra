@@ -29,8 +29,8 @@
 #include <hydra/engine/core_context.hpp>
 
 #include <glslang/Public/ShaderLang.h>
-#include <SPIRV/SPVRemapper.h>
-#include <SPIRV/GlslangToSpv.h>
+#include <glslang/SPIRV/SPVRemapper.h>
+#include <glslang/SPIRV/GlslangToSpv.h>
 
 #include "string_utilities.hpp"
 
@@ -44,7 +44,6 @@ namespace neam::hydra::packer
   {
     if (str.empty()) return;
     const auto msgs = split_string(str, "\n");
-    auto logger = neam::cr::out(true);
     for (const auto& msg : msgs)
     {
       if (!msg.size()) continue;

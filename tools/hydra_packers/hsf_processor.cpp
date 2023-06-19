@@ -212,7 +212,6 @@ namespace neam::hydra::processor
     {
       const string_id res_id = get_resource_id(input.file);
       input.db.resource_name(res_id, input.file);
-      input.db.set_processor_for_file(input.file, processor_hash);
 
       // get the shader file:
       std::string shader_file;
@@ -253,7 +252,6 @@ namespace neam::hydra::processor
         bool has_warnings = false;
         {
           const auto msgs = split_string(out.cpp.messages, "\n");
-          auto logger = neam::cr::out(true);
 
           for (const auto& msg : msgs)
           {

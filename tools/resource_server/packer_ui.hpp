@@ -34,6 +34,7 @@
 #include <hydra/engine/engine_module.hpp>
 #include <hydra/glfw/glfw_engine_module.hpp>  // Add the glfw module
 #include <hydra/imgui/imgui_engine_module.hpp>  // Add the imgui module
+#include <hydra/imgui/utilities/imgui_folder_view.hpp>  // Add the folder view
 #include <hydra/renderer/renderer_engine_module.hpp>
 #include <hydra/imgui/generic_ui.hpp>
 
@@ -41,8 +42,10 @@
 #include "options.hpp"
 #include "packer_engine_module.hpp"
 
+
 namespace neam::hydra
 {
+
   enum class packer_state_t
   {
     none = 0,
@@ -60,6 +63,11 @@ namespace neam::hydra
       // imgui resources. Delay the opening of the window until those resources are present
       static constexpr id_t imgui_vs_rid = "shaders/engine/imgui/imgui.hsf:spirv(main_vs)"_rid;
       static constexpr id_t imgui_fs_rid = "shaders/engine/imgui/imgui.hsf:spirv(main_fs)"_rid;
+
+      imgui::folder_view folder_view;
+      std::filesystem::path selected_file;
+
+      conf::gen_conf resource_ctx_conf;
 
     private:
       static constexpr const char* module_name = "packer-ui";
@@ -87,23 +95,87 @@ namespace neam::hydra
         on_packing_started_tk = pck->on_packing_started.add(*this, &packer_ui_module::on_packing_started);
         on_packing_ended_tk = pck->on_packing_ended.add(*this, &packer_ui_module::on_packing_ended);
 
-        window_state = engine->get_module<glfw::glfw_module>("glfw"_rid)->create_window(glm::uvec2{800, 300}, "HYDRA RESOURCE SERVER");
+        auto* glfw_mod = engine->get_module<glfw::glfw_module>("glfw"_rid);
+        window_state = glfw_mod->create_window(glm::uvec2{800, 300}, "HYDRA RESOURCE SERVER");
         window_state->window.iconify();
+        window_state->_ctx_ref.clear_framebuffer = true;
         set_window_icon();
 
+        folder_view.extra_columns = 2;
+        folder_view.entry_extra_ui = [this](const std::filesystem::directory_entry& entry)
+        {
+          ImGui::TableNextColumn();
+
+          std::set<id_t> ids = cctx->res.get_db().get_resources(((std::filesystem::path)(entry)).lexically_relative(cctx->res.source_folder));
+          if (ids.size() > 0)
+          {
+            ImGui::Text("[%d]", (int)ids.size());
+          }
+          else
+          {
+            ImGui::Text("---");
+          }
+        };
+        on_item_selected_tk = folder_view.on_selected.add([this](std::filesystem::path p)
+        {
+          selected_file = p;
+        });
+
         auto* imgui = engine->get_module<imgui::imgui_module>("imgui"_rid);
-        imgui->register_function("dockspace"_rid, [this]()
+        imgui->register_function("dockspace"_rid, []()
         {
           ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
         });
 
-        imgui->register_function("main"_rid, [this, pck]()
+        imgui->register_function("main"_rid, [this, pck, glfw_mod]()
         {
           ImGui::ShowDemoWindow();
 
           if (ImGui::Begin("RelDB", nullptr, 0))
           {
             imgui::generate_ui(cctx->res._get_serialized_reldb(), rel_db_metadata);
+          }
+          ImGui::End();
+          if (ImGui::Begin("ProjectView", nullptr, 0))
+          {
+            folder_view.root = cctx->res.source_folder;
+            folder_view.render();
+          }
+          ImGui::End();
+          if (ImGui::Begin("FileInspector", nullptr, 0))
+          {
+            ImGui::Text("%s", ((std::filesystem::path)(selected_file)).lexically_relative(cctx->res.source_folder).c_str());
+            // if (selected_file)
+            {
+              std::set<id_t> ids = cctx->res.get_db().get_referenced_metadata_types(((std::filesystem::path)(selected_file)).lexically_relative(cctx->res.source_folder));
+              ImGui::Text("count: %u", (uint32_t)ids.size());
+
+              for (auto id : ids)
+              {
+                ImGui::Separator();
+                ImGui::Text("%p", (void*)(uint64_t)id);
+                ImGui::Separator();
+                auto md = cctx->res.get_db().get_type_metadata(id);
+                imgui::generate_ui(md.type_metadata.generate_default_value(), md.type_metadata);
+              }
+            }
+          }
+          if (ImGui::Begin("Conf", nullptr, 0))
+          {
+            if (resource_ctx_conf.is_loaded())
+            {
+              const raw_data& initial_rd = resource_ctx_conf.conf_data;
+              raw_data new_rd = imgui::generate_ui(initial_rd, rle::deserialize<rle::serialization_metadata>(resource_ctx_conf.get_hconf_metadata()));
+              if (!raw_data::is_same(initial_rd, new_rd))
+              {
+                resource_ctx_conf.conf_data = std::move(new_rd);
+                cctx->hconf.write_conf(resource_ctx_conf);
+              }
+            }
+            else
+            {
+              ImGui::Text("Loading...");
+            }
           }
           ImGui::End();
           if (ImGui::Begin("Controls", nullptr, 0))
@@ -118,6 +190,13 @@ namespace neam::hydra
             ImGui::Text("io: read: %.3f kb/s, write: %.3f kb/s", last_average_read_rate/1000, last_average_write_rate/1000);
             ImGui::Text("tm: pending tasks: %u", cctx->tm.get_pending_tasks_count());
             ImGui::Text("frametime: %.3f ms framerate: %.3f fps", last_average_frametime * 1000, 1.0f / last_average_frametime);
+            ImGui::Separator();
+            if (pck->is_packing())
+              ImGui::Text("state: packing in progress");
+            else if (glfw_mod->is_app_focused())
+              ImGui::Text("state: idle / in focus");
+            else
+              ImGui::Text("state: idle / low-framerate (app not in focus)");
           }
           ImGui::End();
 
@@ -129,13 +208,24 @@ namespace neam::hydra
             }
             else
             {
-              ImGui::Text("file %s:", selected_res.c_str());
+              ImGui::TextUnformatted("file ");
+              ImGui::SameLine();
+              imgui::link("file://" + (std::string)(hctx->res.source_folder / selected_res.c_str()), selected_res.c_str());
+              ImGui::SameLine();
+              ImGui::TextUnformatted(": ");
+              ImGui::SameLine();
+              imgui::link("file://" + (std::string)(hctx->res.source_folder / selected_res.c_str()).remove_filename(), "[open folder]");
+
               ImGui::Indent();
               const auto& db = cctx->res.get_db();
               const std::set<id_t> subres = db.get_resources(selected_res, true);
               for (const id_t it : subres)
               {
-                const auto msg_list = db.get_messages(it).list;
+                auto msg_list = db.get_messages(it).list;
+
+                // remove debug entries:
+                msg_list.erase(std::find_if(msg_list.begin(), msg_list.end(), [](const auto & x) { return x.severity == cr::logger::severity::debug;}), msg_list.end());
+
                 if (!msg_list.empty())
                 {
                   ImGui::Text("sub-resource: %s:", cctx->res.resource_name(it).c_str());
@@ -258,9 +348,9 @@ namespace neam::hydra
         auto* renderer = engine->get_module<renderer_module>("renderer"_rid);
         renderer->min_frame_time = 0.016f;
 
-        renderer->register_on_render_start("packer-ui"_rid, [this, pck, renderer]
+        on_render_start_tk = renderer->on_render_start.add([this, pck, renderer, glfw_mod]
         {
-          cctx->tm.get_task([this, pck, renderer]
+          cctx->tm.get_task([this, pck, renderer, glfw_mod]
           {
             // stats:
             ++frame_cnt;
@@ -291,20 +381,19 @@ namespace neam::hydra
               // window:
               if (pck->is_packing())
               {
+                // max fps should be 60, but we don't want to sleep, so we just "drop" frames instead.
                 renderer->min_frame_time = 0.016f;
               }
               else
               {
                 renderer->min_frame_time = 0.0f;
-                if (window_state->window.is_focused())
-                {
-                  std::this_thread::sleep_for(std::chrono::milliseconds{16});
-                }
-                else
+                std::this_thread::sleep_for(std::chrono::milliseconds{16});
+
+                if (!glfw_mod->is_app_focused())
                 {
                   cctx->tm.request_stop([this]()
                   {
-                    std::this_thread::sleep_for(std::chrono::milliseconds{100});
+                    std::this_thread::sleep_for(std::chrono::milliseconds{500});
                     cctx->tm.get_frame_lock().unlock();
                   });
                 }
@@ -321,6 +410,7 @@ namespace neam::hydra
       {
         cctx->tm.get_long_duration_task([this]
         {
+          load_conf_for_ui();
           check_for_resources();
         });
       }
@@ -336,6 +426,20 @@ namespace neam::hydra
       }
 
     private:
+      void load_conf_for_ui()
+      {
+        cctx->hconf.read_conf(resource_ctx_conf, resources::context::k_configuration_name).then([this](bool success)
+        {
+          if (!success)
+          {
+            cctx->tm.get_delayed_task([this]
+              {
+                load_conf_for_ui();
+              }, std::chrono::seconds{1});
+          }
+        });
+      }
+
       void set_window_icon()
       {
         if (!window_state)
@@ -472,6 +576,10 @@ namespace neam::hydra
       cr::event_token_t on_resource_packed_tk;
       cr::event_token_t on_index_saved_tk;
       cr::event_token_t on_packing_ended_tk;
+
+      cr::event_token_t on_item_selected_tk;
+
+      cr::event_token_t on_render_start_tk;
 
       bool is_setup = false;
       bool is_quiting = false;

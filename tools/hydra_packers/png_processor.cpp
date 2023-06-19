@@ -40,7 +40,6 @@ namespace neam::hydra::processor
     {
       const string_id res_id = get_resource_id(input.file);
       input.db.resource_name(res_id, input.file);
-      input.db.set_processor_for_file(input.file, processor_hash);
 
       glm::uvec2 size;
       uint8_t* temp_ret = nullptr;

@@ -40,7 +40,6 @@ namespace neam::hydra::processor
     {
       const string_id res_id = get_resource_id(input.file);
       input.db.resource_name(res_id, input.file);
-      input.db.set_processor_for_file(input.file, processor_hash);
 
       return resources::uncompress_raw_xz(std::move(input.file_data)).then([input = std::move(input)](raw_data&& data) mutable
       {
