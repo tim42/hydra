@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_17835239222945519851_2656411714_COMMAND_BUFFER_HPP__
-#define __N_17835239222945519851_2656411714_COMMAND_BUFFER_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -107,10 +107,10 @@ namespace neam
                                                   VkCommandBufferUsageFlagBits flags = (VkCommandBufferUsageFlagBits)0);
 
           /// \brief Reset the command buffer
-          void reset(VkCommandBufferResetFlags flags = 0) { check::on_vulkan_error::n_assert_success(dev._fn_vkResetCommandBuffer(cmd_buf, flags)); }
+          void reset(VkCommandBufferResetFlags flags = 0) { check::on_vulkan_error::n_assert_success(dev._vkResetCommandBuffer(cmd_buf, flags)); }
 
           /// \brief End the recording of the command buffer
-          void end_recording() { check::on_vulkan_error::n_assert_success(dev._fn_vkEndCommandBuffer(cmd_buf)); }
+          void end_recording() { check::on_vulkan_error::n_assert_success(dev._vkEndCommandBuffer(cmd_buf)); }
 
         public: // advanced
           /// \brief Return the vulkan command buffer
@@ -167,5 +167,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_17835239222945519851_2656411714_COMMAND_BUFFER_HPP__
+
 

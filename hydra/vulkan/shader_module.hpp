@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_6484233081789818208_1177312744_SHADER_MODULE_HPP__
-#define __N_6484233081789818208_1177312744_SHADER_MODULE_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -129,5 +129,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_6484233081789818208_1177312744_SHADER_MODULE_HPP__
+
 

@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2068815951828916619_2910431576_IMAGE_VIEW_HPP__
-#define __N_2068815951828916619_2910431576_IMAGE_VIEW_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -126,6 +126,9 @@ namespace neam
               dev._vkDestroyImageView(vk_image_view, nullptr);
           }
 
+          /// \brief Return the view format
+          VkFormat get_view_format() const { return view_create_info.format; }
+
         public: // advanced
           /// \brief Return the vulkan image view
           VkImageView get_vk_image_view() const
@@ -143,5 +146,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_2068815951828916619_2910431576_IMAGE_VIEW_HPP__
+
 

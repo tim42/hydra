@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2635624824316489115_16523277_FENCE_HPP__
-#define __N_2635624824316489115_16523277_FENCE_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -75,6 +75,17 @@ namespace neam
             : dev(o.dev), vk_fence(o.vk_fence)
           {
             o.vk_fence = nullptr;
+          }
+
+          fence& operator = (fence &&o)
+          {
+            if (&o == this) return *this;
+            check::on_vulkan_error::n_assert(&dev == &o.dev, "Invalid move operation");
+            if (vk_fence)
+              dev._vkDestroyFence(vk_fence, nullptr);
+            vk_fence = o.vk_fence;
+            o.vk_fence = nullptr;
+            return *this;
           }
 
           ~fence()
@@ -206,5 +217,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_2635624824316489115_16523277_FENCE_HPP__
+
 

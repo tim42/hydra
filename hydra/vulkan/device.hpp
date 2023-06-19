@@ -27,12 +27,14 @@
 // SOFTWARE.
 //
 
-#ifndef __N_95735850311973920_182594734_HYDRA_VULKAN_DEVICE_HPP__
-#define __N_95735850311973920_182594734_HYDRA_VULKAN_DEVICE_HPP__
+#pragma once
+
 
 #include <string.h>
 #include <string>
 #include <map>
+#include <ntools/source_location.hpp>
+#include <ntools/fmt_utils.hpp>
 
 #include <vulkan/vulkan.h>
 
@@ -55,8 +57,9 @@ namespace neam
         public: // advanced
           /// \brief You shouldn't have to call this directly, but instead you should
           /// ask the hydra_device_creator class a new device
-          device(instance& _instance, VkDevice _vk_device, const physical_device &_phys_dev, std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> _id_to_familly_queue)
-          : vk_instance(_instance), vk_device(_vk_device), phys_dev(_phys_dev), id_to_familly_queue(_id_to_familly_queue)
+          device(instance& _instance, VkDevice _vk_device, const physical_device &_phys_dev,
+                 std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>>&& _id_to_familly_queue)
+          : vk_instance(_instance), vk_device(_vk_device), phys_dev(_phys_dev), id_to_familly_queue(std::move(_id_to_familly_queue))
           {
             _load_functions();
           }
@@ -287,6 +290,10 @@ namespace neam
             HYDRA_LOAD_FNC(vkCmdNextSubpass);
             HYDRA_LOAD_FNC(vkCmdEndRenderPass);
             HYDRA_LOAD_FNC(vkCmdExecuteCommands);
+
+            HYDRA_LOAD_FNC(vkCmdBeginRendering);
+            HYDRA_LOAD_FNC(vkCmdEndRendering);
+
 #undef      HYDRA_LOAD_FNC
           }
 
@@ -295,7 +302,9 @@ namespace neam
         public:// advanced (vulkan device call wrappers)
           // this is the lazy way to wrap functions, and the big problem with this
           // method will be that the compiler may generate quite a lot of functions...
-#define   HYDRA_VK_DEV_FNC_WRAPPER(fnc)     template<typename... FncParams> inline auto _##fnc(FncParams... params) { return _fn_##fnc(vk_device, std::forward<FncParams>(params)...); }
+#define   HYDRA_VK_DEV_FNC_WRAPPER(fnc)     template<typename... FncParams> inline auto _##fnc(FncParams... params) { \
+            return _fn_##fnc(vk_device, std::forward<FncParams>(params)...); \
+          }
           HYDRA_VK_DEV_FNC_WRAPPER(vkGetDeviceQueue);
           HYDRA_VK_DEV_FNC_WRAPPER(vkDeviceWaitIdle);
           HYDRA_VK_DEV_FNC_WRAPPER(vkAllocateMemory);
@@ -366,6 +375,69 @@ namespace neam
           HYDRA_VK_DEV_FNC_WRAPPER(vkResetCommandPool);
           HYDRA_VK_DEV_FNC_WRAPPER(vkAllocateCommandBuffers);
           HYDRA_VK_DEV_FNC_WRAPPER(vkFreeCommandBuffers);
+#undef HYDRA_VK_DEV_FNC_WRAPPER
+#define   HYDRA_VK_DEV_FNC_WRAPPER(fnc)     template<typename... FncParams> inline auto _##fnc(FncParams... params) const { \
+            _get_current_vk_call_str() = fmt::format("{}({})", #fnc, std::tuple<FncParams...>{params...});\
+            _log_current_fnc();\
+            return _fn_##fnc(std::forward<FncParams>(params)...); \
+          }
+
+          // queue
+          HYDRA_VK_DEV_FNC_WRAPPER(vkQueueSubmit);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkQueueBindSparse);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkQueueWaitIdle);
+
+          // cmd buffer
+          HYDRA_VK_DEV_FNC_WRAPPER(vkBeginCommandBuffer);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkEndCommandBuffer);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkResetCommandBuffer);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBindPipeline);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetViewport);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetScissor);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetLineWidth);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetDepthBias);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetBlendConstants);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetDepthBounds);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetStencilCompareMask);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetStencilWriteMask);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetStencilReference);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBindDescriptorSets);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBindIndexBuffer);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBindVertexBuffers);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdDraw);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdDrawIndexed);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdDrawIndirect);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdDrawIndexedIndirect);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdDispatch);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdDispatchIndirect);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdCopyBuffer);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdCopyImage);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBlitImage);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdCopyBufferToImage);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdCopyImageToBuffer);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdUpdateBuffer);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdFillBuffer);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdClearColorImage);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdClearDepthStencilImage);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdClearAttachments);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdResolveImage);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdSetEvent);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdResetEvent);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdWaitEvents);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdPipelineBarrier);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBeginQuery);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdEndQuery);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdResetQueryPool);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdWriteTimestamp);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdCopyQueryPoolResults);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdPushConstants);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBeginRenderPass);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdNextSubpass);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdEndRenderPass);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdExecuteCommands);
+
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBeginRendering);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdEndRendering);
 #undef    HYDRA_VK_DEV_FNC_WRAPPER
         public:
 #define   HYDRA_DECLARE_VK_FNC(fnc)   PFN_##fnc _fn_##fnc
@@ -494,13 +566,31 @@ namespace neam
           HYDRA_DECLARE_VK_FNC(vkCmdNextSubpass);
           HYDRA_DECLARE_VK_FNC(vkCmdEndRenderPass);
           HYDRA_DECLARE_VK_FNC(vkCmdExecuteCommands);
+
+          HYDRA_DECLARE_VK_FNC(vkCmdBeginRendering);
+          HYDRA_DECLARE_VK_FNC(vkCmdEndRendering);
 #undef    HYDRA_DECLARE_VK_FNC
         private:
           PFN_vkVoidFunction _end_offset;
+
+        public:
+          static void _log_current_fnc()
+          {
+            if constexpr (false)
+            {
+              cr::out().debug("vk call: {}", _get_current_vk_call_str());
+            }
+          }
+
+          static std::string& _get_current_vk_call_str()
+          {
+            thread_local std::string str;
+            return str;
+          }
       };
     } // namespace vk
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_95735850311973920_182594734_HYDRA_VULKAN_DEVICE_HPP__
+
 

@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_155238131197813153_3057226920_RENDER_PASS_HPP__
-#define __N_155238131197813153_3057226920_RENDER_PASS_HPP__
+#pragma once
+
 
 #include <deque>
 #include <vulkan/vulkan.h>
@@ -244,7 +244,7 @@ namespace neam
           /// \brief Return the underlying render pass
           VkRenderPass get_vk_render_pass() const { return vk_render_pass; }
 
-          id_t compute_subpass_hash(uint32_t subpass)
+          id_t compute_subpass_hash(uint32_t subpass) const
           {
             if (subpass >= subpasses.size())
               return id_t::none;
@@ -286,5 +286,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_155238131197813153_3057226920_RENDER_PASS_HPP__
+
 

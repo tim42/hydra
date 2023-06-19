@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2226131646669618025_109798097_BUFFER_IMAGE_COPY_HPP__
-#define __N_2226131646669618025_109798097_BUFFER_IMAGE_COPY_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -97,5 +97,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_2226131646669618025_109798097_BUFFER_IMAGE_COPY_HPP__
+
 

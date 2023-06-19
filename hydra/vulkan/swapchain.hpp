@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2428110920100477524_239810610_SWAPCHAIN_HPP__
-#define __N_2428110920100477524_239810610_SWAPCHAIN_HPP__
+#pragma once
+
 
 #include <vector>
 #include <vulkan/vulkan.h>
@@ -101,7 +101,7 @@ namespace neam
               sw_rect(glm::ivec2(0, 0), image_size)
           {
             size_t image_count = 3;
-            if (image_count < _surf.get_min_image_count())
+            if (image_count < _surf.get_min_image_count() || _surf.get_max_image_count() == 0)
               image_count = _surf.get_min_image_count();
             else if (image_count > _surf.get_max_image_count())
               image_count = _surf.get_max_image_count();
@@ -183,7 +183,7 @@ namespace neam
 
           /// \brief Recreate the swapchain (do not forget to invalidate comand buffers and everything that depends on the swapchain !)
           /// \note You should call this at a correct timing (to avoid freeing in-use objects)
-          swapchain recreate_swapchain(const glm::uvec2 &image_size)
+          [[nodiscard]] swapchain recreate_swapchain(const glm::uvec2 &image_size)
           {
             create_info.oldSwapchain = vk_swapchain;
             swapchain ret(std::move(*this));
@@ -399,5 +399,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_2428110920100477524_239810610_SWAPCHAIN_HPP__
+
 

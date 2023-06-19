@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_10440156862933621972_117153490_RASTERIZER_HPP__
-#define __N_10440156862933621972_117153490_RASTERIZER_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -161,5 +161,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_10440156862933621972_117153490_RASTERIZER_HPP__
+
 

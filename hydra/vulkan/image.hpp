@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_24664119311256314033_1924421680_IMAGE_HPP__
-#define __N_24664119311256314033_1924421680_IMAGE_HPP__
+#pragma once
+
 
 #include <tuple>
 
@@ -304,5 +304,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_24664119311256314033_1924421680_IMAGE_HPP__
+
 

@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1976322101225802682_168463513_PIPELINE_DYNAMIC_STATE_HPP__
-#define __N_1976322101225802682_168463513_PIPELINE_DYNAMIC_STATE_HPP__
+#pragma once
+
 
 #include <initializer_list>
 #include <vector>
@@ -122,5 +122,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1976322101225802682_168463513_PIPELINE_DYNAMIC_STATE_HPP__
+
 

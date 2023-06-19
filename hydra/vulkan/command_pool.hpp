@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_28485255642531730625_2390811452_COMMAND_POOL_HPP__
-#define __N_28485255642531730625_2390811452_COMMAND_POOL_HPP__
+#pragma once
+
 
 #include <vector>
 
@@ -99,5 +99,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_28485255642531730625_2390811452_COMMAND_POOL_HPP__
+
 

@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_8828557168433012_199731359_FRAMEBUFFER_HPP__
-#define __N_8828557168433012_199731359_FRAMEBUFFER_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -179,6 +179,14 @@ namespace neam
           /// \brief Return the render pass
           const render_pass &get_render_pass() const { return *pass; }
 
+          VkFormat get_view_format (uint32_t view_index) const
+          {
+            check::debug::n_assert(view_index < image_view_vector.size(), "Out of bound access on image view vector");
+            return image_view_vector[view_index] != nullptr ? image_view_vector[view_index]->get_view_format() : VK_FORMAT_UNDEFINED;
+          }
+
+          uint32_t get_view_count() const { return image_view_vector.size(); }
+
         public: // advanced
           /// \brief Return the Vulkan resource
           VkFramebuffer get_vk_framebuffer() const { return vk_framebuffer; }
@@ -199,5 +207,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_8828557168433012_199731359_FRAMEBUFFER_HPP__
+
 

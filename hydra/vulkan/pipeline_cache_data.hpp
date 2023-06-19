@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_16790124462794650_656315422_PIPELINE_CACHE_DATA_HPP__
-#define __N_16790124462794650_656315422_PIPELINE_CACHE_DATA_HPP__
+#pragma once
+
 
 #include <cstddef>
 #include <new>
@@ -89,5 +89,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_16790124462794650_656315422_PIPELINE_CACHE_DATA_HPP__
+
 

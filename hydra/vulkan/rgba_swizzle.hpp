@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_25118707165121716_1198230950_RGBA_SWIZZLE_HPP__
-#define __N_25118707165121716_1198230950_RGBA_SWIZZLE_HPP__
+#pragma once
+
 
 #include <initializer_list>
 #include <vulkan/vulkan.h>
@@ -90,17 +90,17 @@ namespace neam
           ///   g -> the green component
           ///   b -> the blue component
           ///   a -> the alpha component
-          ///   i -> the component (identity)
+          ///   i . _ -> the component (identity)
           ///   0 -> set component to 0
           ///   1 -> set component to 1
           /// missing components are set to identity
           ///
           /// \code
           /// rgba_swizzle s1("bgra");
-          /// rgba_swizzle s2("0ii1");
-          /// rgba_swizzle s3("0iir");
+          /// rgba_swizzle s2("0__1");
+          /// rgba_swizzle s3("0__r");
           /// \endcode
-          constexpr rgba_swizzle(const char *il) : rgba_swizzle()
+          consteval rgba_swizzle(const char *il) : rgba_swizzle()
           {
             size_t i = 0;
             if (il[i] != '\0')
@@ -194,6 +194,8 @@ namespace neam
               case 'b': return component::b;
               case 'A':
               case 'a': return component::a;
+              case '.':
+              case '_':
               case 'I':
               case 'i': return component::identity;
               case '0': return component::zero;
@@ -207,5 +209,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_25118707165121716_1198230950_RGBA_SWIZZLE_HPP__
+
 

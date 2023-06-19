@@ -27,10 +27,12 @@
 // SOFTWARE.
 //
 
-#ifndef __N_258283952455712780_248821193_DEVICE_FEATURES_HPP__
-#define __N_258283952455712780_248821193_DEVICE_FEATURES_HPP__
+#pragma once
 
+
+#include <map>
 #include <vulkan/vulkan.h>
+#include <ntools/ct_list.hpp>
 
 namespace neam
 {
@@ -38,24 +40,95 @@ namespace neam
   {
     namespace vk
     {
+      namespace internal
+      {
+        template<typename VkFeatureStruct, VkStructureType Type>
+        struct feature_info_impl_t
+        {
+          using type = VkFeatureStruct;
+
+          static constexpr VkStructureType struct_type = Type;
+
+          static constexpr uint32_t data_size = (sizeof(VkFeatureStruct) - sizeof(VkBaseInStructure));
+          // If the number of entries is not even, the padding will be treated as a valid entry
+          static constexpr uint32_t entry_count = data_size / sizeof(VkBool32);
+        };
+
+        template<VkStructureType Type>
+        struct feature_info_from_name_t
+        {
+          // bad struct
+        };
+
+        template<typename Type>
+        struct feature_info_from_type_t
+        {
+          // bad struct
+        };
+
+
+#define FEATURE_INFO(X) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR, VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, VkPhysicalDeviceAccelerationStructureFeaturesKHR) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR, VkPhysicalDeviceRayTracingPipelineFeaturesKHR) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_INTERLOCK_FEATURES_EXT, VkPhysicalDeviceFragmentShaderInterlockFeaturesEXT) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_KHR, VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT, VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT, VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT, VkPhysicalDeviceShaderAtomicFloatFeaturesEXT) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, VkPhysicalDeviceVulkan13Features) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, VkPhysicalDeviceVulkan12Features) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, VkPhysicalDeviceVulkan11Features) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, VkPhysicalDeviceFeatures2) /* NOTE: MUST be last in this list */\
+
+#define DECLARE_FEATURE_INFO(STRUCT_TYPE, STRUCT)       template<> struct feature_info_from_name_t<STRUCT_TYPE> : public feature_info_impl_t<STRUCT, STRUCT_TYPE> {}; \
+                                                        template<> struct feature_info_from_type_t<STRUCT> : public feature_info_impl_t<STRUCT, STRUCT_TYPE> {};
+      FEATURE_INFO(DECLARE_FEATURE_INFO)
+#undef DECLARE_FEATURE_INFO
+
+#define FEATURE_INFO_LIST_ENTRY(STRUCT_TYPE, STRUCT)    STRUCT,
+      using feature_struct_list = ct::list::remove_type
+      <
+        ct::type_list
+        <
+        FEATURE_INFO(FEATURE_INFO_LIST_ENTRY)
+        void // extra padding, to account for the trailing ','
+        >,
+        // remove the extra type:
+        void
+      >;
+#undef  FEATURE_INFO_LIST_ENTRY
+#undef FEATURE_INFO
+      }
+
       /// \brief Represent a vulkan device feature with some nice utilities
+      /// \warning The size of this struct is quite high, please beware of this.
       class device_features
       {
         public:
           /// \brief Convert a vulkan device feature list to a hydra one
-          device_features(const VkPhysicalDeviceFeatures &vk_features)
+          device_features(const VkPhysicalDeviceFeatures2& vk_features2) : device_features()
           {
-            // This is just a safeguard, as the header may change and this will abort the compilation if the structure contains more/less members
-            static_assert(sizeof(VkPhysicalDeviceFeatures) / 4 == feature_count, "it looks like you have an unsupported version of the vulkan header");
+            // this is a lazy way to do this, but this code is not made to be called outside init, and should only ever be called once
+            std::map<VkStructureType, const void*> init_entry_list;
 
-            // this is a lazy way to do this...
-            // this is full of suppositions, but I believe most compilers will align 32bit integers on 32bit offsets,
-            // and 8bit integers to 8bit offset, so we should be OK
-            // I also suppose that khronos will not replace/move features, simply add (or remove) them
-            const VkBool32 *orig_ptr = reinterpret_cast<const VkBool32 *>(&vk_features);
-            uint8_t *dest_ptr = &robust_buffer_access;
-            for (size_t i = 0; i < feature_count; ++i)
-              dest_ptr[i] = (orig_ptr[i] == VK_TRUE ? 1 : 0);
+            // fill the map with the different structures from the list:
+            const VkBaseInStructure* it = (const VkBaseInStructure*)&vk_features2.pNext;
+            while (it != nullptr)
+            {
+              init_entry_list.emplace(it->sType, it);
+              it = it->pNext;
+            }
+
+            // copy the entries in the feature_list:
+            for_each_entries(feature_list, [&init_entry_list](auto& entry)
+            {
+              using info_t = internal::feature_info_from_type_t<std::remove_cvref_t<decltype(entry)>>;
+              if (auto it = init_entry_list.find(info_t::struct_type); it != init_entry_list.end())
+                memcpy(to_data(entry), to_data(it->second), info_t::data_size);
+              else
+                memset(to_data(entry), 0, info_t::data_size);
+            });
           }
 
           device_features() { clear(); }
@@ -66,31 +139,32 @@ namespace neam
           /// \brief Allow ORing device feature lists
           device_features &operator |= (const device_features &o)
           {
-            uint8_t *this_iter_ptr = &robust_buffer_access;
-            const uint8_t *o_iter_ptr = &o.robust_buffer_access;
-            for (size_t i = 0; i < feature_count; ++i)
-              this_iter_ptr[i] |= o_iter_ptr[i];
+            for_each_entries(feature_list, o.feature_list, [](auto& entry_a, const auto& entry_b)
+            {
+              struct_binary_or(entry_a, entry_b);
+            });
             return *this;
           }
 
           /// \brief Allow AND operations on device feature lists
           device_features &operator &= (const device_features &o)
           {
-            uint8_t *this_iter_ptr = &robust_buffer_access;
-            const uint8_t *o_iter_ptr = &o.robust_buffer_access;
-            for (size_t i = 0; i < feature_count; ++i)
-              this_iter_ptr[i] = (this_iter_ptr[i] != 0) && (o_iter_ptr[i] != 0);
+            for_each_entries(feature_list, o.feature_list, [](auto& entry_a, const auto& entry_b)
+            {
+              struct_binary_and(entry_a, entry_b);
+            });
             return *this;
           }
 
           /// \brief Negate the feature list
           device_features operator ~() const
           {
-            device_features ret;
-            const uint8_t *this_iter_ptr = &robust_buffer_access;
-            uint8_t *o_iter_ptr = &ret.robust_buffer_access;
-            for (size_t i = 0; i < feature_count; ++i)
-              o_iter_ptr[i] = (this_iter_ptr[i] == 0);
+            device_features ret = *this;
+            for_each_entries(ret.feature_list, [](auto& entry)
+            {
+              struct_binary_negate(entry);
+            });
+
             return ret;
           }
 
@@ -98,10 +172,10 @@ namespace neam
           bool operator == (const device_features &o) const
           {
             bool ret = true;
-            const uint8_t *this_iter_ptr = &robust_buffer_access;
-            const uint8_t *o_iter_ptr = &o.robust_buffer_access;
-            for (size_t i = 0; i < feature_count; ++i)
-              ret &= (this_iter_ptr[i] != 0) == (o_iter_ptr[i] != 0);
+            for_each_entries(feature_list, o.feature_list, [&ret](const auto& entry_a, const auto& entry_b)
+            {
+              ret = ret && struct_equality(entry_a, entry_b);
+            });
             return ret;
           }
 
@@ -110,12 +184,7 @@ namespace neam
           ///       but the operator returns true if at least one value is different
           bool operator != (const device_features &o) const
           {
-            bool ret = false;
-            const uint8_t *this_iter_ptr = &robust_buffer_access;
-            const uint8_t *o_iter_ptr = &o.robust_buffer_access;
-            for (size_t i = 0; i < feature_count; ++i)
-              ret |= (this_iter_ptr[i] != 0) != (o_iter_ptr[i] != 0);
-            return ret;
+            return !(*this == o);
           }
 
           /// \brief Check the current device feature list against another, returning true
@@ -123,95 +192,140 @@ namespace neam
           /// false if there's an activated feature in this list that isn't in the other
           bool check_against(const device_features &mask) const
           {
-            bool is_bad = false;
-            const uint8_t *this_iter_ptr = &robust_buffer_access;
-            const uint8_t *mask_iter_ptr = &mask.robust_buffer_access;
-            for (size_t i = 0; i < feature_count; ++i)
-              is_bad |= (this_iter_ptr[i] != 0 && mask_iter_ptr[i] == 0);
-            return !is_bad;
+            const device_features zero;
+            device_features tmp = *this;
+            tmp &= ~mask;
+            return tmp == zero;
           }
 
           /// \brief Deactivate every feature in the list
           void clear()
           {
-            uint8_t *this_iter_ptr = &robust_buffer_access;
-            for (size_t i = 0; i < feature_count; ++i)
-              this_iter_ptr[i] = 0;
+            void* prev = nullptr;
+            for_each_entries(feature_list, [&prev](auto& entry)
+            {
+              struct_init(entry, prev);
+              prev = &entry;
+            });
           }
 
-        public: // advanced
-          /// \brief Convert a hydra device feature list back to a vulkan one
-          VkPhysicalDeviceFeatures _to_vulkan() const
+          // getters: both get<type> and get<VK_STRUCT_TYPE> are accepted
+
+          template<typename Type> Type& get() { return std::get<Type>(feature_list); }
+          template<typename Type> const Type& get() const { return std::get<Type>(feature_list); }
+
+          template<VkStructureType StructType>
+          auto& get()
           {
-            VkPhysicalDeviceFeatures ret;
-
-            VkBool32 *dest_ptr = reinterpret_cast<VkBool32 *>(&ret);
-            const uint8_t *orig_ptr = &robust_buffer_access;
-            for (size_t i = 0; i < feature_count; ++i)
-              dest_ptr[i] = (orig_ptr[i] != 0 ? VK_TRUE : VK_FALSE);
-
-            return ret;
+            using type_t = typename internal::feature_info_from_name_t<StructType>::type;
+            return std::get<type_t>(feature_list);
+          }
+          template<VkStructureType StructType>
+          const auto& get() const
+          {
+            using type_t = typename internal::feature_info_from_name_t<StructType>::type;
+            return std::get<type_t>(feature_list);
           }
 
-        public: // I don't have getters/setters, that would be horrible
-          uint8_t    robust_buffer_access;
-          uint8_t    full_draw_index_uint32;
-          uint8_t    image_cube_array;
-          uint8_t    independent_blend;
-          uint8_t    geometry_shader;
-          uint8_t    tessellation_shader;
-          uint8_t    sample_rate_shading;
-          uint8_t    dual_src_blend;
-          uint8_t    logic_op;
-          uint8_t    multi_draw_indirect;
-          uint8_t    draw_indirect_first_instance;
-          uint8_t    depth_clamp;
-          uint8_t    depth_bias_clamp;
-          uint8_t    fill_mode_non_solid;
-          uint8_t    depth_bounds;
-          uint8_t    wide_lines;
-          uint8_t    large_points;
-          uint8_t    alpha_to_one;
-          uint8_t    multi_viewport;
-          uint8_t    sampler_anisotropy;
-          uint8_t    texture_compression_etc2;
-          uint8_t    texture_compression_astc_ldr;
-          uint8_t    texture_compression_bc;
-          uint8_t    occlusion_query_precise;
-          uint8_t    pipeline_statistics_query;
-          uint8_t    vertex_pipeline_stores_and_atomics;
-          uint8_t    fragment_stores_and_atomics;
-          uint8_t    shader_tessellation_and_geometry_point_size;
-          uint8_t    shader_image_gather_extended;
-          uint8_t    shader_storage_image_extended_formats;
-          uint8_t    shader_storage_image_multisample;
-          uint8_t    shader_storage_image_read_without_format;
-          uint8_t    shader_storage_image_write_without_format;
-          uint8_t    shader_uniform_buffer_array_dynamic_indexing;
-          uint8_t    shader_sampled_image_array_dynamic_indexing;
-          uint8_t    shader_storage_buffer_array_dynamic_indexing;
-          uint8_t    shader_storage_image_array_dynamic_indexing;
-          uint8_t    shader_clip_distance;
-          uint8_t    shader_cull_distance;
-          uint8_t    shader_float64;
-          uint8_t    shader_int64;
-          uint8_t    shader_int16;
-          uint8_t    shader_resource_residency;
-          uint8_t    shader_resource_min_lod;
-          uint8_t    sparse_binding;
-          uint8_t    sparse_residency_buffer;
-          uint8_t    sparse_residency_image2_d;
-          uint8_t    sparse_residency_image3_d;
-          uint8_t    sparse_residency2_samples;
-          uint8_t    sparse_residency4_samples;
-          uint8_t    sparse_residency8_samples;
-          uint8_t    sparse_residency16_samples;
-          uint8_t    sparse_residency_aliased;
-          uint8_t    variable_multisample_rate;
-          uint8_t    inherited_queries;
+        public:
+          VkPhysicalDeviceFeatures& get_device_features()
+          {
+            return get<VkPhysicalDeviceFeatures2>().features;
+          }
+          const VkPhysicalDeviceFeatures& get_device_features() const
+          {
+            return get<VkPhysicalDeviceFeatures2>().features;
+          }
+          const void* _get_VkDeviceCreateInfo_pNext() const
+          {
+            return get<VkPhysicalDeviceFeatures2>().pNext;
+          }
 
         private:
-          static constexpr size_t feature_count = 55;
+          template<typename Function, typename... Types>
+          static void for_each_entries(std::tuple<Types...>& a, Function&& fnc)
+          {
+            (fnc(std::get<Types>(a)), ...);
+          }
+          template<typename Function, typename... Types>
+          static void for_each_entries(std::tuple<Types...>& a, const std::tuple<Types...>& b, Function&& fnc)
+          {
+            (fnc(std::get<Types>(a), std::get<Types>(b)), ...);
+          }
+          template<typename Function, typename... Types>
+          static void for_each_entries(const std::tuple<Types...>& a, const std::tuple<Types...>& b, Function&& fnc)
+          {
+            (fnc(std::get<Types>(a), std::get<Types>(b)), ...);
+          }
+
+          template<typename Data>
+          static uint32_t* to_data(Data& a)
+          {
+            return reinterpret_cast<uint32_t*>(&a) + (sizeof(VkBaseInStructure) / sizeof(uint32_t));
+          }
+          template<typename Data>
+          static const uint32_t* to_data(const Data& a)
+          {
+            return reinterpret_cast<const uint32_t*>(&a) + (sizeof(VkBaseInStructure) / sizeof(uint32_t));
+          }
+
+          template<typename Type>
+          static void struct_binary_or(Type& a, const Type& b)
+          {
+            using info_t = internal::feature_info_from_type_t<Type>;
+            uint32_t* a_data = to_data(a);
+            const uint32_t* b_data = to_data(b);
+
+            for (uint32_t i = 0; i < info_t::entry_count; ++i)
+              a_data[i] = a_data[i] | b_data[i];
+          }
+          template<typename Type>
+          static void struct_binary_and(Type& a, const Type& b)
+          {
+            using info_t = internal::feature_info_from_type_t<Type>;
+            uint32_t* a_data = to_data(a);
+            const uint32_t* b_data = to_data(b);
+
+            for (uint32_t i = 0; i < info_t::entry_count; ++i)
+              a_data[i] = (a_data[i] != 0) && (b_data[i] != 0);
+          }
+          template<typename Type>
+          static void struct_binary_negate(Type& a)
+          {
+            using info_t = internal::feature_info_from_type_t<Type>;
+            uint32_t* a_data = to_data(a);
+
+            for (uint32_t i = 0; i < info_t::entry_count; ++i)
+              a_data[i] = !a_data[i];
+          }
+          template<typename Type>
+          static bool struct_equality(const Type& a, const Type& b)
+          {
+            using info_t = internal::feature_info_from_type_t<Type>;
+            const uint32_t* a_data = to_data(a);
+            const uint32_t* b_data = to_data(b);
+
+            for (uint32_t i = 0; i < info_t::entry_count; ++i)
+            {
+              if ((a_data[i] != 0) != (b_data[i] != 0))
+                return false;
+            }
+            return true;
+          }
+          template<typename Type>
+          static void struct_init(Type& a, void* prev = nullptr)
+          {
+            using info_t = internal::feature_info_from_type_t<Type>;
+            a.sType = info_t::struct_type;
+            a.pNext = prev;
+
+            // set the fields to 0:
+            memset(to_data(a), 0, info_t::data_size);
+          }
+
+        private:
+          // Is a tuple of all the different feature structs:
+          ct::list::extract<internal::feature_struct_list>::as<std::tuple> feature_list;
       };
 
       /// \brief | operator overload
@@ -233,5 +347,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_258283952455712780_248821193_DEVICE_FEATURES_HPP__
+
 

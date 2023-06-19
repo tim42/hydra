@@ -27,12 +27,14 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2119615343320201058_297491590_SPECIALIZATION_INFO_HPP__
-#define __N_2119615343320201058_297491590_SPECIALIZATION_INFO_HPP__
+#pragma once
+
 
 #include <vector>
 #include <vulkan/vulkan.h>
 
+#include <ntools/id/string_id.hpp>
+#include <ntools/raw_data.hpp>
 #include <ntools/memory_allocator.hpp> // used to get a fast-growing yet contiguous memory area
 #include "../hydra_debug.hpp" // for check::
 
@@ -271,5 +273,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_2119615343320201058_297491590_SPECIALIZATION_INFO_HPP__
+
 

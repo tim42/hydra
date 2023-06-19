@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_3064046323163029733_126501074_QUEUE_HPP__
-#define __N_3064046323163029733_126501074_QUEUE_HPP__
+#pragma once
+
 
 #include <cstddef>
 #include <list>
@@ -106,6 +106,7 @@ namespace neam
           /// everything you have to do is to call submit() with that object.
           void submit(submit_info &si)
           {
+            std::lock_guard _l(queue_lock);
             si._submit(dev, vk_queue);
           }
 
@@ -113,13 +114,14 @@ namespace neam
           /// when all the work previously submitted will be done.
           void submit(const fence &fence_to_sig)
           {
-            check::on_vulkan_error::n_assert_success(dev._fn_vkQueueSubmit(vk_queue, 0, nullptr, fence_to_sig._get_vk_fence()));
+            std::lock_guard _l(queue_lock);
+            check::on_vulkan_error::n_assert_success(dev._vkQueueSubmit(vk_queue, 0, nullptr, fence_to_sig._get_vk_fence()));
           }
 
           /// \brief Wait the queue to be idle
           void wait_idle() const
           {
-            dev._fn_vkQueueWaitIdle(vk_queue);
+            dev._vkQueueWaitIdle(vk_queue);
           }
 
           /// \brief Submit a request to present the image
@@ -141,6 +143,7 @@ namespace neam
               nullptr
             };
 
+            std::lock_guard _l(queue_lock);
             auto result = vkQueuePresentKHR(vk_queue, &present_info);
             if (result == VK_ERROR_OUT_OF_DATE_KHR && out_of_date)
               *out_of_date = true;
@@ -160,10 +163,11 @@ namespace neam
           size_t queue_familly_index;
           size_t queue_index;
           VkQueue vk_queue;
+          static inline spinlock queue_lock;
       };
     } // namespace vk
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_3064046323163029733_126501074_QUEUE_HPP__
+
 

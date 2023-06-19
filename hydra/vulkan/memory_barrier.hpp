@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2556089501642613882_1390822852_MEMORY_BARRIER_HPP__
-#define __N_2556089501642613882_1390822852_MEMORY_BARRIER_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -95,6 +95,13 @@ namespace neam
             srcAccessMask = src_access_mask;
             dstAccessMask = dest_access_mask;
           }
+
+          buffer_memory_barrier& set_queue_transfer(uint32_t src_queue_family_index, uint32_t dst_queue_family_index)
+          {
+            srcQueueFamilyIndex = src_queue_family_index;
+            dstQueueFamilyIndex = dst_queue_family_index;
+            return *this;
+          }
       };
       static_assert(sizeof(buffer_memory_barrier) == sizeof(VkBufferMemoryBarrier), "compiler is not compatible with hydra");
 
@@ -119,9 +126,9 @@ namespace neam
 
             // default values for 2D image, without mipmaps
             subresourceRange.baseMipLevel = 0;
-            subresourceRange.levelCount = 1;
+            subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
             subresourceRange.baseArrayLayer = 0;
-            subresourceRange.layerCount = 1;
+            subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
             set_access_masks(src_access_mask, dest_access_mask);
           }
@@ -141,19 +148,36 @@ namespace neam
           }
 
           /// \brief Helper to set the subresourceRange member
-          void set_subresource_range(const VkImageSubresourceRange &isr)
+          image_memory_barrier& set_subresource_range(const VkImageSubresourceRange &isr)
           {
             subresourceRange.aspectMask = isr.aspectMask;
             subresourceRange.baseArrayLayer = isr.baseArrayLayer;
             subresourceRange.baseMipLevel = isr.baseMipLevel;
             subresourceRange.layerCount = isr.layerCount;
             subresourceRange.levelCount = isr.levelCount;
+            return *this;
           }
+
+          image_memory_barrier& set_queue_transfer(uint32_t src_queue_family_index, uint32_t dst_queue_family_index)
+          {
+            srcQueueFamilyIndex = src_queue_family_index;
+            dstQueueFamilyIndex = dst_queue_family_index;
+            return *this;
+          }
+
+          static image_memory_barrier queue_transfer(const ::neam::hydra::vk::image& _img, uint32_t src_queue_family_index, uint32_t dst_queue_family_index, VkImageLayout old_layout, VkImageLayout new_layout)
+          {
+            image_memory_barrier barrier(_img, old_layout, new_layout, 0, 0);
+            barrier.srcQueueFamilyIndex = src_queue_family_index;
+            barrier.dstQueueFamilyIndex = dst_queue_family_index;
+            return barrier;
+          }
+
       };
       static_assert(sizeof(image_memory_barrier) == sizeof(VkImageMemoryBarrier), "compiler is not compatible with hydra");
     } // namespace vk
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_2556089501642613882_1390822852_MEMORY_BARRIER_HPP__
+
 

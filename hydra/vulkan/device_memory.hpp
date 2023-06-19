@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1009128037355228585_249302133_DEVICE_MEMORY_HPP__
-#define __N_1009128037355228585_249302133_DEVICE_MEMORY_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -158,6 +158,12 @@ namespace neam
               memory_type_bits >>= 1;
             }
             return memory_type_index;
+          }
+
+          static uint32_t get_memory_type_count(device &dev)
+          {
+            const VkPhysicalDeviceMemoryProperties &dmp = dev.get_physical_device().get_memory_property();
+            return dmp.memoryTypeCount;
           }
 
           /// \brief Allocate some memory on the device
@@ -304,5 +310,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1009128037355228585_249302133_DEVICE_MEMORY_HPP__
+
 

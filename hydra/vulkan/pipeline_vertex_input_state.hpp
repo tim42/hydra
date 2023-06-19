@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_18844283671003224974_3191428268_PIPELINE_VERTEX_INPUT_STATE_HPP__
-#define __N_18844283671003224974_3191428268_PIPELINE_VERTEX_INPUT_STATE_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <ntools/hash/fnv1a.hpp>
@@ -130,5 +130,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_18844283671003224974_3191428268_PIPELINE_VERTEX_INPUT_STATE_HPP__
+
 

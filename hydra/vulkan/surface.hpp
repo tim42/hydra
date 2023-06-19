@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_29674314156007989_1831624161_SURFACE_HPP__
-#define __N_29674314156007989_1831624161_SURFACE_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -267,5 +267,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_29674314156007989_1831624161_SURFACE_HPP__
+
 

@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_19939691371062712_2840632657_IMAGE_COPY_AREA_HPP__
-#define __N_19939691371062712_2840632657_IMAGE_COPY_AREA_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -129,5 +129,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_19939691371062712_2840632657_IMAGE_COPY_AREA_HPP__
+
 

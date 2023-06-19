@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_3499414146016_327626064_IMAGE_2D_HPP__
-#define __N_3499414146016_327626064_IMAGE_2D_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -71,5 +71,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_3499414146016_327626064_IMAGE_2D_HPP__
+
 

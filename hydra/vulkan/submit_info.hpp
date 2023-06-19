@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_17114524758186496_151471944_SUBMIT_INFO_HPP__
-#define __N_17114524758186496_151471944_SUBMIT_INFO_HPP__
+#pragma once
+
 
 #include <vector>
 #include <deque>
@@ -121,10 +121,10 @@ namespace neam
               if (fence_only)
               {
                 if (this->fence)
-                    check::on_vulkan_error::n_assert_success(dev._fn_vkQueueSubmit(vk_queue, 0, nullptr, this->fence));
+                    check::on_vulkan_error::n_assert_success(dev._vkQueueSubmit(vk_queue, 0, nullptr, this->fence));
               }
               else
-                check::on_vulkan_error::n_assert_success(dev._fn_vkQueueSubmit(vk_queue, vk_submit_infos.size(), vk_submit_infos.data(), this->fence));
+                check::on_vulkan_error::n_assert_success(dev._vkQueueSubmit(vk_queue, vk_submit_infos.size(), vk_submit_infos.data(), this->fence));
             }
           };
 
@@ -228,5 +228,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_17114524758186496_151471944_SUBMIT_INFO_HPP__
+
 

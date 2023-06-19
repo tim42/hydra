@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_16252281432830929027_2391312862_PIPELINE_MULTISAMPLE_STATE_HPP__
-#define __N_16252281432830929027_2391312862_PIPELINE_MULTISAMPLE_STATE_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -128,5 +128,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_16252281432830929027_2391312862_PIPELINE_MULTISAMPLE_STATE_HPP__
+
 

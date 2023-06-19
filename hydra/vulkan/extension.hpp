@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
-#define __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+#pragma once
+
 
 #include <string>
 #include <vulkan/vulkan.h>
@@ -66,5 +66,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1979217171365015759_13397729_INSTANCE_EXTENSION_HPP__
+
 

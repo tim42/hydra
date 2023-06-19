@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_518920191126418147_250034947_ATTACHMENT_HPP__
-#define __N_518920191126418147_250034947_ATTACHMENT_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -147,7 +147,7 @@ namespace neam
           /// \brief Yield a const reference to VkAttachmentDescription
           operator const VkAttachmentDescription &() const { return vk_attachment_desc; }
 
-          id_t compute_hash()
+          id_t compute_hash() const
           {
             if (hash != id_t::none)
               return hash;
@@ -164,7 +164,7 @@ namespace neam
 
         private:
           VkAttachmentDescription vk_attachment_desc;
-          id_t hash = id_t::none;
+          mutable id_t hash = id_t::none;
           const swapchain *swapchain_ptr;
           const pipeline_multisample_state *multisample_ptr;
       };
@@ -172,5 +172,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_518920191126418147_250034947_ATTACHMENT_HPP__
+
 

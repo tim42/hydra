@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1955128604573715309_636829443_CLEAR_VALUE_HPP__
-#define __N_1955128604573715309_636829443_CLEAR_VALUE_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -110,5 +110,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1955128604573715309_636829443_CLEAR_VALUE_HPP__
+
 

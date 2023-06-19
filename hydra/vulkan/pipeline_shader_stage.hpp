@@ -31,6 +31,7 @@
 
 #include <vector>
 #include <deque>
+#include <variant>
 
 #include <vulkan/vulkan.h>
 #include <ntools/async/chain.hpp>

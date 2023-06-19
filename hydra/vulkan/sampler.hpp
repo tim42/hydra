@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_134929389320483379_2377717497_SAMPLER_HPP__
-#define __N_134929389320483379_2377717497_SAMPLER_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -123,5 +123,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_134929389320483379_2377717497_SAMPLER_HPP__
+
 

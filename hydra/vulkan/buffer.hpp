@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_24932140943134326865_101749810_BUFFER_HPP__
-#define __N_24932140943134326865_101749810_BUFFER_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -127,5 +127,5 @@ namespace neam
 } // namespace neam
 
 
-#endif // __N_24932140943134326865_101749810_BUFFER_HPP__
+
 

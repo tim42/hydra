@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1291425262325875861_1914419081_EVENT_HPP__
-#define __N_1291425262325875861_1914419081_EVENT_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -127,5 +127,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1291425262325875861_1914419081_EVENT_HPP__
+
 

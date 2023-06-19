@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1232927689274571835_1298719218_COMMAND_BUFFER_RECORDER_HPP__
-#define __N_1232927689274571835_1298719218_COMMAND_BUFFER_RECORDER_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -51,6 +51,11 @@
 #include "buffer_image_copy.hpp"
 #include "descriptor_set.hpp"
 #include "pipeline_layout.hpp"
+#include "rendering_attachment_info.hpp"
+
+#ifndef N_VK_CBR_STATE_TRACKING
+#define N_VK_CBR_STATE_TRACKING true
+#endif
 
 namespace neam
 {
@@ -73,9 +78,28 @@ namespace neam
             last_bound_pipeline = &p;
             if (!last_bound_pipeline->is_valid())
               return;
-            dev._fn_vkCmdBindPipeline(cmd_buff._get_vk_command_buffer(), bind_point, p.get_vk_pipeline());
+            dev._vkCmdBindPipeline(cmd_buff._get_vk_command_buffer(), bind_point, p.get_vk_pipeline());
           }
 
+#if N_VK_CBR_STATE_TRACKING
+          /// \brief Bind a pipeline object using the state-tracker options. Require access to vk utilities.
+          template<typename PPMGR, typename... Params>
+          void bind_graphics_pipeline(/*pipeline_manager*/PPMGR& ppmgr, string_id pid, Params&&... p)
+          {
+            if (last_rp != nullptr)
+            {
+              bind_pipeline(ppmgr.get_pipeline(pid, *last_rp, last_rp_subpass, std::forward<Params>(p)...), VK_PIPELINE_BIND_POINT_GRAPHICS);
+            }
+            else if (has_dyn_rendering_state)
+            {
+              bind_pipeline(ppmgr.get_pipeline(pid, last_dyn_rendering_state, std::forward<Params>(p)...), VK_PIPELINE_BIND_POINT_GRAPHICS);
+            }
+            else
+            {
+              check::debug::n_assert(false, "bind_graphics_pipeline: no state for pipeline found");
+            }
+          }
+#endif
           /// \brief Return the last bound pipeline (if any)
           const pipeline *get_last_bound_pipeline() const { return last_bound_pipeline; }
 
@@ -88,14 +112,14 @@ namespace neam
             vk_viewports.reserve(viewports.size());
             for (const viewport &it : viewports)
               vk_viewports.push_back(it);
-            dev._fn_vkCmdSetViewport(cmd_buff._get_vk_command_buffer(), offset, count, vk_viewports.data());
+            dev._vkCmdSetViewport(cmd_buff._get_vk_command_buffer(), offset, count, vk_viewports.data());
           }
 
           /// \brief Set the viewport on a command buffer
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetViewport.html">vulkan khr doc</a>
           void set_viewport(const viewport &viewport)
           {
-            dev._fn_vkCmdSetViewport(cmd_buff._get_vk_command_buffer(), 0, 1, &static_cast<const VkViewport &>(viewport));
+            dev._vkCmdSetViewport(cmd_buff._get_vk_command_buffer(), 0, 1, &static_cast<const VkViewport &>(viewport));
           }
 
           /// \brief Set the dynamic scissor rectangles on a command buffer
@@ -107,28 +131,28 @@ namespace neam
             vk_scissors.reserve(scissors.size());
             for (const rect2D &it : scissors)
               vk_scissors.push_back(it);
-            dev._fn_vkCmdSetScissor(cmd_buff._get_vk_command_buffer(), offset, count, vk_scissors.data());
+            dev._vkCmdSetScissor(cmd_buff._get_vk_command_buffer(), offset, count, vk_scissors.data());
           }
 
           /// \brief Set the dynamic scissor rectangles on a command buffer
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetScissor.html">vulkan khr doc</a>
           void set_scissor(const rect2D &scissor)
           {
-            dev._fn_vkCmdSetScissor(cmd_buff._get_vk_command_buffer(), 0, 1, &static_cast<const VkRect2D &>(scissor));
+            dev._vkCmdSetScissor(cmd_buff._get_vk_command_buffer(), 0, 1, &static_cast<const VkRect2D &>(scissor));
           }
 
           /// \brief Set the dynamic line width state
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetLineWidth.html">vulkan khr doc</a>
           void set_line_width(float line_width)
           {
-            dev._fn_vkCmdSetLineWidth(cmd_buff._get_vk_command_buffer(), line_width);
+            dev._vkCmdSetLineWidth(cmd_buff._get_vk_command_buffer(), line_width);
           }
 
           /// \brief Set the depth bias dynamic state
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetDepthBias.html">vulkan khr doc</a>
           void set_depth_bias(float constant_factor, float bias_clamp, float slope_factor)
           {
-            dev._fn_vkCmdSetDepthBias(cmd_buff._get_vk_command_buffer(), constant_factor, bias_clamp, slope_factor);
+            dev._vkCmdSetDepthBias(cmd_buff._get_vk_command_buffer(), constant_factor, bias_clamp, slope_factor);
           }
 
           /// \brief Set the values of blend constants
@@ -136,35 +160,35 @@ namespace neam
           void set_blend_constants(const glm::vec4 &blend_constants)
           {
             float _blend_constants[] = {blend_constants.x, blend_constants.y, blend_constants.z, blend_constants.w};
-            dev._fn_vkCmdSetBlendConstants(cmd_buff._get_vk_command_buffer(), _blend_constants);
+            dev._vkCmdSetBlendConstants(cmd_buff._get_vk_command_buffer(), _blend_constants);
           }
 
           /// \brief Set the depth bounds test values for a command buffer
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetDepthBounds.html">vulkan khr doc</a>
           void set_depth_bounds(float min, float max)
           {
-            dev._fn_vkCmdSetDepthBounds(cmd_buff._get_vk_command_buffer(), min, max);
+            dev._vkCmdSetDepthBounds(cmd_buff._get_vk_command_buffer(), min, max);
           }
 
           /// \brief Set the stencil compare mask dynamic state
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetStencilCompareMask.html">vulkan khr doc</a>
           void set_stencil_compare_mask(VkStencilFaceFlags face_mask, uint32_t compare_mask)
           {
-            dev._fn_vkCmdSetStencilCompareMask(cmd_buff._get_vk_command_buffer(), face_mask, compare_mask);
+            dev._vkCmdSetStencilCompareMask(cmd_buff._get_vk_command_buffer(), face_mask, compare_mask);
           }
 
           /// \brief Set the stencil write mask dynamic state
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetStencilWriteMask.html">vulkan khr doc</a>
           void set_stencil_write_mask(VkStencilFaceFlags face_mask, uint32_t write_mask)
           {
-            dev._fn_vkCmdSetStencilWriteMask(cmd_buff._get_vk_command_buffer(), face_mask, write_mask);
+            dev._vkCmdSetStencilWriteMask(cmd_buff._get_vk_command_buffer(), face_mask, write_mask);
           }
 
           /// \brief Set the stencil reference dynamic state
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetStencilReference.html">vulkan khr doc</a>
           void set_stencil_reference(VkStencilFaceFlags face_mask, uint32_t reference)
           {
-            dev._fn_vkCmdSetStencilReference(cmd_buff._get_vk_command_buffer(), face_mask, reference);
+            dev._vkCmdSetStencilReference(cmd_buff._get_vk_command_buffer(), face_mask, reference);
           }
 
           /// \brief Record a draw command
@@ -175,7 +199,7 @@ namespace neam
             if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
               return;
 
-            dev._fn_vkCmdDraw(cmd_buff._get_vk_command_buffer(), vertex_count, instance_count, first_vertex, first_instance);
+            dev._vkCmdDraw(cmd_buff._get_vk_command_buffer(), vertex_count, instance_count, first_vertex, first_instance);
           }
 
           /// \brief Issue an indirect draw into a command buffer
@@ -186,7 +210,7 @@ namespace neam
             if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
               return;
 
-            dev._fn_vkCmdDrawIndirect(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, draw_count, stride);
+            dev._vkCmdDrawIndirect(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, draw_count, stride);
           }
 
           /// \brief Issue an indexed draw into a command buffer
@@ -197,7 +221,7 @@ namespace neam
             if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
               return;
 
-            dev._fn_vkCmdDrawIndexed(cmd_buff._get_vk_command_buffer(), index_count, instance_count, first_index, vertex_offset, first_instance);
+            dev._vkCmdDrawIndexed(cmd_buff._get_vk_command_buffer(), index_count, instance_count, first_index, vertex_offset, first_instance);
           }
 
           /// \brief Issue an indirect draw into a command buffer
@@ -208,7 +232,7 @@ namespace neam
             if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
               return;
 
-            dev._fn_vkCmdDrawIndexedIndirect(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, draw_count, stride);
+            dev._vkCmdDrawIndexedIndirect(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, draw_count, stride);
           }
 
           /// \brief Dispatch compute work items
@@ -218,7 +242,7 @@ namespace neam
             if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
               return;
 
-            dev._fn_vkCmdDispatch(cmd_buff._get_vk_command_buffer(), x, y, z);
+            dev._vkCmdDispatch(cmd_buff._get_vk_command_buffer(), x, y, z);
           }
 
           /// \brief Dispatch compute work items
@@ -232,7 +256,7 @@ namespace neam
             if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
               return;
 
-            dev._fn_vkCmdDispatchIndirect(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset);
+            dev._vkCmdDispatchIndirect(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset);
           }
 
           /// \brief Copy data between images
@@ -243,7 +267,7 @@ namespace neam
             vk_cp_vct.reserve(cp_vct.size());
             for (const image_copy_area &it : cp_vct)
               vk_cp_vct.push_back(it);
-            dev._fn_vkCmdCopyImage(cmd_buff._get_vk_command_buffer(), source_image.get_vk_image(), src_layout, dest_image.get_vk_image(), dest_layout, vk_cp_vct.size(), vk_cp_vct.data());
+            dev._vkCmdCopyImage(cmd_buff._get_vk_command_buffer(), source_image.get_vk_image(), src_layout, dest_image.get_vk_image(), dest_layout, vk_cp_vct.size(), vk_cp_vct.data());
           }
 
           /// \brief Copy regions of an image, potentially performing format conversion
@@ -255,7 +279,7 @@ namespace neam
             vk_cp_vct.reserve(cp_vct.size());
             for (const image_blit_area &it : cp_vct)
               vk_cp_vct.push_back(it);
-            dev._fn_vkCmdBlitImage(cmd_buff._get_vk_command_buffer(), source_image.get_vk_image(), src_layout, dest_image.get_vk_image(), dest_layout, vk_cp_vct.size(), vk_cp_vct.data(), filter);
+            dev._vkCmdBlitImage(cmd_buff._get_vk_command_buffer(), source_image.get_vk_image(), src_layout, dest_image.get_vk_image(), dest_layout, vk_cp_vct.size(), vk_cp_vct.data(), filter);
           }
 
           /// \brief Clear regions of a color image
@@ -270,7 +294,7 @@ namespace neam
             vk_isr_vect.reserve(isr_vect.size());
             for (const image_subresource_range &it : isr_vect)
               vk_isr_vect.push_back(it);
-            dev._fn_vkCmdClearColorImage(cmd_buff._get_vk_command_buffer(), img.get_vk_image(), layout, &ccv, vk_isr_vect.size(), vk_isr_vect.data());
+            dev._vkCmdClearColorImage(cmd_buff._get_vk_command_buffer(), img.get_vk_image(), layout, &ccv, vk_isr_vect.size(), vk_isr_vect.data());
           }
 
           /// \brief Clear regions of a color image
@@ -285,7 +309,7 @@ namespace neam
             vk_isr_vect.reserve(isr_vect.size());
             for (const image_subresource_range &it : isr_vect)
               vk_isr_vect.push_back(it);
-            dev._fn_vkCmdClearColorImage(cmd_buff._get_vk_command_buffer(), img.get_vk_image(), layout, &ccv, vk_isr_vect.size(), vk_isr_vect.data());
+            dev._vkCmdClearColorImage(cmd_buff._get_vk_command_buffer(), img.get_vk_image(), layout, &ccv, vk_isr_vect.size(), vk_isr_vect.data());
           }
 
           /// \brief Clear regions of a color image
@@ -300,7 +324,7 @@ namespace neam
             vk_isr_vect.reserve(isr_vect.size());
             for (const image_subresource_range &it : isr_vect)
               vk_isr_vect.push_back(it);
-            dev._fn_vkCmdClearColorImage(cmd_buff._get_vk_command_buffer(), img.get_vk_image(), layout, &ccv, vk_isr_vect.size(), vk_isr_vect.data());
+            dev._vkCmdClearColorImage(cmd_buff._get_vk_command_buffer(), img.get_vk_image(), layout, &ccv, vk_isr_vect.size(), vk_isr_vect.data());
           }
 
           /// \brief  Fill regions of a combined depth-stencil image
@@ -312,28 +336,28 @@ namespace neam
             vk_isr_vect.reserve(isr_vect.size());
             for (const image_subresource_range &it : isr_vect)
               vk_isr_vect.push_back(it);
-            dev._fn_vkCmdClearDepthStencilImage(cmd_buff._get_vk_command_buffer(), img.get_vk_image(), layout, &cdsv, vk_isr_vect.size(), vk_isr_vect.data());
+            dev._vkCmdClearDepthStencilImage(cmd_buff._get_vk_command_buffer(), img.get_vk_image(), layout, &cdsv, vk_isr_vect.size(), vk_isr_vect.data());
           }
 
           /// \brief Set an event object to signaled state
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdSetEvent.html">vulkan khr doc</a>
           void set_event(const event &evt, VkPipelineStageFlags stage_mask)
           {
-            dev._fn_vkCmdSetEvent(cmd_buff._get_vk_command_buffer(), evt._get_vk_event(), stage_mask);
+            dev._vkCmdSetEvent(cmd_buff._get_vk_command_buffer(), evt._get_vk_event(), stage_mask);
           }
 
           /// \brief  Reset an event object to non-signaled state
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdResetEvent.html">vulkan khr doc</a>
           void reset_event(const event &evt, VkPipelineStageFlags stage_mask)
           {
-            dev._fn_vkCmdResetEvent(cmd_buff._get_vk_command_buffer(), evt._get_vk_event(), stage_mask);
+            dev._vkCmdResetEvent(cmd_buff._get_vk_command_buffer(), evt._get_vk_event(), stage_mask);
           }
 
           /// \brief Update the values of push constants
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdPushConstants.html">vulkan khr doc</a>
           void push_constants(const pipeline_layout &pl, VkShaderStageFlags stage_flags, uint32_t offset, uint32_t size, const void *values)
           {
-            dev._fn_vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), stage_flags, offset, size, values);
+            dev._vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), stage_flags, offset, size, values);
           }
 
           /// \brief Update the values of push constants
@@ -341,7 +365,7 @@ namespace neam
           template<typename Type>
           void push_constants(const pipeline_layout &pl, VkShaderStageFlags stage_flags, uint32_t offset, const Type &value)
           {
-            dev._fn_vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), stage_flags, offset, sizeof(value), (const void *)&value);
+            dev._vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), stage_flags, offset, sizeof(value), (const void *)&value);
           }
 
           /// \brief Update the values of push constants
@@ -350,13 +374,17 @@ namespace neam
           template<typename Type>
           void push_constants(const pipeline_layout &pl, uint32_t offset, const Type &value)
           {
-            dev._fn_vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), Type::stage_flags, offset, sizeof(value), (const void *)&value);
+            dev._vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), Type::stage_flags, offset, sizeof(value), (const void *)&value);
           }
 
           /// \brief Begin a new render pass
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdBeginRenderPass.html">vulkan khr doc</a>
           void begin_render_pass(const render_pass &rp, const framebuffer &fb, const rect2D &area, VkSubpassContents sp_contents, const std::vector<clear_value> &cv)
           {
+#if N_VK_CBR_STATE_TRACKING
+            last_rp = &rp;
+            last_rp_subpass = 0u;
+#endif
             VkRenderPassBeginInfo vk_rpb;
             vk_rpb.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             vk_rpb.pNext = nullptr;
@@ -369,21 +397,28 @@ namespace neam
             for (const auto &it : cv)
               vk_cv.push_back(it);
             vk_rpb.pClearValues = vk_cv.data();
-            dev._fn_vkCmdBeginRenderPass(cmd_buff._get_vk_command_buffer(), &vk_rpb, sp_contents);
+            dev._vkCmdBeginRenderPass(cmd_buff._get_vk_command_buffer(), &vk_rpb, sp_contents);
           }
 
           /// \brief Transition to the next subpass of a render pass
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdNextSubpass.html">vulkan khr doc</a>
           void next_subpass(VkSubpassContents sp_contents)
           {
-            dev._fn_vkCmdNextSubpass(cmd_buff._get_vk_command_buffer(), sp_contents);
+#if N_VK_CBR_STATE_TRACKING
+            last_rp_subpass++;
+#endif
+            dev._vkCmdNextSubpass(cmd_buff._get_vk_command_buffer(), sp_contents);
           }
 
           /// \brief End the current render pass
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdEndRenderPass.html">vulkan khr doc</a>
           void end_render_pass()
           {
-            dev._fn_vkCmdEndRenderPass(cmd_buff._get_vk_command_buffer());
+#if N_VK_CBR_STATE_TRACKING
+            last_rp = nullptr;
+            last_rp_subpass = 0u;
+#endif
+            dev._vkCmdEndRenderPass(cmd_buff._get_vk_command_buffer());
           }
 
           /// \brief Execute a secondary command buffer from a primary command buffer
@@ -394,7 +429,7 @@ namespace neam
             vk_cmd_buff.reserve(cmd_buff_vct.size());
             for (const command_buffer *it : cmd_buff_vct)
               vk_cmd_buff.push_back(it->_get_vk_command_buffer());
-            dev._fn_vkCmdExecuteCommands(cmd_buff._get_vk_command_buffer(), vk_cmd_buff.size(), vk_cmd_buff.data());
+            dev._vkCmdExecuteCommands(cmd_buff._get_vk_command_buffer(), vk_cmd_buff.size(), vk_cmd_buff.data());
           }
 
           /// \brief Execute a secondary command buffer from a primary command buffer
@@ -402,7 +437,7 @@ namespace neam
           void execute_commands(const command_buffer &sec_cmd_buff)
           {
             VkCommandBuffer vk_sec_cmd_buff = sec_cmd_buff._get_vk_command_buffer();
-            dev._fn_vkCmdExecuteCommands(cmd_buff._get_vk_command_buffer(), 1, &vk_sec_cmd_buff);
+            dev._vkCmdExecuteCommands(cmd_buff._get_vk_command_buffer(), 1, &vk_sec_cmd_buff);
           }
 
           /// \brief Bind vertex buffers to a command buffer
@@ -413,7 +448,7 @@ namespace neam
             vk_buffers.reserve(buffers.size());
             for (const buffer *it : buffers)
               vk_buffers.push_back(it->_get_vk_buffer());
-            dev._fn_vkCmdBindVertexBuffers(cmd_buff._get_vk_command_buffer(), first_binding, vk_buffers.size(), vk_buffers.data(), offsets.data());
+            dev._vkCmdBindVertexBuffers(cmd_buff._get_vk_command_buffer(), first_binding, vk_buffers.size(), vk_buffers.data(), offsets.data());
           }
 
           /// \brief Bind vertex buffers to a command buffer
@@ -428,7 +463,7 @@ namespace neam
             std::vector<VkDeviceSize> offsets;
             offsets.resize(buffers.size(), 0);
 
-            dev._fn_vkCmdBindVertexBuffers(cmd_buff._get_vk_command_buffer(), first_binding, vk_buffers.size(), vk_buffers.data(), offsets.data());
+            dev._vkCmdBindVertexBuffers(cmd_buff._get_vk_command_buffer(), first_binding, vk_buffers.size(), vk_buffers.data(), offsets.data());
           }
 
           /// \brief Bind a vertex buffer to a command buffer
@@ -436,28 +471,28 @@ namespace neam
           void bind_vertex_buffer(const buffer &buf, uint32_t binding, size_t offset = 0)
           {
             VkBuffer vk_buffer = buf._get_vk_buffer();
-            dev._fn_vkCmdBindVertexBuffers(cmd_buff._get_vk_command_buffer(), binding, 1, &vk_buffer, &offset);
+            dev._vkCmdBindVertexBuffers(cmd_buff._get_vk_command_buffer(), binding, 1, &vk_buffer, &offset);
           }
 
           /// \brief Bind an index buffer to a command buffer
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdBindIndexBuffer.html">vulkan khr doc</a>
           void bind_index_buffer(const buffer &buf, VkIndexType index_type, size_t offset = 0)
           {
-            dev._fn_vkCmdBindIndexBuffer(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, index_type);
+            dev._vkCmdBindIndexBuffer(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, index_type);
           }
 
           /// \brief Fill a region of a buffer with a fixed value
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdFillBuffer.html">vulkan khr doc</a>
           void fill_buffer(const buffer &buf, size_t offset, size_t size, uint32_t value)
           {
-            dev._fn_vkCmdFillBuffer(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, size, value);
+            dev._vkCmdFillBuffer(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, size, value);
           }
 
           /// \brief Update a buffer's contents from host memory
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdUpdateBuffer.html">vulkan khr doc</a>
           void update_buffer(const buffer &buf, size_t offset, size_t size, const uint32_t *data) /* NOTE: the vulkan doc states that data should be a 'const void *' */
           {
-            dev._fn_vkCmdUpdateBuffer(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, size, data);
+            dev._vkCmdUpdateBuffer(cmd_buff._get_vk_command_buffer(), buf._get_vk_buffer(), offset, size, data);
           }
 
           /// \brief Copy data between buffers
@@ -470,14 +505,14 @@ namespace neam
               0,
               (src.size() < dst.size() ? src.size() : dst.size())
             };
-            dev._fn_vkCmdCopyBuffer(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst._get_vk_buffer(), 1, &vk_bc);
+            dev._vkCmdCopyBuffer(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst._get_vk_buffer(), 1, &vk_bc);
           }
 
           /// \brief Copy data between buffer regions
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdCopyBuffer.html">vulkan khr doc</a>
           void copy_buffer(const buffer &src, const buffer &dst, const std::vector<VkBufferCopy> &regions)
           {
-            dev._fn_vkCmdCopyBuffer(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst._get_vk_buffer(), regions.size(), regions.data());
+            dev._vkCmdCopyBuffer(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst._get_vk_buffer(), regions.size(), regions.data());
           }
 
           /// \brief Insert a set of execution and memory barriers
@@ -485,7 +520,7 @@ namespace neam
           void pipeline_barrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
                                 VkDependencyFlags dep_flags, const std::vector<buffer_memory_barrier> &bmb)
           {
-            dev._fn_vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
+            dev._vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
                                          0, nullptr,
                                          bmb.size(), (VkBufferMemoryBarrier*)bmb.data(),
                                          0, nullptr);
@@ -496,7 +531,7 @@ namespace neam
           void pipeline_barrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
                                 VkDependencyFlags dep_flags, const std::vector<image_memory_barrier> &imb)
           {
-            dev._fn_vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
+            dev._vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
                                          0, nullptr,
                                          0, nullptr,
                                          imb.size(), (VkImageMemoryBarrier*)imb.data());
@@ -507,7 +542,7 @@ namespace neam
           void pipeline_barrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
                                 VkDependencyFlags dep_flags, const std::vector<memory_barrier> &mb)
           {
-            dev._fn_vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
+            dev._vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
                                          mb.size(), (VkMemoryBarrier*)mb.data(),
                                          0, nullptr,
                                          0, nullptr);
@@ -521,7 +556,7 @@ namespace neam
                                 const std::vector<buffer_memory_barrier> &bmb,
                                 const std::vector<image_memory_barrier> &imb)
           {
-            dev._fn_vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
+            dev._vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
                                          mb.size(), (VkMemoryBarrier*)mb.data(),
                                          bmb.size(), (VkBufferMemoryBarrier*)bmb.data(),
                                          imb.size(), (VkImageMemoryBarrier*)imb.data());
@@ -531,14 +566,14 @@ namespace neam
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdCopyBufferToImage.html">vulkan khr doc</a>
           void copy_buffer_to_image(const buffer &src, const image &dst, VkImageLayout dst_layout, const std::vector<buffer_image_copy> &bic_vct)
           {
-            dev._fn_vkCmdCopyBufferToImage(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst.get_vk_image(), dst_layout, bic_vct.size(), (const VkBufferImageCopy*)bic_vct.data());
+            dev._vkCmdCopyBufferToImage(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst.get_vk_image(), dst_layout, bic_vct.size(), (const VkBufferImageCopy*)bic_vct.data());
           }
 
           /// \brief Copy data from a buffer into an image
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdCopyBufferToImage.html">vulkan khr doc</a>
           void copy_buffer_to_image(const buffer &src, const image &dst, VkImageLayout dst_layout, const buffer_image_copy &bic)
           {
-            dev._fn_vkCmdCopyBufferToImage(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst.get_vk_image(), dst_layout, 1, (const VkBufferImageCopy*)&bic);
+            dev._vkCmdCopyBufferToImage(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst.get_vk_image(), dst_layout, 1, (const VkBufferImageCopy*)&bic);
           }
 
           /// \brief Binds descriptor sets to a command buffer
@@ -549,14 +584,34 @@ namespace neam
             vk_ds_vct.reserve(ds_vct.size());
             for (auto it : ds_vct)
               vk_ds_vct.push_back(it->_get_vk_descritpor_set());
-            dev._fn_vkCmdBindDescriptorSets(cmd_buff._get_vk_command_buffer(), point, pl._get_vk_pipeline_layout(), first_set, vk_ds_vct.size(), vk_ds_vct.data(), 0, nullptr);
+            dev._vkCmdBindDescriptorSets(cmd_buff._get_vk_command_buffer(), point, pl._get_vk_pipeline_layout(), first_set, vk_ds_vct.size(), vk_ds_vct.data(), 0, nullptr);
+          }
+
+          /// <a href="https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/vkCmdBeginRendering.html">vulkan khr doc</a>
+          void begin_rendering(const rendering_info& info)
+          {
+#if N_VK_CBR_STATE_TRACKING
+            last_dyn_rendering_state = info;
+            has_dyn_rendering_state = true;
+#endif
+            dev._vkCmdBeginRendering(cmd_buff._get_vk_command_buffer(), &info._get_vk_info());
+          }
+
+          /// <a href="https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/vkCmdEndRenderingKHR.html">vulkan khr doc</a>
+          void end_rendering()
+          {
+#if N_VK_CBR_STATE_TRACKING
+            last_dyn_rendering_state = {};
+            has_dyn_rendering_state = false;
+#endif
+            dev._vkCmdEndRendering(cmd_buff._get_vk_command_buffer());
           }
 
 //           /// \brief
 //           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/.html">vulkan khr doc</a>
 //           void set_()
 //           {
-//             dev._fn_vkCmd(cmd_buff._get_vk_command_buffer());
+//             dev._vkCmd(cmd_buff._get_vk_command_buffer());
 //           }
 #define TODO_FNC(x)
           // TODO
@@ -578,6 +633,14 @@ namespace neam
 
           // state information
           const pipeline *last_bound_pipeline = nullptr;
+
+#if N_VK_CBR_STATE_TRACKING
+          const vk::render_pass* last_rp = nullptr;
+          uint32_t last_rp_subpass = 0u;
+
+          bool has_dyn_rendering_state = false;
+          pipeline_rendering_create_info last_dyn_rendering_state;
+#endif
       };
 
 
@@ -593,7 +656,7 @@ namespace neam
           flags, nullptr
         };
 
-        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }
@@ -614,7 +677,7 @@ namespace neam
           flags, &vk_cbii
         };
 
-        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }
@@ -636,7 +699,7 @@ namespace neam
           flags, &vk_cbii
         };
 
-        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }
@@ -658,7 +721,7 @@ namespace neam
           flags, &vk_cbii
         };
 
-        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }
@@ -680,7 +743,7 @@ namespace neam
           flags, &vk_cbii
         };
 
-        check::on_vulkan_error::n_assert_success(dev._fn_vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
+        check::on_vulkan_error::n_assert_success(dev._vkBeginCommandBuffer(cmd_buf, &vk_cbbi));
 
         return command_buffer_recorder(dev, *this);
       }
@@ -688,5 +751,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1232927689274571835_1298719218_COMMAND_BUFFER_RECORDER_HPP__
+
 

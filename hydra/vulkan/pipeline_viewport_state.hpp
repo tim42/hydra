@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_77887741870531478_265682169_PIPELINE_VIEWPORT_STATE_HPP__
-#define __N_77887741870531478_265682169_PIPELINE_VIEWPORT_STATE_HPP__
+#pragma once
+
 
 #include <vector>
 #include <deque>
@@ -204,5 +204,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_77887741870531478_265682169_PIPELINE_VIEWPORT_STATE_HPP__
+
 

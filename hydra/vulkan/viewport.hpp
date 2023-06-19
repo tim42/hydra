@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1359446532349210609_901327426_VIEWPORT_HPP__
-#define __N_1359446532349210609_901327426_VIEWPORT_HPP__
+#pragma once
+
 
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
@@ -127,5 +127,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1359446532349210609_901327426_VIEWPORT_HPP__
+
 

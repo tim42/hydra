@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_21334102461211220665_1439814387_PIPELINE_HPP__
-#define __N_21334102461211220665_1439814387_PIPELINE_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -44,6 +44,7 @@
 #include "pipeline_vertex_input_state.hpp"
 #include "pipeline_input_assembly_state.hpp"
 #include "pipeline_cache.hpp"
+#include "pipeline_rendering_create_info.hpp"
 
 #include "rasterizer.hpp"
 #include "viewport.hpp"
@@ -151,17 +152,20 @@ namespace neam
           /// \brief Set the pipeline layout
           void set_pipeline_layout(pipeline_layout &_layout) { layout = &_layout; }
 
-          /// \brief Return the render pass
-          render_pass &get_render_pass() const { return *rp; }
           /// \brief Set the render pass
-          void set_render_pass(render_pass &_rp) { rp = &_rp; }
+          void set_render_pass(const render_pass &_rp) { rp = &_rp; }
+
 
           /// \brief Set the subpass used by the pipeline
-          size_t get_subpass_index() const { return create_info.subpass; }
-          /// \brief Return te subpass used by the pipeline
           void set_subpass_index(size_t subpass_index) { create_info.subpass = subpass_index; }
 
           void clear_render_pass() { rp = nullptr; create_info.subpass = 0; }
+
+          void set_pipeline_create_info(const pipeline_rendering_create_info& _prci)
+          {
+            clear_render_pass();
+            prci = _prci;
+          }
 
           /// \brief Return the base pipeline (could be nullptr if none). Creating derivate pipelines
           /// may allow faster transition between derivates of the same pipeline
@@ -241,12 +245,17 @@ namespace neam
               create_info.pDynamicState = nullptr;
 
             check::on_vulkan_error::n_assert(layout != nullptr, "could not create a pipeline without a valid layout");
-            check::on_vulkan_error::n_assert(rp != nullptr, "could not create a pipeline without a valid render pass");
 
             create_info.layout = layout->_get_vk_pipeline_layout();
             if (rp != nullptr)
             {
+              create_info.pNext = nullptr;
               create_info.renderPass = rp->get_vk_render_pass();
+            }
+            else
+            {
+              create_info.pNext = &prci._get_vk_info();
+              create_info.renderPass = nullptr;
             }
 //             if (base_pipeline)
 //               create_info.basePipelineHandle = base_pipeline->get_vk_pipeline();
@@ -289,8 +298,10 @@ namespace neam
           pipeline_color_blending pcb;
           pipeline_dynamic_state pds;
 
+          pipeline_rendering_create_info prci;
+
           pipeline_layout *layout = nullptr;
-          render_pass *rp = nullptr;
+          const render_pass *rp = nullptr;
 
           pipeline *base_pipeline = nullptr;
           bool dirty = true;
@@ -416,5 +427,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_21334102461211220665_1439814387_PIPELINE_HPP__
+
 

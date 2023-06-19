@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_13130227691319731303_2044517011_DESCRIPTOR_POOL_HPP__
-#define __N_13130227691319731303_2044517011_DESCRIPTOR_POOL_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -91,6 +91,7 @@ namespace neam
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkResetDescriptorPool.html">vulkan khr doc</a>
           void reset()
           {
+            std::lock_guard _l(pool_lock);
             check::on_vulkan_error::n_assert_success(dev._vkResetDescriptorPool(vk_dpool, 0));
           }
 
@@ -108,7 +109,10 @@ namespace neam
             };
             std::vector<VkDescriptorSet> ds_sets;
             ds_sets.resize(dsl_vct.size());
-            check::on_vulkan_error::n_assert_success(dev._vkAllocateDescriptorSets(&ds_allocate, ds_sets.data()));
+            {
+              std::lock_guard _l(pool_lock);
+              check::on_vulkan_error::n_assert_success(dev._vkAllocateDescriptorSets(&ds_allocate, ds_sets.data()));
+            }
 
             std::vector<descriptor_set> ret;
             ret.reserve(ds_sets.size());
@@ -133,7 +137,10 @@ namespace neam
               1, &vk_dsl
             };
             VkDescriptorSet rset;
-            check::on_vulkan_error::n_assert_success(dev._vkAllocateDescriptorSets(&ds_allocate, &rset));
+            {
+              std::lock_guard _l(pool_lock);
+              check::on_vulkan_error::n_assert_success(dev._vkAllocateDescriptorSets(&ds_allocate, &rset));
+            }
 
             if (allow_free)
               return descriptor_set(dev, this, rset);
@@ -145,6 +152,8 @@ namespace neam
           void free_descriptor_set(descriptor_set &dset)
           {
             VkDescriptorSet vk_dset = dset._get_vk_descritpor_set();
+
+            std::lock_guard _l(pool_lock);
             check::on_vulkan_error::n_assert_success(dev._vkFreeDescriptorSets(vk_dpool, 1, &vk_dset));
           }
 
@@ -155,6 +164,8 @@ namespace neam
             vk_dset.reserve(dset.size());
             for (descriptor_set *it : dset)
               vk_dset.push_back(it->_get_vk_descritpor_set());
+
+            std::lock_guard _l(pool_lock);
             check::on_vulkan_error::n_assert_success(dev._vkFreeDescriptorSets(vk_dpool, vk_dset.size(), vk_dset.data()));
           }
 
@@ -164,6 +175,7 @@ namespace neam
         private:
           device &dev;
           VkDescriptorPool vk_dpool;
+          mutable spinlock pool_lock;
       };
 
 
@@ -180,5 +192,5 @@ namespace neam
 } // namespace neam
 
 
-#endif // __N_13130227691319731303_2044517011_DESCRIPTOR_POOL_HPP__
+
 

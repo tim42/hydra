@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_692459433198810776_77086004_HYDRA_VULKAN_INSTANCE_HPP__
-#define __N_692459433198810776_77086004_HYDRA_VULKAN_INSTANCE_HPP__
+#pragma once
+
 
 #include <string>
 #include <vector>
@@ -47,6 +47,31 @@ namespace neam
     class physical_device;
     namespace vk
     {
+      namespace internal
+      {
+        enum class validation_state_t
+        {
+          verbose, // everything, including callstack. default.
+          summary, // just the validation layer message
+          simple_notice, // debug message that there's suppressed validation
+          silent, // please do not use?
+        };
+
+        void set_thread_validation_state(validation_state_t state);
+        validation_state_t get_thread_validation_state();
+      }
+      namespace validation
+      {
+        class state_scope
+        {
+          public:
+            state_scope(internal::validation_state_t new_state) : old_state(internal::get_thread_validation_state()) { internal::set_thread_validation_state(new_state); }
+            ~state_scope() { internal::set_thread_validation_state(old_state); }
+          private:
+            internal::validation_state_t old_state;
+        };
+      }
+
       /// \brief Wrap a vulkan instance
       class instance
       {
@@ -159,84 +184,7 @@ namespace neam
               gpu_list.emplace_back(physical_device(it));
           }
 
-          static VkBool32 debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t obj, size_t location, int32_t code, const char* layerPrefix, const char* msg, void* userData)
-          {
-            (void)userData;
-
-            neam::cr::logger::severity s;
-            switch (flags)
-            {
-              case VK_DEBUG_REPORT_INFORMATION_BIT_EXT: s = neam::cr::logger::severity::message;
-                break;
-              case VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT:
-              case VK_DEBUG_REPORT_WARNING_BIT_EXT: s = neam::cr::logger::severity::warning;
-                break;
-              case VK_DEBUG_REPORT_ERROR_BIT_EXT: s = neam::cr::logger::severity::error;
-                break;
-              case VK_DEBUG_REPORT_DEBUG_BIT_EXT: s = neam::cr::logger::severity::debug;
-                break;
-              default: s = neam::cr::logger::severity::message;
-                break;
-            }
-            const char* object_type = nullptr;
-#define _HYDRA_CASE(cs)     case cs: object_type = #cs; break;
-            switch (objType)
-            {
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SEMAPHORE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_FENCE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_EVENT_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_QUERY_POOL_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_VIEW_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_CACHE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_POOL_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_POOL_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_SWAPCHAIN_KHR_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_EXT)
-//                 _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_RANGE_SIZE_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_MAX_ENUM_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_KHR_EXT)
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_MODE_KHR_EXT)
-
-//               case VK_DEBUG_REPORT_OBJECT_TYPE_OBJECT_TABLE_NVX_EXT:
-//                 _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_END_RANGE_EXT)
-
-//               case VK_DEBUG_REPORT_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NVX_EXT:
-                _HYDRA_CASE(VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_KHR_EXT)
-              default:break;
-            }
-#undef _HYDRA_CASE
-
-            // finally print the message:
-            neam::cr::out().log_fmt(s, std::source_location::current(),
-                                  "VULKAN VALIDATION LAYER MESSAGE: {0}:\n"
-                                  "[{1} / {2} / {3} ]: {4}:\n"
-                                  "{5}",
-                                  object_type,
-                                  obj, location, code, layerPrefix,
-                                  msg);
-
-            neam::cr::print_callstack();
-            return VK_FALSE;
-          }
+          static VkBool32 debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType, uint64_t obj, size_t location, int32_t code, const char* layerPrefix, const char* msg, void* userData);
 
         private:
           VkInstance vulkan_instance;
@@ -249,4 +197,4 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_692459433198810776_77086004_HYDRA_VULKAN_INSTANCE_HPP__
+

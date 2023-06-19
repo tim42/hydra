@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_227861082121406260_350013998_SEMAPHORE_HPP__
-#define __N_227861082121406260_350013998_SEMAPHORE_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -94,5 +94,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_227861082121406260_350013998_SEMAPHORE_HPP__
+
 

@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_26624251201935321307_35532239_IMAGE_CREATOR_INTERFACE_HPP__
-#define __N_26624251201935321307_35532239_IMAGE_CREATOR_INTERFACE_HPP__
+#pragma once
+
 
 namespace neam
 {
@@ -41,4 +41,4 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_26624251201935321307_35532239_IMAGE_CREATOR_INTERFACE_HPP__
+

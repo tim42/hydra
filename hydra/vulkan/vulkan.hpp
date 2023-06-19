@@ -30,8 +30,8 @@
 // This folder contains some vulkan wrappers (command pool, command buffer, ...)
 
 
-#ifndef __N_11194131652893914663_22232226_VULKAN_HPP__
-#define __N_11194131652893914663_22232226_VULKAN_HPP__
+#pragma once
+
 
 #include "instance.hpp"
 #include "device.hpp"
@@ -71,5 +71,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_11194131652893914663_22232226_VULKAN_HPP__
+
 

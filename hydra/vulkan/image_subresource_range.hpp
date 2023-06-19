@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_134267647323465827_2269916273_IMAGE_SUBRESOURCE_RANGE_HPP__
-#define __N_134267647323465827_2269916273_IMAGE_SUBRESOURCE_RANGE_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -81,5 +81,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_134267647323465827_2269916273_IMAGE_SUBRESOURCE_RANGE_HPP__
+
 

@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2420318227315512693_2905624529_PIPELINE_COLOR_BLENDING_HPP__
-#define __N_2420318227315512693_2905624529_PIPELINE_COLOR_BLENDING_HPP__
+#pragma once
+
 
 #include <vector>
 #include <deque>
@@ -184,5 +184,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_2420318227315512693_2905624529_PIPELINE_COLOR_BLENDING_HPP__
+
 

@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_23523945696199722_1464019613_SUBPASS_DEPENDENCY_HPP__
-#define __N_23523945696199722_1464019613_SUBPASS_DEPENDENCY_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -76,5 +76,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_23523945696199722_1464019613_SUBPASS_DEPENDENCY_HPP__
+
 

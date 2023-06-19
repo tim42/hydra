@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_4443230312283431824_1717216114_PIPELINE_LAYOUT_HPP__
-#define __N_4443230312283431824_1717216114_PIPELINE_LAYOUT_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include "../hydra_debug.hpp"
@@ -110,5 +110,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_4443230312283431824_1717216114_PIPELINE_LAYOUT_HPP__
+
 

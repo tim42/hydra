@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_280839898788326663_2575717169_SPIRV_LOADER_HPP__
-#define __N_280839898788326663_2575717169_SPIRV_LOADER_HPP__
+#pragma once
+
 
 #include <string>
 #include <fstream>
@@ -75,5 +75,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_280839898788326663_2575717169_SPIRV_LOADER_HPP__
+
 

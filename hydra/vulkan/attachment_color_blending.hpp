@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_834524860240801156_2207328760_ATTACHMENT_COLOR_BLENDING_HPP__
-#define __N_834524860240801156_2207328760_ATTACHMENT_COLOR_BLENDING_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -138,5 +138,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_834524860240801156_2207328760_ATTACHMENT_COLOR_BLENDING_HPP__
+
 

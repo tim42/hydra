@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_21136293681303628377_403532604_IMAGE_BLIT_AREA_HPP__
-#define __N_21136293681303628377_403532604_IMAGE_BLIT_AREA_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -118,5 +118,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_21136293681303628377_403532604_IMAGE_BLIT_AREA_HPP__
+
 

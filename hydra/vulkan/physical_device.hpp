@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_683913722694924741_2220927619_DEVICE_HPP__
-#define __N_683913722694924741_2220927619_DEVICE_HPP__
+#pragma once
+
 
 #include <vector>
 #include <vulkan/vulkan.h>
@@ -60,9 +60,8 @@ namespace neam
             vkGetPhysicalDeviceMemoryProperties(gpu, &memory_properties);
 
             // load features
-            VkPhysicalDeviceFeatures vk_features;
-            vkGetPhysicalDeviceFeatures(gpu, &vk_features);
-            features = device_features(vk_features);
+            features.clear();
+            vkGetPhysicalDeviceFeatures2(gpu, &features.get<VkPhysicalDeviceFeatures2>());
 
             // load queues information
             uint32_t count = 0;
@@ -221,5 +220,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_683913722694924741_2220927619_DEVICE_HPP__
+
 

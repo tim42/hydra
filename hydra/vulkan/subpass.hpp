@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_878112941936812685_369014797_SUBPASS_HPP__
-#define __N_878112941936812685_369014797_SUBPASS_HPP__
+#pragma once
+
 
 #include <initializer_list>
 #include <vector>
@@ -234,5 +234,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_878112941936812685_369014797_SUBPASS_HPP__
+
 

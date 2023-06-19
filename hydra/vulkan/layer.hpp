@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_22740186361259331480_807329602_INSTANCE_LAYER_HPP__
-#define __N_22740186361259331480_807329602_INSTANCE_LAYER_HPP__
+#pragma once
+
 
 #include <string>
 #include <vector>
@@ -136,5 +136,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_22740186361259331480_807329602_INSTANCE_LAYER_HPP__
+
 

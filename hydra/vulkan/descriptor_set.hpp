@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1479630713735528326_1184011152_DESCRIPTOR_SET_HPP__
-#define __N_1479630713735528326_1184011152_DESCRIPTOR_SET_HPP__
+#pragma once
+
 
 #include <vulkan/vulkan.h>
 
@@ -174,5 +174,5 @@ namespace neam
 } // namespace neam
 
 
-#endif // __N_1479630713735528326_1184011152_DESCRIPTOR_SET_HPP__
+
 
