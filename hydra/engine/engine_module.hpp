@@ -84,14 +84,12 @@ namespace neam::hydra
 
     // No debug stuff (outside compiled-in debug stuff)
     // If this flag is absent, debug stuff can be present
+    // This flag prevent automatic index reload/index watch
     release = 1 << 6,
 
     // There won't be any resource packing
     // If this flag is absent, resource packing might take place
     packer_less = 1 << 7,
-
-    // FIXME: Should probably be in a option somewhere else
-    present_from_compute = 1 << 8,
   };
   N_ENUM_FLAG(runtime_mode)
 
@@ -144,10 +142,17 @@ namespace neam::hydra
 
 
     public: // init (core)
+      /// \brief Called right before the boot step of the engine.
+      /// \note Use on_context_initialized for heavier tasks.
+      ///       This call-back should only be there to setup configuration that \e must be done before the call to boot() on the context
+      /// \note this means that in the case of a vk_context the vulkan instance and device do exist
+      virtual void on_pre_boot_step() {}
+
       /// \brief If there's specific task groups to create
       virtual void add_task_groups(threading::task_group_dependency_tree& /*tgd*/) {}
       /// \brief Add dependencies between the task-groups:
       virtual void add_task_groups_dependencies(threading::task_group_dependency_tree& /*tgd*/) {}
+
 
       /// \brief Called after the core context has been set (and is fully initialized).
       /// \note This function can do any specific initialization as the module has been selected
@@ -157,7 +162,11 @@ namespace neam::hydra
       virtual void on_context_initialized() {}
 
       /// \brief Called when the final index (resources) is loaded, but right before the task manager is unblocked
+      /// \note the context might not be fully initialized (some modules might be pending init)
       virtual void on_resource_index_loaded() {}
+
+      /// \brief Called right after the task manager is unlocked, the index is fully loaded and the context fully initialized
+      virtual void on_engine_boot_complete() {}
 
     public: // init (vk_context)
       /// \brief Request specific features / stuff to do for the vulkan interface creation

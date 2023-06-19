@@ -33,20 +33,20 @@
 
 namespace neam::hydra
 {
-  resources::context::status_chain engine_t::boot(runtime_mode _mode, id_t index_key, const std::string& index_file)
+  resources::status engine_t::init(runtime_mode _mode)
   {
-    cr::out().debug("engine: starting the boot process for mode {:X} and index {}", std::to_underlying(_mode), index_file);
+    cr::out().debug("engine: initializing engine for mode {:X}", std::to_underlying(_mode));
 
     if (mode != runtime_mode::none)
     {
-      check::debug::n_check(false, "trying to boot an already init engine");
-      return resources::context::status_chain::create_and_complete(resources::status::failure);
+      check::debug::n_check(false, "engine: trying to boot an already init engine");
+      return resources::status::failure;
     }
 
     if ((_mode & runtime_mode::context_flags) == runtime_mode::none)
     {
-      check::debug::n_check(false, "trying to boot an engine with no context");
-      return resources::context::status_chain::create_and_complete(resources::status::failure);
+      check::debug::n_check(false, "engine: trying to boot an engine with no context");
+      return resources::status::failure;
     }
 
     // very first operation
@@ -55,20 +55,20 @@ namespace neam::hydra
     // start by filtering and creating engine modules (they are necessary for the vk instance creation)
     // We don't set the engine yet, as it's only done at a later stage
     {
-      cr::out().debug("creating engine modules...");
-      check::debug::n_check(modules.empty(), "engine_t::boot(): invalid state");
+      cr::out().debug("engine: creating engine modules...");
+      check::debug::n_check(modules.empty(), "engine_t::init(): invalid state");
       modules.clear();
 
       std::vector filtered_modules = module_manager::filter_modules(mode);
       for (auto& it : filtered_modules)
       {
         const id_t name = string_id::_runtime_build_from_string(it.name.data(), it.name.size());
-        if (!check::debug::n_check(!modules.contains(name), "duplicate engine module name found: {}", it.name))
+        if (!check::debug::n_check(!modules.contains(name), "engine: duplicate engine module name found: {}", it.name))
           continue;
         cr::out().debug("  adding engine module: {}", it.name);
         modules.emplace(name, it.create());
       }
-      cr::out().debug("creating engine modules: {} modules created", modules.size());
+      cr::out().debug("engine: creating engine modules: {} modules created", modules.size());
     }
 
     for (auto& mod : modules)
@@ -77,7 +77,7 @@ namespace neam::hydra
     // create the vulkan instance then create the actual context (vk or hydra)
     if ((mode & runtime_mode::vulkan_context) == runtime_mode::vulkan_context)
     {
-      cr::out().debug("creating vulkan instance...");
+      cr::out().debug("engine: creating vulkan instance...");
       neam::hydra::gen_feature_requester gfr;
       neam::hydra::bootstrap hydra_init;
 
@@ -117,14 +117,6 @@ namespace neam::hydra
         return true;
       }, false);
 
-      // request validation stuff if not in release:
-      // NOTE: Might be better off in a module
-      if ((mode & runtime_mode::release) == runtime_mode::none)
-      {
-        gfr.require_instance_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-        gfr.require_instance_layer("VK_LAYER_KHRONOS_validation");
-      }
-
       // loop over the modules for them to request stuff:
       for (auto& mod : modules)
         mod.second->init_vulkan_interface(gfr, hydra_init);
@@ -132,29 +124,48 @@ namespace neam::hydra
       hydra_init.register_feature_requester(gfr);
 
       // create the actual vulkan instance:
-      vk::instance vk_instance = hydra_init.create_instance(fmt::format("hydra-engine[{:X}]", std::to_underlying(mode)));
-      cr::out().debug("created vulkan instance");
+      constexpr VkValidationFeatureEnableEXT vk_validation_to_enable[] =
+      {
+//         VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
+        VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+      };
+      vk::instance vk_instance = hydra_init.create_instance(fmt::format("hydra-engine[{:X}]", std::to_underlying(mode)), 1,
+                                                            VkValidationFeaturesEXT
+                                                            {
+                                                              .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
+                                                              .pNext = nullptr,
+                                                              .enabledValidationFeatureCount = sizeof(vk_validation_to_enable) / sizeof(vk_validation_to_enable[0]),
+                                                              .pEnabledValidationFeatures = vk_validation_to_enable,
+                                                              .disabledValidationFeatureCount = 0,
+                                                              .pDisabledValidationFeatures = nullptr,
+                                                            });
+      cr::out().debug("engine: created vulkan instance");
 
       if ((mode & runtime_mode::release) == runtime_mode::none)
       {
         vk_instance.install_default_debug_callback(VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT | VK_DEBUG_REPORT_ERROR_BIT_EXT);
       }
 
-      // instance is created, we can get the actual queues:
-      neam::hydra::temp_queue_familly_id_t graphic_queue = *temp_graphic_queue;
-      neam::hydra::temp_queue_familly_id_t transfer_queue = *temp_transfer_queue;
-      neam::hydra::temp_queue_familly_id_t compute_queue = *temp_compute_queue;
-
       // create the actual context:
       if ((mode & runtime_mode::hydra_context) == runtime_mode::hydra_context)
-        context.emplace<hydra_context>(std::move(vk_instance), hydra_init, graphic_queue, transfer_queue, compute_queue);
+      {
+        context.emplace<hydra_context>(std::move(vk_instance), hydra_init,
+                                       temp_graphic_queue, temp_transfer_queue, temp_compute_queue,
+                                       engine_settings.vulkan_device_preferences);
+      }
       else // vk_context:
-        context.emplace<internal_vk_context>(std::move(vk_instance), hydra_init, graphic_queue, transfer_queue, compute_queue);
+      {
+        context.emplace<internal_vk_context>(std::move(vk_instance), hydra_init,
+                                             temp_graphic_queue, temp_transfer_queue, temp_compute_queue,
+                                             engine_settings.vulkan_device_preferences);
+      }
     }
     else // core context
     {
       context.emplace<core_context>();
     }
+
+    cr::out().debug("engine: engine context created");
 
     // the core context is guranteed to exist:
     core_context& cctx = get_core_context();
@@ -177,14 +188,35 @@ namespace neam::hydra
         mod.second->set_hydra_context(&hctx);
     }
 
+    cr::out().debug("engine: engine successfully initialized");
+    return resources::status::success;
+  }
+
+  resources::context::status_chain engine_t::boot(id_t index_key, const std::string& index_file)
+  {
+    if (mode == runtime_mode::none)
+    {
+      check::debug::n_check(false, "engine: trying to boot a non-initialized engine. Please call init() before calling boot.");
+      return resources::context::status_chain::create_and_complete(resources::status::failure);
+    }
+
+    // the core context is guranteed to exist:
+    core_context& cctx = get_core_context();
+
+    if (cctx.is_booted())
+    {
+      check::debug::n_check(false, "engine: trying to boot an already booted engine.");
+      return resources::context::status_chain::create_and_complete(resources::status::failure);
+    }
+
+    cr::out().debug("engine: booting engine (index: {})", index_file);
+
+    // run the pre-boot step:
+    for (auto& mod : modules)
+      mod.second->on_pre_boot_step();
+
     // setup the task groups:
     threading::task_group_dependency_tree tgd;
-
-    // add the pre-made task groups and their dependencies:
-    tgd.add_task_group("init"_rid, "init");
-    tgd.add_task_group("io"_rid, "io");
-
-    tgd.add_dependency("io"_rid, "init"_rid);
 
     // add the module task groups / their dependencies:
     for (auto& mod : modules)
@@ -193,15 +225,16 @@ namespace neam::hydra
       mod.second->add_task_groups_dependencies(tgd);
 
     // boot the core context:
+    cr::out().debug("engine: booting engine...");
     std::lock_guard _lg (init_lock);
     auto tree = tgd.compile_tree();
     tree.print_debug();
     auto ret = cctx.boot(std::move(tree), index_key, index_file, false /*unlock tm*/).then(&cctx.tm, threading::k_non_transient_task_group, [this, &cctx](resources::status st)
     {
-      cr::out().debug("engine boot: index loaded");
+      cr::out().debug("engine: index loaded");
       if (st == resources::status::failure)
       {
-        cr::out().debug("engine boot: failed to load index, tearing-down the engine");
+        cr::out().debug("engine: failed to load index, tearing-down the engine");
         sync_teardown();
         return st;
       }
@@ -214,17 +247,26 @@ namespace neam::hydra
         for (auto& mod : modules)
           mod.second->on_resource_index_loaded();
 
-        cr::out().log("engine boot: engine has fully booted");
+        cr::out().debug("engine: index has been loaded");
       }
-      cctx.tm.get_frame_lock()._unlock();
       return st;
     });
 
+    // done after the call to boot() so as to maximize what it done at the same time:
     for (auto& mod : modules)
       mod.second->on_context_initialized();
-    cr::out().debug("engine boot: modules initialized, waiting for index load");
+    cr::out().debug("engine: modules initialized, waiting for index load");
 
-    return ret;
+    return ret.then([this, &cctx](resources::status st)
+    {
+      cctx.tm.get_frame_lock()._unlock();
+      cr::out().debug("engine: task manager unlocked");
+
+      for (auto& mod : modules)
+        mod.second->on_engine_boot_complete();
+      cr::out().log("engine: engine has fully booted");
+      return st;
+    });
   }
 
   void engine_t::sync_teardown()
@@ -291,8 +333,8 @@ namespace neam::hydra
       // very last operation
       mode = runtime_mode::none;
 
-      // release the lock:
-      init_lock.unlock();
+      // release the lock: (it's not the same thread that locked the lock, so we use _unlock instead)
+      init_lock._unlock();
     });
 
   }

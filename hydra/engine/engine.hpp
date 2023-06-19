@@ -36,6 +36,15 @@
 
 namespace neam::hydra
 {
+  /// \brief Constant, boot settings for the engine:
+  /// \note Here is the stuff that should not go in the runtime_mode
+  struct engine_settings_t
+  {
+    hydra_device_creator::filter_device_preferences vulkan_device_preferences = hydra_device_creator::prefer_discrete_gpu;
+
+
+  };
+
   /// \brief Root class of hydra. Can startup all the different runtime modes.
   /// \note Multiple engines might exist at the same time.
   class engine_t
@@ -45,12 +54,32 @@ namespace neam::hydra
       ~engine_t() { sync_teardown(); cleanup(); }
 
     public: // lifecycle
+
+      /// \brief Set the engine settings. Must be done pre-boot.
+      void set_engine_settings(const engine_settings_t& settings)
+      {
+        check::debug::n_assert(mode == runtime_mode::none, "Trying to set the engine settings post-boot");
+        engine_settings = settings;
+      }
+
+      /// \brief Init the engine. Fully synchronous.
+      /// \note will initialize the vulkan instance/device if requested in the mode
+      resources::status init(runtime_mode mode);
+
       /// \brief Boot the engine
       /// In case of failure, the engine is reverted to its initial state (so boot() can be called again)
       /// The chain is resolved after either the engine is reverted to its initial state or the process is completed
       ///
       /// It is invalid to call boot if a boot process is still in progress or a previous call has succeded
-      resources::context::status_chain boot(runtime_mode mode, id_t index_key, const std::string& index_file = "root.index");
+      resources::context::status_chain boot(id_t index_key, const std::string& index_file = "root.index");
+
+      /// \brief init() + boot() combined
+      resources::context::status_chain boot(runtime_mode _mode, id_t _index_key, const std::string& _index_file = "root.index")
+      {
+        if (init(_mode) != resources::status::failure)
+          return boot(_index_key, _index_file);
+        return resources::context::status_chain::create_and_complete(resources::status::failure);
+      }
 
       /// \brief Return a sucessfuly initialized engine to its pre-boot state
       /// Sync version, only return when everything is uninit
@@ -114,6 +143,9 @@ namespace neam::hydra
         return get_context<core_context>("core-context");
       }
 
+    public:
+      const engine_settings_t& get_engine_settings() const { return engine_settings; }
+
     private:
       template<typename Context>
       Context& get_context(const char* name)
@@ -131,6 +163,8 @@ namespace neam::hydra
 
       std::map<id_t, std::unique_ptr<engine_module_base>> modules;
       std::variant<std::monostate, core_context, internal_vk_context, hydra_context> context;
+
+      engine_settings_t engine_settings;
 
       runtime_mode mode = runtime_mode::none;
 

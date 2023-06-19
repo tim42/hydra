@@ -47,14 +47,15 @@ namespace neam::hydra
 
 
     vk_context(vk::instance&& _instance, neam::hydra::bootstrap& hydra_init,
-               temp_queue_familly_id_t graphic_queue_id,
-               temp_queue_familly_id_t transfer_queue_id,
-               temp_queue_familly_id_t compute_queue_id)
+               const temp_queue_familly_id_t* graphic_queue_id,
+               const temp_queue_familly_id_t* transfer_queue_id,
+               const temp_queue_familly_id_t* compute_queue_id,
+               hydra_device_creator::filter_device_preferences vulkan_device_preferences = hydra_device_creator::prefer_discrete_gpu)
       : instance(std::move(_instance)),
-        device(hydra_init.create_device(instance)),
-        gqueue(device, graphic_queue_id),
-        tqueue(device, transfer_queue_id),
-        cqueue(device, compute_queue_id)
+        device(hydra_init.create_device(instance, vulkan_device_preferences)),
+        gqueue(device, *graphic_queue_id),
+        tqueue(device, *transfer_queue_id),
+        cqueue(device, *compute_queue_id)
     {
     }
 

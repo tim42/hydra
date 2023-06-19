@@ -46,6 +46,11 @@ namespace neam::hydra
       // the io module should always be present
       static bool is_compatible_with(runtime_mode /*m*/) { return true; }
 
+      void add_task_groups(threading::task_group_dependency_tree& tgd) override
+      {
+        tgd.add_task_group("io"_rid, "io");
+      }
+
       void on_context_initialized() override
       {
         cctx->tm.set_start_task_group_callback("io"_rid, [this]
