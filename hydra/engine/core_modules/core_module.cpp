@@ -30,76 +30,131 @@
 #include <hydra/engine/hydra_context.hpp>
 
 #include <ntools/chrono.hpp>
+#include "core_module.hpp"
 
 namespace neam::hydra
 {
-  class core_module final : public engine_module<core_module>
+  void core_module::add_task_groups(threading::task_group_dependency_tree& tgd)
   {
-    private:
-      static constexpr const char* module_name = "core";
+    tgd.add_task_group("init"_rid, "init");
+    tgd.add_task_group("last"_rid, "last");
+  }
+  void core_module::add_task_groups_dependencies(threading::task_group_dependency_tree& tgd)
+  {
+    tgd.add_dependency("io"_rid, "init"_rid);
 
-      // the core module should always be present
-      static bool is_compatible_with(runtime_mode /*m*/) { return true; }
+    // Make the `last` group dependent on all the other groups
+    const threading::group_t id = tgd.get_group("last"_rid);
+    const threading::group_t count = tgd.get_group_count();
+    for (threading::group_t i = 1; i < count; ++i)
+    {
+      if (id != i)
+        tgd.add_dependency(id, i);
+    }
+  }
 
-      void add_task_groups(threading::task_group_dependency_tree& tgd) override
+  void core_module::on_context_initialized()
+  {
+    // do some hctx init:
+    if (hctx)
+    {
+      hctx->ppmgr.register_shader_reload_event(*hctx);
+    }
+  }
+
+  void core_module::on_start_shutdown()
+  {
+    cctx->res._prepare_engine_shutdown();
+    cctx->hconf._stop_watching_for_file_changes();
+  }
+
+  void core_module::on_engine_boot_complete()
+  {
+    last_index_timestamp = cctx->res.get_index_modified_time();
+    index_watcher_chrono.reset();
+    last_frame_timepoint = std::chrono::high_resolution_clock::now();
+
+
+    const bool is_release_engine = (engine->get_runtime_mode() & runtime_mode::release) != runtime_mode::none;
+
+    cctx->tm.set_start_task_group_callback("init"_rid, [this, is_release_engine]()
+    {
+      if (!is_release_engine)
       {
-        tgd.add_task_group("init"_rid, "init");
+        // spawn the index watcher task
+        if (cctx->res.is_index_mapped())
+          cctx->tm.get_task([this]() { watch_for_index_change(); });
       }
-      void add_task_groups_dependencies(threading::task_group_dependency_tree& tgd) override
-      {
-        tgd.add_dependency("io"_rid, "init"_rid);
-      }
+    });
 
-      void on_context_initialized() override
+    cctx->tm.set_start_task_group_callback("last"_rid, [this]
+    {
+      // if we have anything, we dispatch a task
+      if (min_frame_length > std::chrono::microseconds{0})
       {
-        // do some hctx init:
-        if (hctx)
+        cctx->tm.get_task([this]() { throttle_frame(); });
+      }
+    });
+  }
+
+  void core_module::watch_for_index_change()
+  {
+    TRACY_SCOPED_ZONE;
+    // rate-limit the function:
+    if (index_watcher_chrono.get_accumulated_time() < 0.5)
+      return;
+    index_watcher_chrono.reset();
+
+    const std::filesystem::file_time_type index_mtime = cctx->res.get_index_modified_time();
+    if (index_mtime > last_index_timestamp)
+    {
+      neam::cr::out().debug("core_module: index change detected, reloading index");
+      last_index_timestamp = index_mtime;
+      cctx->res.reload_index();
+    }
+  }
+
+  void core_module::throttle_frame()
+  {
+    TRACY_SCOPED_ZONE;
+    const auto current_timepoint = std::chrono::high_resolution_clock::now();
+    const auto delta = current_timepoint - last_frame_timepoint;
+
+    if (delta + min_delta_time_to_sleep < min_frame_length)
+    {
+      // If there are any pending tasks, we simply sleep, avoid locking long-durations tasks
+      // we still fully lock a thread tho
+      if (cctx->tm.has_pending_tasks() || cctx->tm.is_stop_requested())
+      {
+        std::this_thread::sleep_for(min_frame_length - delta - min_delta_time_to_sleep);
+        last_frame_timepoint = std::chrono::high_resolution_clock::now();
+      }
+      else
+      {
+        // fully stall the task manager, further limiting cpu usage
+        // we should be the very last task to run, so requesting a stop is fine (and we only stop if no one requested it)
+        // if we fail to request a stop, we simply sleep
+        const bool will_stop = cctx->tm.try_request_stop([this]
         {
-          hctx->ppmgr.register_shader_reload_event(*hctx);
-        }
-      }
+          const auto current_timepoint = std::chrono::high_resolution_clock::now();
+          const auto delta = current_timepoint - last_frame_timepoint;
+          if (delta + min_delta_time_to_sleep < min_frame_length)
+            std::this_thread::sleep_for(min_frame_length - delta);
+          last_frame_timepoint = std::chrono::high_resolution_clock::now();
 
-      void on_engine_boot_complete() override
-      {
-        last_index_timestamp = cctx->res.get_index_modified_time();
-        index_watcher_chrono.reset();
-
-
-        const bool is_release_engine = (engine->get_runtime_mode() & runtime_mode::release) != runtime_mode::none;
-
-        hctx->tm.set_start_task_group_callback("init"_rid, [this, is_release_engine]()
-        {
-          if (!is_release_engine)
-          {
-            // spawn the index watcher task
-            hctx->tm.get_task([this]() { watch_for_index_change(); });
-          }
+          cctx->tm.get_frame_lock().unlock();
         });
-      }
-
-    private: // index watcher/auto-reload stuff:
-      std::filesystem::file_time_type last_index_timestamp;
-      cr::chrono index_watcher_chrono; // throttle index watch
-
-      void watch_for_index_change()
-      {
-        // rate-limit the function:
-        if (index_watcher_chrono.get_accumulated_time() < 0.5)
-          return;
-        index_watcher_chrono.reset();
-
-        const std::filesystem::file_time_type index_mtime = cctx->res.get_index_modified_time();
-        if (index_mtime > last_index_timestamp)
+        if (!will_stop)
         {
-          neam::cr::out().debug("core_module: index change detected, reloading index");
-          last_index_timestamp = index_mtime;
-          cctx->res.reload_index();
+          std::this_thread::sleep_for(min_frame_length - delta - min_delta_time_to_sleep);
+          last_frame_timepoint = std::chrono::high_resolution_clock::now();
         }
       }
-
-    private:
-      friend class engine_t;
-      friend engine_module<core_module>;
-  };
+    }
+    else
+    {
+      last_frame_timepoint = std::chrono::high_resolution_clock::now();
+    }
+  }
 }
 
