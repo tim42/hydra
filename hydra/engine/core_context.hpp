@@ -35,6 +35,27 @@
 
 namespace neam::hydra
 {
+  struct index_boot_parameters_t
+  {
+    enum
+    {
+      load_index_file,
+      init_empty_index,
+      init_from_data,
+    } mode = load_index_file;
+
+    id_t index_key;
+    const std::string index_file;
+    size_t index_size;
+    const void* index_data;
+
+    template<typename T, uint32_t Count>
+    static index_boot_parameters_t from(id_t index_key, const T (&ar)[Count])
+    {
+      return {.mode = init_from_data, .index_key = index_key, .index_size = Count * sizeof(T), .index_data = ar};
+    }
+  };
+
   /// \brief Hold the core context. (all which is related to resources, threading, io, memory, ...)
   class core_context
   {
@@ -46,105 +67,13 @@ namespace neam::hydra
 
 
     public:
-      resources::context::status_chain boot(threading::resolved_graph&& task_graph, id_t index_key, const std::string& index_file = "root.index", bool auto_unlock_tm = true, uint32_t thread_count = std::thread::hardware_concurrency() - 2)
-      {
-        booted = false;
-        never_started = false;
-        should_stop = false;
-        can_return = false;
+      ~core_context();
 
-        tm.get_frame_lock().lock();
-        tm.add_compiled_frame_operations(std::move(task_graph));
-        auto chn = res.boot(index_key, index_file);
+      resources::context::status_chain boot(threading::resolved_graph&& task_graph, index_boot_parameters_t&& ibp, bool auto_unlock_tm = true, uint32_t thread_count = std::thread::hardware_concurrency() - 2);
 
-        halted = false;
-        // do the resource boot process asynchronously
-        tm.get_long_duration_task([this]
-        {
-          while (!halted && !booted)
-          {
-            // perform IO stuff:
-            io._wait_for_submit_queries();
-          }
-          cr::out().debug("core-context: boot: exiting initial IO loop");
-        });
+      static void thread_main(core_context& ctx, uint32_t index = 2048);
 
-        // start the threads: (we have a minimum requirement of 4 threads)
-        thread_count = std::min(std::thread::hardware_concurrency(), std::max(4u, thread_count));
-        threads.reserve(thread_count);
-        for (uint32_t i = 0; i < thread_count; ++i)
-        {
-          threads.emplace_back([this, i] { thread_main(*this, i); });
-        }
-
-
-        return chn.then([this, auto_unlock_tm](resources::status st)
-        {
-          if (auto_unlock_tm)
-          {
-            // there should not be any outstanding io tasks, so start the task-graph
-            tm.get_frame_lock()._unlock();
-          }
-          booted = true;
-          return st;
-        });
-      }
-
-      ~core_context()
-      {
-        if (never_started)
-          return;
-        if (!halted)
-          stop_app();
-        for (auto& it : threads)
-        {
-          if (it.joinable())
-            it.join();
-        }
-        std::lock_guard _l(destruction_lock);
-        cr::out().debug("core context is being destructed");
-        while (!can_return)
-        {
-          tm.run_a_task();
-        }
-        tm.get_frame_lock()._unlock();
-      }
-
-      static void thread_main(core_context& ctx, uint32_t index = 2048)
-      {
-        if (index != ~0u)
-          sys::set_cpu_affinity((index + 2) % std::thread::hardware_concurrency());
-        else
-          sys::set_cpu_affinity(0);
-
-        while (!ctx.should_stop)
-        {
-          ctx.tm.wait_for_a_task();
-          ctx.tm.run_a_task(index < 2 && ctx.threads_to_not_stall > 2);
-
-          while (index > ctx.threads_to_not_stall && !ctx.should_stop)
-          {
-            std::this_thread::sleep_for(std::chrono::milliseconds{ctx.ms_to_stall});
-          }
-        }
-      }
-
-      async::continuation_chain stop_app()
-      {
-        if (is_stopped()) return async::continuation_chain::create_and_complete();
-        destruction_lock.lock();
-        async::continuation_chain ret;
-        can_return = false;
-        tm.request_stop([this, state = ret.create_state()] mutable
-        {
-          should_stop = true;
-          can_return = true;
-          state.complete();
-          destruction_lock._unlock();
-        }, true);
-        halted = true;
-        return ret;
-      }
+      async::continuation_chain stop_app();
 
       /// \brief Return the number of threads manager by the core context
       uint32_t get_thread_count() const { return (uint32_t)threads.size(); }

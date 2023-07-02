@@ -60,12 +60,16 @@ namespace neam::hydra
           // (if we did do the process in the start callback, the dispatched tasks would only run after process() returned)
           cctx->tm.get_task([this]
           {
+            TRACY_SCOPED_ZONE;
             if (wait_for_submit_queries)
               cctx->io._wait_for_submit_queries();
             else
               cctx->io.process();
           });
         });
+      }
+      void on_start_shutdown() override
+      {
       }
 
       friend class engine_t;

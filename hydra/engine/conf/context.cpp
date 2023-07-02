@@ -260,7 +260,7 @@ namespace neam::hydra::conf
         if (mapped_file != id_t::none && cctx.io.is_file_mapped(mapped_file))
         {
           cr::out().debug("hconf: writing hconf file: {} (file is still io-mapped)", conf_id);
-          return cctx.io.queue_write(mapped_file, 0, std::move(final_data));
+          return cctx.io.queue_write(mapped_file, io::context::truncate, std::move(final_data));
         }
 #if N_HCONF_ALLOW_FILESYSTEM_ACCESS
         if (!file.empty())
@@ -318,7 +318,7 @@ namespace neam::hydra::conf
         break;
     }
 
-    return cctx.io.queue_write(source_fid, 0 /*truncate/create*/, std::move(final_data));
+    return cctx.io.queue_write(source_fid, io::context::truncate, std::move(final_data));
 #endif
 
     return io::context::write_chain::create_and_complete(false);
@@ -328,6 +328,7 @@ namespace neam::hydra::conf
   {
     cctx.tm.get_long_duration_task([this]
     {
+      TRACY_SCOPED_ZONE;
       // go over all the hconfs from resources, and trigger a reload on them:
       {
         std::lock_guard _sl(spinlock_shared_adapter::adapt(confs_lock));
@@ -345,6 +346,7 @@ namespace neam::hydra::conf
 
   void neam::hydra::conf::context::_watch_for_file_changes()
   {
+    TRACY_SCOPED_ZONE;
     {
       std::lock_guard _sl(spinlock_shared_adapter::adapt(confs_lock));
       for (auto& it : confs)
@@ -370,15 +372,31 @@ namespace neam::hydra::conf
       }
     }
 
-    cctx.tm.get_delayed_task([this] { _watch_for_file_changes(); }, std::chrono::seconds{1});
+    std::lock_guard _ul(flags_lock);
+    if (!should_watch_task_exit)
+      cctx.tm.get_delayed_task(std::chrono::seconds{1}, [this] { _watch_for_file_changes(); });
+    else
+      has_watch_task = false;
   }
 
   void neam::hydra::conf::context::register_watch_for_changes()
   {
+    std::lock_guard _ul(flags_lock);
     // register the callback for index change:
     on_index_loaded_tk = cctx.res.on_index_loaded.add(*this, &context::on_index_changed);
+    should_watch_task_exit = false;
+    if (!has_watch_task)
+    {
+      has_watch_task = true;
+      cctx.tm.get_delayed_task(std::chrono::seconds{1}, [this] { _watch_for_file_changes(); });
+    }
+  }
 
-    cctx.tm.get_delayed_task([this] { _watch_for_file_changes(); }, std::chrono::seconds{1});
+  void context::_stop_watching_for_file_changes()
+  {
+    std::lock_guard _ul(flags_lock);
+    on_index_loaded_tk.release();
+    should_watch_task_exit = true;
   }
 }
 

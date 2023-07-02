@@ -42,7 +42,7 @@ namespace neam::hydra
   {
     hydra_device_creator::filter_device_preferences vulkan_device_preferences = hydra_device_creator::prefer_discrete_gpu;
 
-
+    uint32_t thread_count = std::thread::hardware_concurrency() - 2;
   };
 
   /// \brief Root class of hydra. Can startup all the different runtime modes.
@@ -71,13 +71,13 @@ namespace neam::hydra
       /// The chain is resolved after either the engine is reverted to its initial state or the process is completed
       ///
       /// It is invalid to call boot if a boot process is still in progress or a previous call has succeded
-      resources::context::status_chain boot(id_t index_key, const std::string& index_file = "root.index");
+      resources::context::status_chain boot(index_boot_parameters_t&& ibp = { .index_file = "root.index" });
 
       /// \brief init() + boot() combined
-      resources::context::status_chain boot(runtime_mode _mode, id_t _index_key, const std::string& _index_file = "root.index")
+      resources::context::status_chain boot(runtime_mode _mode, index_boot_parameters_t&& ibp = { .index_file = "root.index" })
       {
         if (init(_mode) != resources::status::failure)
-          return boot(_index_key, _index_file);
+          return boot(std::move(ibp));
         return resources::context::status_chain::create_and_complete(resources::status::failure);
       }
 
@@ -87,11 +87,11 @@ namespace neam::hydra
 
       /// \brief Fully cleanup after a teardown.
       /// Must be called outside the task manager
-      void cleanup()
-      {
-        cr::out().debug("engine tear-down: destructing the context...");
-        context = std::monostate{};
-      }
+      void cleanup();
+
+      /// \brief Called when recurring tasks should not be pushed.
+      /// This indicates that the engine is stopping
+      bool should_stop_pushing_tasks() const { return shutdown_stop_task_manager; }
 
     public:
       /// \brief Return the mode with which the engine has been setup
@@ -167,6 +167,9 @@ namespace neam::hydra
       engine_settings_t engine_settings;
 
       runtime_mode mode = runtime_mode::none;
+      bool shutdown_stop_task_manager = false;
+      bool shutdown_idle_io = false;
+      bool shutdown_no_more_vulkan = false;
 
       // prevent teardown running before we init the modules
       spinlock init_lock;

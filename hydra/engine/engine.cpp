@@ -36,6 +36,15 @@ namespace neam::hydra
   resources::status engine_t::init(runtime_mode _mode)
   {
     cr::out().debug("engine: initializing engine for mode {:X}", std::to_underlying(_mode));
+    shutdown_stop_task_manager = false;
+    shutdown_idle_io = false;
+    shutdown_no_more_vulkan = false;
+
+    sys::set_crash_handler([](int code, void* opt_addr)
+    {
+      cr::out(true).critical("signal received (signal number: {} / addr: {})", code, opt_addr);
+      cr::print_callstack(25, 4, true);
+    });
 
     if (mode != runtime_mode::none)
     {
@@ -192,7 +201,7 @@ namespace neam::hydra
     return resources::status::success;
   }
 
-  resources::context::status_chain engine_t::boot(id_t index_key, const std::string& index_file)
+  resources::context::status_chain engine_t::boot(index_boot_parameters_t&& ibp)
   {
     if (mode == runtime_mode::none)
     {
@@ -209,7 +218,18 @@ namespace neam::hydra
       return resources::context::status_chain::create_and_complete(resources::status::failure);
     }
 
-    cr::out().debug("engine: booting engine (index: {})", index_file);
+    switch (ibp.mode)
+    {
+      case index_boot_parameters_t::init_empty_index:
+        cr::out().debug("engine: booting engine (creating empty index)");
+        break;
+      case index_boot_parameters_t::init_from_data:
+        cr::out().debug("engine: booting engine (loading from binary data of {} bytes)", ibp.index_size);
+        break;
+      case index_boot_parameters_t::load_index_file:
+      default:
+        cr::out().debug("engine: booting engine (index: {})", ibp.index_file);
+    }
 
     // run the pre-boot step:
     for (auto& mod : modules)
@@ -229,7 +249,8 @@ namespace neam::hydra
     std::lock_guard _lg (init_lock);
     auto tree = tgd.compile_tree();
     tree.print_debug();
-    auto ret = cctx.boot(std::move(tree), index_key, index_file, false /*unlock tm*/).then(&cctx.tm, threading::k_non_transient_task_group, [this, &cctx](resources::status st)
+    auto ret = cctx.boot(std::move(tree), std::move(ibp), false /*unlock tm*/, engine_settings.thread_count)
+               .then(&cctx.tm, threading::k_non_transient_task_group, [this, &cctx](resources::status st)
     {
       cr::out().debug("engine: index loaded");
       if (st == resources::status::failure)
@@ -271,7 +292,8 @@ namespace neam::hydra
 
   void engine_t::sync_teardown()
   {
-    init_lock.lock();
+    if (!init_lock.try_lock())
+      return;
     if (mode == runtime_mode::none)
     {
       init_lock.unlock();
@@ -288,9 +310,49 @@ namespace neam::hydra
     cctx.stop_app()
     .then([this, &cctx]
     {
+      shutdown_idle_io = true;
+      cctx.io._wait_for_submit_queries();
+
+      shutdown_stop_task_manager = true;
+
+      cr::out().debug("engine tear-down: module pre shutdown...");
+      for (auto& mod : modules)
+        mod.second->on_start_shutdown();
+
+      cctx.tm._flush_all_delayed_tasks();
+
       cr::out().debug("engine tear-down: clearing remaining tasks...");
-      while (cctx.tm.has_pending_tasks())
-        cctx.tm.run_a_task();
+      {
+        auto ensure_tp = std::chrono::high_resolution_clock::now() + std::chrono::milliseconds{500};
+        auto end_tp = std::chrono::high_resolution_clock::now() + std::chrono::milliseconds{3000};
+        bool faulty_prog = false;
+        while (cctx.tm.has_pending_tasks() || cctx.tm.has_running_tasks())
+        {
+          cctx.tm._flush_all_delayed_tasks();
+          cctx.tm.run_a_task();
+          auto now = std::chrono::high_resolution_clock::now();
+          if (now > end_tp)
+          {
+            faulty_prog = true;
+            break;
+          }
+          else if (now > ensure_tp)
+          {
+            cr::out().error("engine tear-down: unable to stop task manager, will make any task insertion ensure");
+            cctx.tm.should_ensure_on_task_insertion(true);
+            ensure_tp = end_tp;
+          }
+        }
+        if (faulty_prog)
+        {
+          cr::out().error("engine tear-down: unable to stop task manager, will exit still, but we may assert or deadlock");
+          cr::out().error("engine tear-down: please avoid using tasks that push themselves back without restriction");
+          cr::out().error("engine tear-down: remaining {} tasks", cctx.tm.get_pending_tasks_count());
+        }
+      }
+      cctx.tm.should_ensure_on_task_insertion(true);
+
+      shutdown_no_more_vulkan = true;
 
       if ((mode & runtime_mode::vulkan_context) == runtime_mode::vulkan_context)
       {
@@ -306,15 +368,17 @@ namespace neam::hydra
           cr::out().debug("engine tear-down: destructing vulkan objects which are pending deletion...");
           hctx.vrd._force_full_cleanup();
         }
+        vctx.device.wait_idle();
       }
 
       cr::out().debug("engine tear-down: module shutdown...");
       for (auto& mod : modules)
-        mod.second->on_start_shutdown();
+        mod.second->on_shutdown();
 
       if ((mode & runtime_mode::vulkan_context) == runtime_mode::vulkan_context)
       {
         vk_context& vctx = get_vulkan_context();
+        vctx.device.wait_idle();
         vctx.device.wait_idle();
         if ((mode & runtime_mode::hydra_context) == runtime_mode::hydra_context)
         {
@@ -328,15 +392,28 @@ namespace neam::hydra
 
       // NOTE: we cannot destroy the context as we are still in the task manager
 
-      cr::out().debug("engine tear-down: clearing the runtime-mode...");
+      // cr::out().debug("engine tear-down: clearing the runtime-mode...");
 
       // very last operation
-      mode = runtime_mode::none;
+      cctx.tm.should_ensure_on_task_insertion(false);
 
       // release the lock: (it's not the same thread that locked the lock, so we use _unlock instead)
       init_lock._unlock();
+      cr::out().debug("engine tear-down: lock released");
+      cctx.tm.should_threads_exit_wait(true);
     });
+  }
 
+  void engine_t::cleanup()
+  {
+    init_lock._lock();
+    std::lock_guard _ul(init_lock, std::adopt_lock);
+    core_context& cctx = get_core_context();
+    mode = runtime_mode::none;
+    check::debug::n_assert(cctx.tm.get_current_group() == threading::k_invalid_task_group, "engine: cleanup() should be called outside the task manager.");
+
+    cr::out().debug("engine tear-down: destructing the context...");
+    context = std::monostate{};
   }
 }
 

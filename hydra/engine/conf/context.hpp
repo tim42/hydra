@@ -182,6 +182,8 @@ namespace neam::hydra::conf
       /// \brief Will go over all the files, check if there has been changes
       void _watch_for_file_changes();
 
+      void _stop_watching_for_file_changes();
+
     private:
       io::context::read_chain direct_read_raw_conf(string_id conf_id);
       async::chain<raw_data&& /*data*/, raw_data&& /*metadata*/, bool /*success*/> read_raw_conf(string_id conf_id);
@@ -261,6 +263,10 @@ namespace neam::hydra::conf
       std::map<string_id, hconf_autowatch_entry> confs;
 
       cr::event_token_t on_index_loaded_tk;
+
+      mutable spinlock flags_lock;
+      bool should_watch_task_exit = false;
+      bool has_watch_task = false;
   };
 }
 

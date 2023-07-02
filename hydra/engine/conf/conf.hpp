@@ -103,6 +103,12 @@ namespace neam::hydra::conf
 
       bool is_loaded() const { return is_initialized; }
 
+      void remove_watch()
+      {
+        on_update_tk.release();
+        register_autoupdate = {};
+      }
+
     protected:
 
     private:

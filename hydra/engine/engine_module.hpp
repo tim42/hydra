@@ -184,7 +184,11 @@ namespace neam::hydra
       void set_hydra_context(hydra_context* _hctx) { hctx = _hctx; }
 
     public: // shutdown:
+      /// \brief Called before the task manager is stopping
       virtual void on_start_shutdown() {}
+      /// \brief Called after the task manager has stopped (no task allowed), and after the vulkan device is idle.
+      /// The place to destroy any vulkan resources
+      virtual void on_shutdown() {}
 
     protected:
       core_context* cctx = nullptr; // guaranteed to always exist
