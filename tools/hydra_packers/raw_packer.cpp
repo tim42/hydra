@@ -79,6 +79,7 @@ namespace neam::hydra::packer
 
     static resources::packer::chain pack_resource(hydra::core_context& /*ctx*/, resources::processor::data&& data)
     {
+      TRACY_SCOPED_ZONE;
       const id_t root_id = get_root_id(data.resource_id);
 
       data.db.resource_name(root_id, get_root_name(data.db, data.resource_id));

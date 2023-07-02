@@ -38,6 +38,7 @@ namespace neam::hydra::processor
 
     static resources::processor::chain process_resource(hydra::core_context& /*ctx*/, resources::processor::input_data&& input)
     {
+      TRACY_SCOPED_ZONE;
       const string_id res_id = get_resource_id(input.file);
       input.db.resource_name(res_id, input.file);
 

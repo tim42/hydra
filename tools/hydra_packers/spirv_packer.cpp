@@ -146,6 +146,7 @@ namespace neam::hydra::packer
 
     ctx.tm.get_long_duration_task([&db, root_id, &in_source, code = std::move(code), state = ret.create_state()] mutable
     {
+      TRACY_SCOPED_ZONE;
       const id_t id = parametrize(root_id, code.entry_point.c_str(), code.entry_point.size());
       db.resource_name(id, fmt::format("{}({})", db.resource_name(root_id), code.entry_point));
 
@@ -250,6 +251,7 @@ namespace neam::hydra::packer
 
     static resources::packer::chain pack_resource(hydra::core_context& ctx, resources::processor::data&& data)
     {
+      TRACY_SCOPED_ZONE;
       auto& db = data.db;
       const id_t root_id = get_root_id(data.resource_id);
       db.resource_name(root_id, get_root_name(db, data.resource_id));

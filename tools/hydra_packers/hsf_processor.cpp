@@ -92,6 +92,7 @@ namespace neam::hydra::processor
 
   pid_t spawn_cpp(hydra::core_context& ctx, const std::string& input, const std::filesystem::path& file, async::chain<cpp_output_t>::state&& state)
   {
+    TRACY_SCOPED_ZONE;
     // posix_spawn does not seem to be thread-safe
     // to avoid failure cases, we lock the whole function
     static spinlock lock;
@@ -210,6 +211,7 @@ namespace neam::hydra::processor
 
     static resources::processor::chain process_resource(hydra::core_context& ctx, resources::processor::input_data&& input)
     {
+      TRACY_SCOPED_ZONE;
       const string_id res_id = get_resource_id(input.file);
       input.db.resource_name(res_id, input.file);
 

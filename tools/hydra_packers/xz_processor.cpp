@@ -38,11 +38,13 @@ namespace neam::hydra::processor
 
     static resources::processor::chain process_resource(hydra::core_context& /*ctx*/, resources::processor::input_data&& input)
     {
+      TRACY_SCOPED_ZONE;
       const string_id res_id = get_resource_id(input.file);
       input.db.resource_name(res_id, input.file);
 
       return resources::uncompress_raw_xz(std::move(input.file_data)).then([input = std::move(input)](raw_data&& data) mutable
       {
+        TRACY_SCOPED_ZONE;
         std::vector<resources::processor::input_data> ret;
         ret.emplace_back(resources::processor::input_data
         {
