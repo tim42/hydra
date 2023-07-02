@@ -93,7 +93,7 @@ namespace neam::hydra
 //         tgd.add_dependency("io"_rid, "pack"_rid);
       }
 
-      void on_context_initialized() override
+      void on_engine_boot_complete() override
       {
         cctx->tm.set_start_task_group_callback("pack"_rid, [this]
         {
@@ -292,7 +292,7 @@ namespace neam::hydra
           if (state.to_import.size() > 0)
             state.gbl_chains.push_back(state.import_end_state.create_chain());
 
-          state.gbl_chains.push_back(cctx->io.queue_write(ts_file_id, 0, raw_data::allocate_from(std::string("[timestamp file, do not touch]\n")))
+          state.gbl_chains.push_back(cctx->io.queue_write(ts_file_id, io::context::truncate, raw_data::allocate_from(std::string("[timestamp file, do not touch]\n")))
                                      .then([this](bool)
           {
             // do the resource import
@@ -337,6 +337,10 @@ namespace neam::hydra
               state.in_progress = false;
               state.is_packing = false;
               on_packing_ended();
+            }
+            if (!packer_options.watch)
+            {
+              engine->sync_teardown();
             }
           });
           cr::out().debug("waiting to {} entry to complete...", state.entry_count);

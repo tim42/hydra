@@ -32,6 +32,7 @@
 #include <hydra/hydra_debug.hpp>
 #include <hydra/engine/engine.hpp>
 #include <hydra/engine/engine_module.hpp>
+#include <hydra/engine/core_modules/core_module.hpp>
 #include <hydra/glfw/glfw_engine_module.hpp>  // Add the glfw module
 #include <hydra/imgui/imgui_engine_module.hpp>  // Add the imgui module
 #include <hydra/imgui/utilities/imgui_folder_view.hpp>  // Add the folder view
@@ -87,6 +88,7 @@ namespace neam::hydra
       void on_context_initialized() override
       {
         auto* pck = engine->get_module<packer_engine_module>("packer"_rid);
+        auto* cm = engine->get_module<core_module>("core"_rid);
         pck->stall_task_manager = false;
 
         on_resource_queued_tk = pck->on_resource_queued.add(*this, &packer_ui_module::on_resource_queued);
@@ -348,9 +350,9 @@ namespace neam::hydra
         auto* renderer = engine->get_module<renderer_module>("renderer"_rid);
         renderer->min_frame_time = 0.016f;
 
-        on_render_start_tk = renderer->on_render_start.add([this, pck, renderer, glfw_mod]
+        on_render_start_tk = renderer->on_render_start.add([this, pck, renderer, cm, glfw_mod]
         {
-          cctx->tm.get_task([this, pck, renderer, glfw_mod]
+          cctx->tm.get_task([this, pck, renderer, cm, glfw_mod]
           {
             // stats:
             ++frame_cnt;
@@ -383,19 +385,16 @@ namespace neam::hydra
               {
                 // max fps should be 60, but we don't want to sleep, so we just "drop" frames instead.
                 renderer->min_frame_time = 0.016f;
+                cm->min_frame_length = std::chrono::milliseconds{0};
               }
               else
               {
                 renderer->min_frame_time = 0.0f;
-                std::this_thread::sleep_for(std::chrono::milliseconds{16});
+                cm->min_frame_length = std::chrono::milliseconds{16};
 
                 if (!glfw_mod->is_app_focused())
                 {
-                  cctx->tm.request_stop([this]()
-                  {
-                    std::this_thread::sleep_for(std::chrono::milliseconds{500});
-                    cctx->tm.get_frame_lock().unlock();
-                  });
+                  cm->min_frame_length = std::chrono::milliseconds{500};
                 }
               }
             }
@@ -406,7 +405,7 @@ namespace neam::hydra
         });
       }
 
-      void on_resource_index_loaded() override
+      void on_engine_boot_complete() override
       {
         cctx->tm.get_long_duration_task([this]
         {
@@ -415,13 +414,17 @@ namespace neam::hydra
         });
       }
 
-      void on_start_shutdown() override
+      void on_shutdown() override
       {
         on_packing_started_tk.release();
+        on_resource_queued_tk.release();
         on_resource_packed_tk.release();
         on_index_saved_tk.release();
         on_packing_ended_tk.release();
+        on_item_selected_tk.release();
+        on_render_start_tk.release();
 
+        resource_ctx_conf.remove_watch();
         window_state.reset();
       }
 
@@ -432,10 +435,10 @@ namespace neam::hydra
         {
           if (!success)
           {
-            cctx->tm.get_delayed_task([this]
-              {
-                load_conf_for_ui();
-              }, std::chrono::seconds{1});
+            cctx->tm.get_delayed_task(std::chrono::seconds{1}, [this]
+            {
+              load_conf_for_ui();
+            });
           }
         });
       }
@@ -482,10 +485,9 @@ namespace neam::hydra
         else
         {
           // finish by launching the same task, again
-          cctx->tm.get_long_duration_task([this]
+          cctx->tm.get_delayed_task(std::chrono::milliseconds{33}, [this]
           {
             // TODO: only when a resource has been packed ?
-            std::this_thread::sleep_for(std::chrono::milliseconds{5});
             check_for_resources();
           });
         }
