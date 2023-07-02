@@ -221,7 +221,7 @@ namespace neam::resources
       std::map<id_t, std::string> resources_names;
       std::map<id_t, message_list_t> resources_messages;
 
-      std::unordered_map<id_t, metadata_type_registration_t> metadata_types;
+      std::map<id_t, metadata_type_registration_t> metadata_types;
     private: // non-serialized:
       mutable shared_spinlock lock;
 

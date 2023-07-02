@@ -28,9 +28,9 @@
 
 namespace neam::resources
 {
-  std::unordered_map<id_t, metadata_type_registration_t>& get_metadata_type_map()
+  std::map<id_t, metadata_type_registration_t>& get_metadata_type_map()
   {
-    static std::unordered_map<id_t, metadata_type_registration_t> map;
+    static std::map<id_t, metadata_type_registration_t> map;
     return map;
   }
 

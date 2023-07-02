@@ -30,6 +30,8 @@
 #include <ntools/io/context.hpp>
 #include <ntools/event.hpp>
 #include <ntools/rle/rle.hpp>
+#include <ntools/ct_string.hpp>
+#include <ntools/macro.hpp>
 
 #include <hydra/engine/conf/conf.hpp>
 
@@ -61,6 +63,49 @@ N_METADATA_STRUCT(neam::resources::resource_configuration)
       "To exclude all PNG files by filetype, add an entry with: `image/png`\n\n"
       "To get filetype of a file, use the command: `file --mime-type the-file-name-here`.\n"
       "Beware of using a too generic file-type as it may prevent other files from being considered for import."
+      >})
+  >;
+};
+namespace neam::resources
+{
+  // base resource metadata type: (currently private as it's only for internal use)
+  struct default_resource_metadata_t : public base_metadata_entry<default_resource_metadata_t>
+  {
+    static constexpr ct::string k_metadata_entry_description = "generic metadata used by the resource subsystem";
+    static constexpr ct::string k_metadata_entry_name = "resource_metadata";
+
+
+    bool strip_from_final_build = false;
+    bool embed_in_index = false;
+    bool skip_compression = false;
+  };
+}
+
+N_METADATA_STRUCT(neam::resources::default_resource_metadata_t)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(strip_from_final_build, neam::metadata::info{.description = c_string_t
+      <
+      "Whether this resource should be completely removed from the final build.\n"
+      "Please note that no reference check is done, and the resource is forcefully stripped from the data."
+      >}),
+    N_MEMBER_DEF(embed_in_index, neam::metadata::info{.description = c_string_t
+      <
+      "Whether this resource should be placed directly in the index instead of in a pack file\n"
+      "Doing so will increase the size of the index and will force the resources to always be loaded in memory\n"
+      "This also make sure that no filesystem access is needed to retrieve the resource\n"
+      "The default behavior (if false) is controlled by N_RES_MAX_SIZE_TO_EMBED (currently: " N_EXP_STRINGIFY(N_RES_MAX_SIZE_TO_EMBED) "b)."
+      >}),
+    N_MEMBER_DEF(skip_compression, neam::metadata::info{.description = c_string_t
+      <
+      "Whether this resource should skip compression.\n"
+      "Note that only resources bigger than " N_EXP_STRINGIFY(N_RES_MAX_SIZE_TO_COMPRESS) " bytes will be considered for compression\n"
+#if !N_RES_LZMA_COMPRESSION
+      "\n"
+      "NOTE: LZMA compression disabled, flag will not do anything as everything will skip compression.\n"
+      "Flag will be saved an honored when compression is enabled in the build.\n"
+#endif
       >})
   >;
 };
@@ -144,6 +189,17 @@ namespace neam::resources
       /// \see make_self_boot
       status_chain make_chain_boot(id_t target_index_id, std::string target_index_path, std::string target_index_file, id_t boot_index_id, const std::string& boot_index_path = "boot.index");
 
+      /// \brief Init the context from a clean index (and an optional rel-db)
+      /// \note If saved, that index is self-contained, but cannot be reloaded (it does not self-reference, it does not have a prefix)
+      void _init_with_clean_index(id_t index_key, bool init_empty_reldb = true);
+
+      status_chain _init_with_index_data(id_t index_key, const void* data, uint32_t data_size);
+      template<typename T, uint32_t Count>
+      status_chain _init_with_index_data(id_t index_key, const T (&ar)[Count])
+      {
+        return _init_with_index_data(index_key, ar, Count * sizeof(T));
+      }
+
     public: // index stuff:
       index& get_index() { return root; }
       const index& get_index() const { return root; }
@@ -193,7 +249,22 @@ namespace neam::resources
       bool has_resource(id_t rid) const { return is_index_loaded() && root.has_entry(rid); }
 
       /// \brief Return the created/modified time on the index
-      std::filesystem::file_time_type get_index_modified_time() const { return io_context.get_modified_or_created_time(index_file_id); }
+      std::filesystem::file_time_type get_index_modified_time() const
+      {
+        if (!has_index || !io_context.is_file_mapped(index_file_id))
+          return {};
+        return io_context.get_modified_or_created_time(index_file_id);
+      }
+
+      /// \brief Only work for indexes with already embedded rel-db
+      /// \see _init_with_clean_index
+      /// \see _has_embedded_reldb
+      void _embed_reldb();
+
+      bool _has_embedded_reldb() const;
+
+      /// \brief return whether the index is mapped to io or not (that a reload can happen or not)
+      bool is_index_mapped() const { return has_index && io_context.is_file_mapped(index_file_id); }
 
     public:
       /// \brief Load a map-file. Map files contains the list of all the necessary files that io::context can use.
@@ -290,7 +361,7 @@ namespace neam::resources
       /// \note asynchrnous, potentially multi-threaded.
       /// \note index changes require a call to save_index() (not done by this function)
       /// \warning the resource must be a valid path to the file (either relative to the CWD or absolute)
-      status_chain import_resource(const std::filesystem::path& resource);
+      status_chain import_resource(const std::filesystem::path& resource, std::optional<metadata_t>&& overrides = {});
 
       /// \brief Import (process and pack) a resource from a memory buffer.
       /// The resource path will only be used for the resource id and determine the processor to apply if it can be determined from the content of the buffer.
@@ -352,6 +423,12 @@ namespace neam::resources
       {
         check::debug::n_assert(has_rel_db, "cannot call to _get_serialized_reldb without a rel db present");
         return db.serialize();
+      }
+
+    public: // management:
+      void _prepare_engine_shutdown()
+      {
+        configuration.remove_watch();
       }
 
     public: // events:

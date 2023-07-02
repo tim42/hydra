@@ -2,6 +2,7 @@
 #include <magic.h>
 
 #include <ntools/id/string_id.hpp>
+#include <ntools/tracy.hpp>
 
 #include "mimetype.hpp"
 
@@ -18,6 +19,7 @@ static magic_t get_mime_magic()
 
 const char* neam::resources::mime::bad_idea::get_mimetype(const std::filesystem::path& path)
 {
+  TRACY_SCOPED_ZONE;
   magic_t token = get_mime_magic();
   return magic_file(token, path.c_str());
 }
@@ -30,6 +32,7 @@ neam::id_t neam::resources::mime::bad_idea::get_mimetype_id(const std::filesyste
 
 const char* neam::resources::mime::get_mimetype(const void* data, size_t len)
 {
+  TRACY_SCOPED_ZONE;
   magic_t token = get_mime_magic();
   return magic_buffer(token, data, len);
 }

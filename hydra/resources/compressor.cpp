@@ -43,6 +43,7 @@ namespace neam::resources
 #if N_RES_LZMA_COMPRESSION
     auto lbd = [in = std::move(in)]() mutable
     {
+      TRACY_SCOPED_ZONE;
       raw_data out = raw_data::allocate(lzma_stream_buffer_bound(in.size));
 
       size_t real_size = 0;
@@ -89,6 +90,7 @@ namespace neam::resources
   async::chain<raw_data> uncompress(raw_data&& in, threading::task_manager* /*tm*/, threading::group_t /*group*/)
   {
 #if N_RES_LZMA_COMPRESSION
+    TRACY_SCOPED_ZONE;
     if (in.size < sizeof(uint64_t))
     {
       cr::out().error("resources::uncompress: cannot uncompress a data smaller than the minimal header (got {} bytes)", in.size);
@@ -176,6 +178,7 @@ namespace neam::resources
 #if N_RES_LZMA_COMPRESSION
     auto lbd = [in = std::move(in)]()
     {
+      TRACY_SCOPED_ZONE;
       if (in.size < sizeof(uint64_t))
       {
         cr::out().error("resources::uncompress_raw_xz: cannot uncompress a data smaller than the minimal header (got {} bytes)", in.size);

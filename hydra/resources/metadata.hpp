@@ -106,6 +106,12 @@ namespace neam::resources
       return true;
     }
 
+    template<typename T>
+    bool set(const T& in)
+    {
+      return set<>(T::k_metadata_entry_id, in);
+    }
+
     void set_raw_data(id_t id, raw_data&& d)
     {
       data.emplace(id, std::move(d));
@@ -119,6 +125,7 @@ namespace neam::resources
     }
 
     /// \brief Check whether the type is contained in the metadata map
+    template<typename T> bool contains() const { return data.contains(T::k_metadata_entry_id); }
     bool contains(id_t id) const { return data.contains(id); }
     bool contains_metadata(id_t id) const { return serialization_metadata.contains(id); }
 
@@ -130,7 +137,7 @@ namespace neam::resources
     }
 
     /// \brief insert o in the current metadata, overriding existing values.
-    void add_overrides(metadata_t o)
+    void add_overrides(metadata_t&& o)
     {
       o.data.merge(std::move(data));
       o.data.swap(data);
@@ -144,7 +151,6 @@ namespace neam::resources
 
     /// \brief returns whether the metadata is empty or not
     bool empty() const { return data.empty(); }
-
 
     // the data
     // (split in two maps so if there's ever a human readable format for rle, the type metadata is at the bottom of the file)
@@ -197,7 +203,7 @@ namespace neam::resources
   // The intended way to retrieve metadata types NOT in the metadata object is via the rel-db in the resource context
   //  (which is contextualized and will contain information that may not be in the current binary)
   // Types in the metadata object should use the type-metadata embedded in the metadata object itself (for correct type versioning handling)
-  std::unordered_map<id_t, metadata_type_registration_t>& get_metadata_type_map();
+  std::map<id_t, metadata_type_registration_t>& get_metadata_type_map();
 
 
   /// \brief Base class for metadata entries. Allows for the registration of the class and edition of the metadata.
