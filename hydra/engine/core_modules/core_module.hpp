@@ -45,11 +45,20 @@ namespace neam::hydra
       // If difference is less than this, do nothing
       std::chrono::microseconds min_delta_time_to_sleep {50};
 
+      // Called at the beginning of the frame (in the init group).
+      // Please don't put long operations directly, but instead use a task
+      cr::event<> on_frame_start;
+      // Called at the end of the frame (in the last group).
+      // Please don't put long operations directly, but instead use a task
+      cr::event<> on_frame_end;
+
     private:
       static constexpr const char* module_name = "core";
 
       // the core module should always be present
       static bool is_compatible_with(runtime_mode /*m*/) { return true; }
+
+      void add_named_threads(threading::threads_configuration& tc) override;
 
       void add_task_groups(threading::task_group_dependency_tree& tgd) override;
       void add_task_groups_dependencies(threading::task_group_dependency_tree& tgd) override;

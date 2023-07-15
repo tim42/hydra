@@ -34,6 +34,7 @@
 namespace neam::threading
 {
   class task_group_dependency_tree;
+  class threads_configuration;
   class task_manager;
 }
 
@@ -148,6 +149,8 @@ namespace neam::hydra
       /// \note this means that in the case of a vk_context the vulkan instance and device do exist
       virtual void on_pre_boot_step() {}
 
+      /// \brief If there's specific named-threads to create
+      virtual void add_named_threads(threading::threads_configuration& /*tc*/) {}
       /// \brief If there's specific task groups to create
       virtual void add_task_groups(threading::task_group_dependency_tree& /*tgd*/) {}
       /// \brief Add dependencies between the task-groups:

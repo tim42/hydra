@@ -28,7 +28,8 @@
 
 namespace neam::hydra
 {
-  resources::context::status_chain core_context::boot(threading::resolved_graph&& task_graph, index_boot_parameters_t&& ibp,
+  resources::context::status_chain core_context::boot(threading::resolved_graph&& task_graph, threading::resolved_threads_configuration&& rtc,
+                                                      index_boot_parameters_t&& ibp,
                                                       bool auto_unlock_tm, uint32_t thread_count)
   {
     booted = false;
@@ -37,7 +38,11 @@ namespace neam::hydra
     can_return = false;
 
     tm.get_frame_lock().lock();
-    tm.add_compiled_frame_operations(std::move(task_graph));
+    uint32_t named_thread_count = (uint32_t)rtc.named_threads.size();
+    tm.add_compiled_frame_operations(std::move(task_graph), std::move(rtc));
+    const threading::named_thread_t main_thread = tm.get_named_thread("main"_rid);
+    if (main_thread != threading::k_invalid_named_thread)
+      named_thread_count -= 1;
 
     resources::context::status_chain chn;
     switch (ibp.mode)
@@ -70,12 +75,21 @@ namespace neam::hydra
 
     // start the threads: (we have a minimum requirement of 4 threads)
     thread_count = std::min(std::thread::hardware_concurrency() * 4, std::max(4u, thread_count));
-    threads.reserve(thread_count);
-    cr::out().debug("core-context: boot: lanching {} threads...", thread_count);
+    threads.reserve(thread_count + named_thread_count);
+    cr::out().debug("core-context: boot: launching {} named threads...", named_thread_count);
+    for (uint32_t i = 0; i < named_thread_count; ++i)
+    {
+      threads.emplace_back([this, i, main_thread]
+      {
+        thread_main(*this, i < main_thread ? i : i + 1, i);
+      });
+    }
+    cr::out().debug("core-context: boot: lanching {} general threads...", thread_count);
     for (uint32_t i = 0; i < thread_count; ++i)
     {
-      threads.emplace_back([this, i] { thread_main(*this, i); });
+      threads.emplace_back([this, i, named_thread_count] { thread_main(*this, threading::k_no_named_thread, i + named_thread_count); });
     }
+
 
     cr::out().debug("core-context: boot: sync process done, waiting for async tasks...");
 
@@ -114,19 +128,27 @@ namespace neam::hydra
     cr::out().debug("core context: destructor: done");
   }
 
-  void core_context::thread_main(core_context& ctx, uint32_t index)
+  void core_context::enroll_main_thread()
+  {
+    const threading::named_thread_t main_thread = tm.get_named_thread("main"_rid);
+    thread_main(*this, main_thread == threading::k_invalid_named_thread ? threading::k_no_named_thread : main_thread);
+  }
+
+  void core_context::thread_main(core_context& ctx, threading::named_thread_t thread, uint32_t index)
   {
     if (index != ~0u)
       sys::set_cpu_affinity((index + 2) % std::thread::hardware_concurrency());
     else
       sys::set_cpu_affinity(0);
 
+    ctx.tm._set_current_thread(thread);
+
     while (!ctx.should_stop)
     {
       ctx.tm.wait_for_a_task();
       ctx.tm.run_a_task(index < 2 && ctx.threads_to_not_stall > 2);
 
-      if (index > ctx.threads_to_not_stall && !ctx.should_stop)
+      if (index > ctx.threads_to_not_stall && !ctx.should_stop && thread == threading::k_no_named_thread)
       {
         TRACY_SCOPED_ZONE;
         while (index > ctx.threads_to_not_stall && !ctx.should_stop)
@@ -135,6 +157,12 @@ namespace neam::hydra
         }
       }
     }
+  }
+
+  void core_context::_exit_all_threads()
+  {
+    should_stop = true;
+    can_return = true;
   }
 
   async::continuation_chain core_context::stop_app()
@@ -155,8 +183,6 @@ namespace neam::hydra
         done = tm.try_request_stop([this, state = std::move(state)] mutable
         {
           cr::out().debug("core context: stop_app: task-manager is stopped...");
-          should_stop = true;
-          can_return = true;
           cr::out().debug("core context: stop_app: flushing io...");
           io._wait_for_submit_queries();
           state.complete();

@@ -237,7 +237,10 @@ namespace neam::hydra
 
     // setup the task groups:
     threading::task_group_dependency_tree tgd;
+    threading::threads_configuration tc;
 
+    for (auto& mod : modules)
+      mod.second->add_named_threads(tc);
     // add the module task groups / their dependencies:
     for (auto& mod : modules)
       mod.second->add_task_groups(tgd);
@@ -249,7 +252,9 @@ namespace neam::hydra
     std::lock_guard _lg (init_lock);
     auto tree = tgd.compile_tree();
     tree.print_debug();
-    auto ret = cctx.boot(std::move(tree), std::move(ibp), false /*unlock tm*/, engine_settings.thread_count)
+    auto rtc = tc.get_configuration();
+    rtc.print_debug();
+    auto ret = cctx.boot(std::move(tree), std::move(rtc), std::move(ibp), false /*unlock tm*/, engine_settings.thread_count)
                .then(&cctx.tm, threading::k_non_transient_task_group, [this, &cctx](resources::status st)
     {
       cr::out().debug("engine: index loaded");
@@ -307,21 +312,24 @@ namespace neam::hydra
       return;
     }
     cr::out().debug("engine tear-down: stopping the task manager...");
+    shutdown_stop_task_manager = true;
     cctx.stop_app()
     .then([this, &cctx]
     {
       shutdown_idle_io = true;
       cctx.io._wait_for_submit_queries();
 
-      shutdown_stop_task_manager = true;
 
-      cr::out().debug("engine tear-down: module pre shutdown...");
+      cr::out().debug("engine tear-down: module pre shutdown (current named thread: {})...", cctx.tm.get_current_thread());
       for (auto& mod : modules)
         mod.second->on_start_shutdown();
 
+      // might spin all threads without possibility of waiting, but prevent waiting for tasks that should only run on some specific threads
+      cctx.tm.should_threads_exit_wait(true);
+
       cctx.tm._flush_all_delayed_tasks();
 
-      cr::out().debug("engine tear-down: clearing remaining tasks...");
+      cr::out().debug("engine tear-down: clearing remaining tasks (remaining {} tasks)...", cctx.tm.get_pending_tasks_count());
       {
         auto ensure_tp = std::chrono::high_resolution_clock::now() + std::chrono::milliseconds{500};
         auto end_tp = std::chrono::high_resolution_clock::now() + std::chrono::milliseconds{3000};
@@ -329,7 +337,7 @@ namespace neam::hydra
         while (cctx.tm.has_pending_tasks() || cctx.tm.has_running_tasks())
         {
           cctx.tm._flush_all_delayed_tasks();
-          cctx.tm.run_a_task();
+          cctx.tm.run_a_task(false, threading::task_selection_mode::anything);
           auto now = std::chrono::high_resolution_clock::now();
           if (now > end_tp)
           {
@@ -345,12 +353,14 @@ namespace neam::hydra
         }
         if (faulty_prog)
         {
-          cr::out().error("engine tear-down: unable to stop task manager, will exit still, but we may assert or deadlock");
-          cr::out().error("engine tear-down: please avoid using tasks that push themselves back without restriction");
-          cr::out().error("engine tear-down: remaining {} tasks", cctx.tm.get_pending_tasks_count());
+          cr::out().critical("engine tear-down: unable to stop task manager, will exit still, but we may assert or deadlock");
+          cr::out().critical("engine tear-down: please avoid using tasks that push themselves back without restriction");
+          cr::out().critical("engine tear-down: remaining {} tasks", cctx.tm.get_pending_tasks_count());
         }
       }
       cctx.tm.should_ensure_on_task_insertion(true);
+
+      cctx._exit_all_threads();
 
       shutdown_no_more_vulkan = true;
 

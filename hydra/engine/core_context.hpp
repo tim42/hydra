@@ -69,9 +69,10 @@ namespace neam::hydra
     public:
       ~core_context();
 
-      resources::context::status_chain boot(threading::resolved_graph&& task_graph, index_boot_parameters_t&& ibp, bool auto_unlock_tm = true, uint32_t thread_count = std::thread::hardware_concurrency() - 2);
+      resources::context::status_chain boot(threading::resolved_graph&& task_graph, threading::resolved_threads_configuration&& rtc, index_boot_parameters_t&& ibp,
+                                            bool auto_unlock_tm = true, uint32_t thread_count = std::thread::hardware_concurrency() - 2);
 
-      static void thread_main(core_context& ctx, uint32_t index = 2048);
+      void enroll_main_thread();
 
       async::continuation_chain stop_app();
 
@@ -86,6 +87,10 @@ namespace neam::hydra
 
       /// \brief Undo the effects of stall_all_threads_except. Might take some time to take effect
       void unstall_all_threads() { threads_to_not_stall = ~0u; }
+
+      void _exit_all_threads();
+    private:
+      static void thread_main(core_context& ctx, threading::named_thread_t thread, uint32_t index = ~0u);
 
     private:
       std::vector<std::thread> threads;

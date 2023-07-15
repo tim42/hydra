@@ -48,7 +48,7 @@ namespace neam::hydra
 
       void add_task_groups(threading::task_group_dependency_tree& tgd) override
       {
-        tgd.add_task_group("io"_rid, "io");
+        tgd.add_task_group("io"_rid);
       }
 
       void on_context_initialized() override

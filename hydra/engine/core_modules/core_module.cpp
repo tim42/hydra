@@ -34,22 +34,28 @@
 
 namespace neam::hydra
 {
+  void core_module::add_named_threads(threading::threads_configuration& tc)
+  {
+    tc.add_named_thread("main"_rid, { .can_run_general_tasks = true, .can_run_general_long_duration_tasks = false });
+  }
+
   void core_module::add_task_groups(threading::task_group_dependency_tree& tgd)
   {
-    tgd.add_task_group("init"_rid, "init");
-    tgd.add_task_group("last"_rid, "last");
+    tgd.add_task_group("init"_rid);
+    tgd.add_task_group("last"_rid);
   }
   void core_module::add_task_groups_dependencies(threading::task_group_dependency_tree& tgd)
   {
-    tgd.add_dependency("io"_rid, "init"_rid);
-
     // Make the `last` group dependent on all the other groups
-    const threading::group_t id = tgd.get_group("last"_rid);
+    const threading::group_t last_id = tgd.get_group("last"_rid);
+    const threading::group_t init_id = tgd.get_group("init"_rid);
     const threading::group_t count = tgd.get_group_count();
     for (threading::group_t i = 1; i < count; ++i)
     {
-      if (id != i)
-        tgd.add_dependency(id, i);
+      if (last_id != i)
+        tgd.add_dependency(last_id, i);
+      if (init_id != i)
+        tgd.add_dependency(i, init_id);
     }
   }
 
@@ -85,10 +91,19 @@ namespace neam::hydra
         if (cctx->res.is_index_mapped())
           cctx->tm.get_task([this]() { watch_for_index_change(); });
       }
+      cctx->tm.get_task([this]()
+      {
+        on_frame_start();
+      });
     });
 
     cctx->tm.set_start_task_group_callback("last"_rid, [this]
     {
+      cctx->tm.get_task([this]()
+      {
+        on_frame_end();
+      });
+
       // if we have anything, we dispatch a task
       if (min_frame_length > std::chrono::microseconds{0})
       {
@@ -117,6 +132,8 @@ namespace neam::hydra
   void core_module::throttle_frame()
   {
     TRACY_SCOPED_ZONE;
+    if (engine->should_stop_pushing_tasks())
+      return;
     const auto current_timepoint = std::chrono::high_resolution_clock::now();
     const auto delta = current_timepoint - last_frame_timepoint;
 
