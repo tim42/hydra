@@ -34,3 +34,7 @@ target_link_libraries(${SAMPLE_NAME} PUBLIC fmt)
 target_link_libraries(${SAMPLE_NAME} PUBLIC hydra)
 target_link_libraries(${SAMPLE_NAME} PUBLIC enfield)
 
+
+
+add_library("shader-structs_${SAMPLE_NAME}" OBJECT shader_struct.cpp)
+target_link_libraries("shader-structs_${SAMPLE_NAME}" PUBLIC shader-structs)
