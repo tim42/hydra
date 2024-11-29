@@ -102,7 +102,7 @@ namespace neam::resources::packer
       template<typename Type>
       static std::string _get_root_name(const rel_db& db, id_t file_id)
       {
-        return fmt::format("{}:{}", db.resource_name(file_id), Type::type_name.string);
+        return fmt::format("{}:{}", db.resource_name(file_id), Type::type_name.str);
       }
 
   private:

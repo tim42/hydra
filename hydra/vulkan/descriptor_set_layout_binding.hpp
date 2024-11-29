@@ -33,6 +33,7 @@
 #include <vector>
 
 #include <vulkan/vulkan.h>
+#include <ntools/id/id.hpp>
 #include "sampler.hpp"
 
 namespace neam
@@ -56,6 +57,14 @@ namespace neam
             }
           {
           }
+          descriptor_set_layout_binding(id_t _id, uint32_t binding, VkDescriptorType descriptor_type, uint32_t descriptor_count, VkShaderStageFlags stages)
+            : vk_dslb
+            {
+              binding, descriptor_type, descriptor_count, stages, nullptr
+            }
+            , id(_id)
+          {
+          }
           /// \brief Construct the binding
           descriptor_set_layout_binding(uint32_t binding, VkDescriptorType descriptor_type, uint32_t descriptor_count, VkShaderStageFlags stages, const sampler& immutable_sampler)
             : vk_dslb
@@ -66,19 +75,28 @@ namespace neam
           }
 //           descriptor_set_layout_binding(uint32_t binding, VkDescriptorType descriptor_type, const std::vector<sampler *> &sampler_vct, VkShaderStageFlags stages = VK_SHADER_STAGE_ALL);
 
-          descriptor_set_layout_binding(const descriptor_set_layout_binding &o) : vk_dslb(o.vk_dslb) {}
-          descriptor_set_layout_binding &operator = (const descriptor_set_layout_binding &o) {vk_dslb = o.vk_dslb; return *this; }
+          descriptor_set_layout_binding(const descriptor_set_layout_binding &o) : vk_dslb(o.vk_dslb), vk_binding_flag(o.vk_binding_flag), id(o.id) {}
+          descriptor_set_layout_binding &operator = (const descriptor_set_layout_binding &o) {vk_dslb = o.vk_dslb; vk_binding_flag = o.vk_binding_flag; id = o.id; return *this; }
           descriptor_set_layout_binding(const VkDescriptorSetLayoutBinding &o) : vk_dslb(o) {}
           descriptor_set_layout_binding &operator = (const VkDescriptorSetLayoutBinding &o) {vk_dslb = o; return *this; }
+
+          void set_binding_flag(VkDescriptorBindingFlags flag) { vk_binding_flag = flag; }
+          VkDescriptorBindingFlags get_binding_flag() const { return vk_binding_flag; }
 
           // TODO: the remaining of the interface
 
         public: // advanced
           /// \brief Yields a const reference to a VkDescriptorSetLayoutBinding
-          operator const VkDescriptorSetLayoutBinding &() const { return vk_dslb; }
+          operator const VkDescriptorSetLayoutBinding&() const { return vk_dslb; }
+          VkDescriptorSetLayoutBinding& _get_layout_binding() { return vk_dslb; }
+          const VkDescriptorSetLayoutBinding& _get_layout_binding() const { return vk_dslb; }
+
+          id_t get_id() const { return id; }
+
         private:
           VkDescriptorSetLayoutBinding vk_dslb;
-          std::vector<int> _TO_REMOVE_;
+          VkDescriptorBindingFlags vk_binding_flag = 0;
+          id_t id;
       };
     } // namespace vk
   } // namespace hydra

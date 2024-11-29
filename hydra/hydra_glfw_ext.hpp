@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2246147043172013516_472317908_HYDRA_GLFW_EXT_HPP__
-#define __N_2246147043172013516_472317908_HYDRA_GLFW_EXT_HPP__
+#pragma once
+
 
 /// \file hydra_glfw_ext.hpp
 /// \brief Header file that includes all the GLFW extensions for hydra
@@ -36,5 +36,5 @@
 
 #include "glfw/glfw.hpp"
 
-#endif // __N_2246147043172013516_472317908_HYDRA_GLFW_EXT_HPP__
+
 

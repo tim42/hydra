@@ -34,10 +34,24 @@
 
 namespace neam::hydra::conf
 {
+  enum class location_t
+  {
+    io_prefixed,
+    index_local_dir, // the "local" folder next to the index. For anything the user can override that is index local.
+                     // Only works if the index is a file
+
+    index_program_local_dir, // the "local" folder next to the index, then the folder that has the same name as the program.
+                             // For anything that the user can override that is specific to the program/the index.
+                             // Only works if the index is a file
+    source_dir,
+    cwd,
+    none, // disable writing the file
+  };
+
   /// \brief all hconf types must inherit from this one
   /// \warning If auto-reload is enabled, you \e MUST make use of \e lock when reading/using the conf.
   ///          To avoid unnecessary contention using spinlock_shared_adapter is strongly suggested (unless you are modifying the object).
-  template<typename Child>
+  template<typename Child, ct::string_holder DefaultSource = "", location_t DefaultLocation = location_t::source_dir>
   class hconf
   {
     public:
@@ -90,7 +104,14 @@ namespace neam::hydra::conf
       // Event called when the source file has changed (if hconf_autoreload_on_source_file_change is true, after the data has been deserialized).
       // Called without any lock being held.
       mutable cr::event<> hconf_on_data_changed;
-      string_id hconf_source; // setup automatically, used by the auto-reload. Also, identifier of the hconf object, if automanaged
+#if !N_STRIP_DEBUG
+      string_id hconf_source = string_id::_runtime_build_from_string(DefaultSource.view());
+#else
+      string_id hconf_source = DefaultSource; // setup automatically, used by the auto-reload. Also, identifier of the hconf object, if automanaged
+#endif
+      static constexpr ct::string_holder default_source = DefaultSource;
+      static constexpr location_t default_location = DefaultLocation;
+
       // if auto-update is enabled, the auto-updater will acquire an exclusive lock the instance
       // note: when reading/updating the data, that lock must be held (shared/exclusive) to avoid race conditions on saves/updates
       mutable shared_spinlock lock;
@@ -171,8 +192,11 @@ namespace neam::hydra::conf
     private:
       bool is_being_initialized = false;
       bool is_initialized = false;
+
+    protected:
       raw_data hconf_metadata;
 
+    private:
       cr::event_token_t on_update_tk;
       std::function<void(hconf&)> register_autoupdate; // used when moving conf objects
 
@@ -180,7 +204,7 @@ namespace neam::hydra::conf
   };
 
   /// \brief Generic conf, can be deserialized from any hconf asset, and be used for generic edition or packing, ...
-  struct gen_conf : public hconf<gen_conf>
+  struct gen_conf : public hconf<gen_conf, "", location_t::none>
   {
     raw_data conf_data;
 
@@ -192,6 +216,11 @@ namespace neam::hydra::conf
     void deserialize(const raw_data& new_data)
     {
       conf_data = new_data.duplicate();
+    }
+
+    void _set_conf_metadata(raw_data&& md)
+    {
+      hconf_metadata = std::move(md);
     }
   };
 }

@@ -31,7 +31,8 @@
 
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 #include "../hydra_debug.hpp"
 #include "render_pass.hpp"
@@ -191,6 +192,11 @@ namespace neam
           /// \brief Return the Vulkan resource
           VkFramebuffer get_vk_framebuffer() const { return vk_framebuffer; }
           const std::vector<const image_view *>& get_image_view_vector() const { return image_view_vector; }
+
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_framebuffer, VK_OBJECT_TYPE_FRAMEBUFFER, name);
+          }
 
         private:
           device &dev;

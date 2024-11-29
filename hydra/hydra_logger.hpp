@@ -27,18 +27,18 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2157120580611224779_2842314943_HYDRA_LOGGER_HPP__
-#define __N_2157120580611224779_2842314943_HYDRA_LOGGER_HPP__
+#pragma once
+
 
 #ifndef HYDRA_NO_MESSAGES
 #include <ntools/logger/logger.hpp>
 
-#define HYDRA_LOG(type, ...)   neam::cr::out.log_fmt(::neam::cr::logger::severity::type, std::source_location::current(), __VA_ARGS__);
-#define HYDRA_LOG_TPL(type, sloc, ...)   neam::cr::out.log_fmt(::neam::cr::logger::severity::type, sloc, __VA_ARGS__);
+#define HYDRA_LOG(type, ...)   neam::get_global_logger().log_fmt(::neam::cr::logger::severity::type, std::source_location::current(), __VA_ARGS__);
+#define HYDRA_LOG_TPL(type, sloc, ...)   neam::get_global_logger().log_fmt(::neam::cr::logger::severity::type, sloc, __VA_ARGS__);
 
 #else
 #define HYDRA_LOG(type, ...) // NO LOGS
 #endif
 
-#endif // __N_2157120580611224779_2842314943_HYDRA_LOGGER_HPP__
+
 

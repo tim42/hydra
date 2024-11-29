@@ -81,11 +81,13 @@ namespace neam
             dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
           }
 
-          static buffer_memory_barrier queue_transfer(const ::neam::hydra::vk::buffer &_buffer, uint32_t src_queue_family_index, uint32_t dst_queue_family_index)
+          static buffer_memory_barrier queue_transfer(const ::neam::hydra::vk::buffer &_buffer, uint32_t src_queue_family_index, uint32_t dst_queue_family_index, VkAccessFlags src_access_mask = 0, VkAccessFlags dest_access_mask = 0)
           {
             buffer_memory_barrier barrier(_buffer);
             barrier.srcQueueFamilyIndex = src_queue_family_index;
             barrier.dstQueueFamilyIndex = dst_queue_family_index;
+            barrier.srcAccessMask = src_access_mask;
+            barrier.dstAccessMask = dest_access_mask;
             return barrier;
           }
 
@@ -165,9 +167,9 @@ namespace neam
             return *this;
           }
 
-          static image_memory_barrier queue_transfer(const ::neam::hydra::vk::image& _img, uint32_t src_queue_family_index, uint32_t dst_queue_family_index, VkImageLayout old_layout, VkImageLayout new_layout)
+          static image_memory_barrier queue_transfer(const ::neam::hydra::vk::image& _img, uint32_t src_queue_family_index, uint32_t dst_queue_family_index, VkImageLayout old_layout, VkImageLayout new_layout, VkAccessFlags src_access_mask = 0, VkAccessFlags dest_access_mask = 0)
           {
-            image_memory_barrier barrier(_img, old_layout, new_layout, 0, 0);
+            image_memory_barrier barrier(_img, old_layout, new_layout, src_access_mask, dest_access_mask);
             barrier.srcQueueFamilyIndex = src_queue_family_index;
             barrier.dstQueueFamilyIndex = dst_queue_family_index;
             return barrier;

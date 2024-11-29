@@ -27,10 +27,11 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1814989461818831215_234927224__GLM_UDL_HPP__
+#pragma once
 # define __N_1814989461818831215_234927224__GLM_UDL_HPP__
 
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 // this is SO MUCH EASIER than hitting your keyboard for the same things, over and over... (poor keyboard :/ )
 // 2D glm::vec
@@ -734,7 +735,7 @@ static inline glm::uvec4 operator "" _uvec4_xyzw(unsigned long long val)
   return glm::uvec4((val), (val), (val), (val));
 }
 
-#endif /*__N_1814989461818831215_234927224__GLM_UDL_HPP__*/
+
 
 // kate: indent-mode cstyle; indent-width 2; replace-tabs on; 
 

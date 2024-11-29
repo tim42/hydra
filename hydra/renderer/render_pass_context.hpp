@@ -29,38 +29,108 @@
 #include <optional>
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 #include <ntools/id/id.hpp>
 
 #include <hydra/vulkan/framebuffer.hpp>
 #include <hydra/vulkan/command_buffer.hpp>
+#include <hydra/vulkan/command_buffer_recorder.hpp>
+#include <hydra/utilities/transfer_context.hpp>
 
 namespace neam::hydra
 {
   /// \brief 
   struct render_pass_context
   {
+    // state:
+    class transfer_context& transfers;
+
     // global / unchanged inputs:
     glm::uvec2 output_size;
     vk::viewport viewport;
     vk::rect2D viewport_rect;
-    VkFormat output_format;
 
     // Please use output() instead of directly accessing those:
-    vk::framebuffer& final_fb;
-    std::optional<vk::framebuffer> output_fb;
+    std::vector<vk::image*> final_fb_images;
+    std::vector<vk::image_view*> final_fb_images_views;
 
-    /// \brief Return the current framebuffer
-    vk::framebuffer& output()
+    std::optional<std::vector<vk::image*>> output_fb_images;
+    std::optional<std::vector<vk::image_view*>> output_fb_images_views;
+
+    VkImageLayout current_layout;
+
+    std::vector<vk::image*>& output_images()
     {
-      if (output_fb)
-        return *output_fb;
-      return final_fb;
+      if (output_fb_images)
+        return *output_fb_images;
+      return final_fb_images;
+    }
+    std::vector<vk::image_view*>& output_images_views()
+    {
+      if (output_fb_images_views)
+        return *output_fb_images_views;
+      return final_fb_images_views;
     }
 
-    /// \brief 
-    vk::image& swap_buffers()
+    vk::image& output_image(uint32_t index)
     {
+      auto& vct = output_images();
+      check::debug::n_assert(index < vct.size(), "Out of bound access on image vector");
+      check::debug::n_assert(vct[index] != nullptr, "Trying to get a ref to a null image");
+      return *vct[index];
+    }
+    vk::image_view& output_image_view(uint32_t index)
+    {
+      auto& vct = output_images_views();
+      check::debug::n_assert(index < vct.size(), "Out of bound access on image-view vector");
+      check::debug::n_assert(vct[index] != nullptr, "Trying to get a ref to a null image-view");
+      return *vct[index];
+    }
+
+    /// \brief Helper to transition the whole context to a new layout / do a read/write barrier
+    void pipeline_barrier(vk::command_buffer_recorder& cbr, VkImageLayout new_layout,
+                          VkAccessFlags src_access, VkAccessFlags dst_access,
+                          VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage)
+    {
+      auto& vct = output_images();
+      std::vector<vk::image_memory_barrier> imb;
+      for (auto& it : vct)
+      {
+        imb.push_back(vk::image_memory_barrier{*it, current_layout, new_layout,
+                                               src_access, dst_access });
+      }
+      cbr.pipeline_barrier(src_stage, dst_stage, 0, imb);
+      current_layout = new_layout;
+
+    }
+
+    /// \brief Helper to do a read/write barrier on the context
+    void pipeline_barrier(vk::command_buffer_recorder& cbr,
+                          VkAccessFlags src_access, VkAccessFlags dst_access,
+                          VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage)
+    {
+      pipeline_barrier(cbr, current_layout, src_access, dst_access, src_stage, dst_stage);
+    }
+
+    /// \brief Helper for a generic begin rendering
+    void begin_rendering(vk::command_buffer_recorder& cbr, VkAttachmentLoadOp load_op, VkAttachmentStoreOp store_op)
+    {
+      auto& vct = output_images_views();
+      std::vector<hydra::vk::rendering_attachment_info> rai;
+      rai.reserve(vct.size());
+      for (auto* imgv : vct)
+      {
+        rai.push_back
+        ({
+            *imgv, current_layout,
+            load_op, store_op
+        });
+      }
+      cbr.begin_rendering
+      ({
+        viewport_rect, rai,
+      });
     }
   };
 

@@ -31,6 +31,8 @@
 #include <hydra/engine/engine_module.hpp>
 #include <ntools/threading/threading.hpp>
 #include <ntools/id/string_id.hpp>
+#include <ntools/tracy.hpp>
+#include <ntools/mt_check/vector.hpp>
 
 #include "imgui_context.hpp"
 #include "imgui_renderpass.hpp"
@@ -43,84 +45,36 @@ namespace neam::hydra::imgui
       imgui_context& get_imgui_context() { return *context; };
       const imgui_context& get_imgui_context() const { return *context; };
 
-      void register_function(id_t fid, std::function<void()> func)
-      {
-        functions.emplace_back(fid, std::move(func));
-      }
-      void unregister_function(id_t fid)
-      {
-        functions.erase(std::remove_if(functions.begin(), functions.end(), [fid](auto& x) { return x.first == fid; }), functions.end());
-      }
+      void register_function(id_t fid, std::function<void()> func);
+      void unregister_function(id_t fid);
 
-      void create_context(glfw::glfw_module::state_ref_t& viewport)
-      {
-        check::debug::n_check(!context, "creating an imgui context over an existing imgui context");
-        context.emplace(*hctx, *engine, viewport);
-        viewport.pm.add_pass<imgui::render_pass>(get_imgui_context(), *hctx, ImGui::GetMainViewport());
-        if (res_have_loaded)
-          on_resource_index_loaded();
-      }
+      void create_context(glfw::glfw_module::state_ref_t& viewport);
 
-    private: // module interface:
+      void reload_fonts();
+
+    public: // module interface:
       static constexpr const char* module_name = "imgui";
 
-      static bool is_compatible_with(runtime_mode m)
-      {
-        // we need vulkan for imgui to be active
-        if ((m & runtime_mode::hydra_context) != runtime_mode::hydra_context)
-          return false;
-        return true;
-      }
+      static bool is_compatible_with(runtime_mode m);
 
-      void add_task_groups(threading::task_group_dependency_tree& tgd) override
-      {
-        tgd.add_task_group("imgui"_rid, "imgui");
-      }
-      void add_task_groups_dependencies(threading::task_group_dependency_tree& tgd) override
-      {
-        tgd.add_dependency("imgui"_rid, "events"_rid);
-        tgd.add_dependency("imgui"_rid, "io"_rid);
-        tgd.add_dependency("render"_rid, "imgui"_rid);
-      }
+      void add_task_groups(threading::task_group_dependency_tree& tgd) override;
+      void add_task_groups_dependencies(threading::task_group_dependency_tree& tgd) override;
 
-      void on_context_initialized() override
-      {
-        hctx->tm.set_start_task_group_callback("imgui"_rid, [this]
-        {
-          // no context, nothing to do
-          if (!context.has_value())
-            return;
+      void on_context_initialized() override;
 
-          get_imgui_context().new_frame();
+      void on_resource_index_loaded() override;
 
-          for (auto& it : functions)
-            it.second();
-          ImGui::Render();
-          ImGui::UpdatePlatformWindows();
-          ImGui::RenderPlatformWindowsDefault();
-        });
-      }
-
-      void on_resource_index_loaded() override
-      {
-        res_have_loaded = true;
-        if (!context.has_value())
-          return;
-        get_imgui_context().load_default_fonts();
-      }
-
-      void on_start_shutdown() override
-      {
-        context.reset();
-      }
+      void on_shutdown_post_idle_gpu() override;
 
 
     private:
+      spinlock lock;
       std::optional<imgui_context> context;
 
-      std::vector<std::pair<id_t, std::function<void()>>> functions;
+      std::mtc_vector<std::pair<id_t, std::function<void()>>> functions;
 
       bool res_have_loaded = false;
+      bool has_loaded_conf = false;
 
       friend class engine_t;
       friend engine_module<imgui_module>;

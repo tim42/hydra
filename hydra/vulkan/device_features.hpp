@@ -71,11 +71,15 @@ namespace neam
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR, VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, VkPhysicalDeviceAccelerationStructureFeaturesKHR) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR, VkPhysicalDeviceRayTracingPipelineFeaturesKHR) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT, VkPhysicalDeviceMeshShaderFeaturesEXT) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_INTERLOCK_FEATURES_EXT, VkPhysicalDeviceFragmentShaderInterlockFeaturesEXT) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_KHR, VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT, VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT, VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT, VkPhysicalDeviceShaderAtomicFloatFeaturesEXT) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT, VkPhysicalDeviceDescriptorBufferFeaturesEXT) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT, VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT) \
+        X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT, VkPhysicalDeviceRobustness2FeaturesEXT) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, VkPhysicalDeviceVulkan13Features) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, VkPhysicalDeviceVulkan12Features) \
         X(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, VkPhysicalDeviceVulkan11Features) \
@@ -209,6 +213,20 @@ namespace neam
             });
           }
 
+          /// \brief Remove unused structs from the vulkan linked-list
+          void simplify()
+          {
+            void* prev = nullptr;
+            for_each_entries(feature_list, [&prev](auto& entry)
+            {
+              if (!struct_is_default(entry))
+              {
+                entry.pNext = prev;
+                prev = &entry;
+              }
+            });
+          }
+
           // getters: both get<type> and get<VK_STRUCT_TYPE> are accepted
 
           template<typename Type> Type& get() { return std::get<Type>(feature_list); }
@@ -308,6 +326,19 @@ namespace neam
             for (uint32_t i = 0; i < info_t::entry_count; ++i)
             {
               if ((a_data[i] != 0) != (b_data[i] != 0))
+                return false;
+            }
+            return true;
+          }
+          template<typename Type>
+          static bool struct_is_default(Type& a)
+          {
+            using info_t = internal::feature_info_from_type_t<Type>;
+            const uint32_t* a_data = to_data(a);
+
+            for (uint32_t i = 0; i < info_t::entry_count; ++i)
+            {
+              if ((a_data[i] != 0))
                 return false;
             }
             return true;

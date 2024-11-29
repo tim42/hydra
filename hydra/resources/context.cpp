@@ -32,12 +32,16 @@
 #include "compressor.hpp"
 #include "mimetype/mimetype.hpp"
 
+#include "network/connection.hpp"
+
 #include <hydra/engine/core_context.hpp>
 
 #include <filesystem>
 
 namespace neam::resources
 {
+  context::context(io::context& io, hydra::core_context& _ctx) : io_context(io), ctx(_ctx), compressor_dispatcher{ctx.tm} {}
+
   std::string context::get_prefix_from_filename(const std::string& name)
   {
     std::filesystem::path p(name);
@@ -46,22 +50,20 @@ namespace neam::resources
 
   context::status_chain context::boot(id_t boot_index_id, id_t _index_file_id, unsigned max_depth, bool reload)
   {
-    if (!reload)
-    {
-      prefix = io_context.get_prefix_directory();
-      root = {};
-      has_index = false;
-      has_rel_db = false;
-      index_file_id = id_t::invalid;
-    }
-    neam::cr::out().debug("boot: using base prefix: {}", prefix);
-
+    neam::cr::out().debug("boot: using base prefix: {}", io_context.get_prefix_directory());
 
     return reload_index(boot_index_id, _index_file_id)
     .then([this, max_depth](status index_st) -> context::status_chain 
     {
       if (index_st == status::failure)
+      {
+        root = {};
+        has_index = false;
+        has_rel_db = false;
+        index_file_id = id_t::invalid;
+
         return status_chain::create_and_complete(status::failure);
+      }
 
       if (index::entry initial_index_file = root.get_entry(k_initial_index); initial_index_file.is_valid())
       {
@@ -72,6 +74,7 @@ namespace neam::resources
           else
             neam::cr::out().warn("index does not possess a self-reference, index reload might not be possible");
 
+          on_configuration_changed_tk.release();
           configuration = {}; // reset the conf
 
           const index::entry reldb_entry = root.get_entry(k_reldb_index);
@@ -87,14 +90,45 @@ namespace neam::resources
           // NOTE: we only load the conf if there's a chance to have a rel-db
           auto conf_chain =
 #if N_STRIP_DEBUG
-          ctx.hconf.read_conf(configuration, k_configuration_name)
+          ctx.hconf.read_conf(configuration)
 #else
-          ctx.hconf.read_or_create_conf(configuration, std::string(k_configuration_name.get_string_view()))
+          ctx.hconf.read_or_create_conf(configuration)
 #endif
-          .then([](bool res) { return res ? status::success : status::failure; });
+          .then([this](bool res)
+          {
+            if (!res)
+            {
+              neam::cr::out().warn("could not load resource configuration file ({})", configuration.hconf_source);
+            }
+
+            compressor_dispatcher.enable(true);
+
+            // register conf changed events
+            on_configuration_changed_tk = configuration.hconf_on_data_changed.add([this]
+            {
+              uint32_t max_dispatch;
+              if (configuration.max_compressor_tasks < 0)
+              {
+                max_dispatch = (int32_t)std::thread::hardware_concurrency() + configuration.max_compressor_tasks;
+                if (max_dispatch <= 0)
+                  max_dispatch = 1;
+              }
+              else
+              {
+                max_dispatch = (uint32_t)configuration.max_compressor_tasks;
+              }
+              cr::out().debug("setting max (de)compression task to be dispatch at the same time to: {}", max_dispatch);
+              compressor_dispatcher.set_max_in_flight_tasks(max_dispatch);
+            });
+
+            // call the on-conf changed events:
+            configuration.hconf_on_data_changed();
+            // failure is not a cause to abort the boot process
+            return res ? status::success : status::partial_success;
+          });
 
           auto rel_db_chain = io_context.queue_read(reldb_fid, 0, io::context::whole_file)
-          .then([this, reldb_fid, index_st](raw_data&& file, bool success)
+          .then([this, reldb_fid, index_st](raw_data&& file, bool success, size_t)
           {
             status final_status = index_st;
             if (success)
@@ -102,19 +136,20 @@ namespace neam::resources
               const rle::status st = rle::in_place_deserialize(file, db);
               if (st == rle::status::success)
               {
-                neam::cr::out().debug("{}: loaded rel-db", io_context.get_filename(reldb_fid));
+                neam::cr::out().debug("{}: loaded rel-db", io_context.get_string_for_id(reldb_fid));
                 has_rel_db = true;
+                db.build_string_ids();
               }
               else
               {
-                neam::cr::out().error("{}: rel-db is not valid", io_context.get_filename(reldb_fid));
+                neam::cr::out().error("{}: rel-db is not valid", io_context.get_string_for_id(reldb_fid));
                 has_rel_db = false;
                 final_status = worst(final_status, status::partial_success);
               }
             }
             else
             {
-              neam::cr::out().error("{}: rel-db file does not exist (please use strip_repack to strip unused resources)", io_context.get_filename(reldb_fid));
+              neam::cr::out().error("{}: rel-db file does not exist (please use strip_repack to strip unused resources)", io_context.get_string_for_id(reldb_fid));
               has_rel_db = false;
             }
 
@@ -129,7 +164,12 @@ namespace neam::resources
             // send the event:
             ctx.tm.get_task([this]() { on_index_loaded(); });
 
-            neam::cr::out().log("Boot process completed.");
+            if (st == status::success)
+              neam::cr::out().log("Boot process completed.");
+            else if (st == status::partial_success)
+              neam::cr::out().warn("Boot process completed with partial success.");
+            else
+              neam::cr::out().error("Boot process failed. Could not properly initialize the resource context.");
             return st;
           });
         }
@@ -148,7 +188,7 @@ namespace neam::resources
 
           if (index::entry initial_index_key = root.get_entry(k_index_key); initial_index_key.is_valid())
           {
-            neam::cr::out().log("Chain-loading to index: {}", io_context.get_filename(initial_index_file.pack_file));
+            neam::cr::out().log("Chain-loading to index: {}", io_context.get_string_for_id(initial_index_file.pack_file));
             // Chain-load the next index:
             return boot(initial_index_key.pack_file, initial_index_file.pack_file, max_depth - 1);
           }
@@ -219,22 +259,23 @@ namespace neam::resources
     id_t ifid = io_context.map_file(index_path);
     id_t rdbfid = io_context.map_file(rel_db_file);
     auto idx_chain = write_index(ifid, new_index);
-    auto rdb_chain = io_context.queue_write(rdbfid, io::context::truncate, rle::serialize<rel_db>({}));
-    return async::multi_chain<bool>(true, [](bool& state, bool ret)
+    auto rdb_chain = io_context.queue_write(rdbfid, io::context::truncate, rle::serialize<rel_db>({}))
+                    .then([](raw_data&& data, bool success, size_t write_size) { return success && write_size == data.size ? status::success : status::failure; });
+    return async::multi_chain<status>(status::success, [](status& state, status ret)
     {
-      state = state && ret;
+      state = worst(state, ret);
     }, idx_chain, rdb_chain)
-    .then([=, this](bool success)
+    .then([=, this](status s)
     {
       io_context.unmap_file(ifid);
       io_context.unmap_file(rdbfid);
-      if (success)
+      if (s == status::success)
       {
         neam::cr::out().debug("make_self_boot: index/rel_db successfuly saved.");
-        return status::success;
+        return s;
       }
       neam::cr::out().error("make_self_boot: failed to write the index/rel_db.");
-      return status::failure;
+      return s;
     });
 ;
   }
@@ -267,26 +308,26 @@ namespace neam::resources
     // Write the index:
     id_t ifid = io_context.map_file(boot_index_path);
     return write_index(ifid, new_index)
-    .then([=, this](bool success)
+    .then([=, this](status s)
     {
       io_context.unmap_file(ifid);
-      if (success)
+      if (s == status::success)
       {
         neam::cr::out().debug("make_chain_boot: index successfuly saved.");
         return status::success;
       }
       neam::cr::out().error("make_chain_boot: failed to write the index.");
-      return status::failure;
+      return s;
     });
   }
 
   void context::_init_with_clean_index(id_t index_key, bool init_reldb)
   {
-    prefix = io_context.get_prefix_directory();
     root = index{index_key};
     has_index = true;
     index_file_id = id_t::invalid;
     current_file_map = {};
+    prefix = {};
 
     // clear rel-db (the heard way)
     db.~rel_db();
@@ -312,18 +353,18 @@ namespace neam::resources
 
   context::status_chain context::_init_with_index_data(id_t index_key, const void* data, uint32_t data_size)
   {
-    prefix = io_context.get_prefix_directory();
     root = index{index_key};
     has_index = false;
     index_file_id = id_t::invalid;
     current_file_map = {};
+    prefix = {};
+
+    // simply set the flag for the rel-db
+    has_rel_db = false;
 
     // clear rel-db (the heard way)
     db.~rel_db();
     new(&db) rel_db{};
-
-    // simply set the flag for the rel-db
-    has_rel_db = false;
 
     context::status_chain chn;
     ctx.tm.get_long_duration_task([this, index_key, data, data_size, state = chn.create_state()] mutable
@@ -350,14 +391,14 @@ namespace neam::resources
   {
     check::debug::n_assert(has_index, "Trying to combines indexes while no index has been ever loaded. Are you loading and combining right away?");
     return io_context.queue_read(index_fid, 0, io::context::whole_file)
-           .then([=, this](raw_data&& data, bool success)
+           .then([=, this](raw_data&& data, bool success, size_t)
     {
-      if (!check::debug::n_check(success, "Failed to load index {}", io_context.get_filename(index_fid)))
+      if (!check::debug::n_check(success, "Failed to load index {}", io_context.get_string_for_id(index_fid)))
           return status::failure;
 
       bool has_rejected_entries = false;
       root.add_index(index::read_index(index_id, data, &has_rejected_entries));
-      neam::cr::out().debug("Additively loaded index: {} [combined index contains {} entries]", io_context.get_filename(index_fid), root.entry_count());
+      neam::cr::out().debug("Additively loaded index: {} [combined index contains {} entries]", io_context.get_string_for_id(index_fid), root.entry_count());
       return has_rejected_entries ? status::partial_success : status::success;
     });
   }
@@ -367,7 +408,7 @@ namespace neam::resources
     check::debug::n_check(has_index, "Trying to save while no index has been ever loaded. Are you loading and saving right away?");
     check::debug::n_check(io_context.is_file_mapped(index_file_id), "Index file is not mapped to io, will not save index");
 
-    io::context::write_chain chn = write_index(index_file_id, root);
+    status_chain chn = write_index(index_file_id, root);
 
     // save the rel-db too
     if (has_rel_db)
@@ -379,30 +420,36 @@ namespace neam::resources
         const id_t reldb_fid = reldb_entry.pack_file;
         if (reldb_entry.is_valid() && io_context.is_file_mapped(reldb_fid))
         {
-          io::context::write_chain rel_chn = io_context.queue_write(reldb_fid, io::context::truncate, db.serialize());
-          return async::multi_chain<bool>(true, [](bool & state, bool ret)
+          status_chain rel_chn = io_context.queue_write(reldb_fid, io::context::truncate, db.serialize())
+              .then([](raw_data&& data, bool success, size_t write_size) { return success && write_size == data.size ? status::success : status::failure; });
+          return async::multi_chain<status>(status::success, [](status& state, status ret)
           {
-            state = state && ret;
+            state = worst(state, ret);
           }, std::move(chn), std::move(rel_chn))
-          .then([ =, this, fid = index_file_id](bool success)
+          .then([ =, this, fid = index_file_id](status s)
           {
-            if (!check::debug::n_check(success, "Failed to save index {}", io_context.get_filename(fid)))
-              return status::failure;
-            neam::cr::out().debug("Saved index: {}", io_context.get_filename(fid));
-            return status::success;
+            if (!check::debug::n_check(s == status::success, "Failed to save index {}", io_context.get_string_for_id(fid)))
+              return s;
+            neam::cr::out().debug("Saved index: {}", io_context.get_string_for_id(fid));
+            return s;
           });
         }
       }
     }
     {
-      return chn.then([ =, this, fid = index_file_id](bool success)
+      return chn.then([ =, this, fid = index_file_id](status s)
       {
-        if (!check::debug::n_check(success, "Failed to save index {}", io_context.get_filename(fid)))
-          return status::failure;
-        neam::cr::out().debug("Saved index: {}", io_context.get_filename(fid));
-        return status::success;
+        if (!check::debug::n_check(s == status::success, "Failed to save index {}", io_context.get_string_for_id(fid)))
+          return s;
+        neam::cr::out().debug("Saved index: {}", io_context.get_string_for_id(fid));
+        return s;
       });
     }
+  }
+
+  async::chain<bool> context::has_resource(id_t rid) const
+  {
+    return async::chain<bool>::create_and_complete(is_index_loaded() && root.has_entry(rid));
   }
 
   void context::_embed_reldb()
@@ -419,9 +466,10 @@ namespace neam::resources
     return (reldb_entry.flags & flags::embedded_data) != flags::none;
   }
 
-  io::context::write_chain context::write_index(id_t file_id, const index& idx) const
+  context::status_chain context::write_index(id_t file_id, const index& idx) const
   {
-    return io_context.queue_write(file_id, io::context::truncate, idx.serialize_index());
+    return io_context.queue_write(file_id, io::context::truncate, idx.serialize_index())
+      .then([](raw_data&& data, bool success, size_t write_size) { return success && write_size == data.size ? status::success : status::failure; });
   }
 
   context::status_chain context::load_file_map(const id_t rid)
@@ -442,10 +490,10 @@ namespace neam::resources
 
   std::string context::resource_name(id_t rid) const
   {
-    if (io_context.is_file_mapped(rid))
-      return std::string{io_context.get_filename(rid)};
     if (has_rel_db)
       return db.resource_name(rid);
+    if (io_context.is_file_mapped(rid))
+      return std::string{io_context.get_string_for_id(rid)};
     return fmt::format("{}", rid);
   }
 
@@ -461,32 +509,58 @@ namespace neam::resources
     return db;
   }
 
-  io::context::read_chain context::read_raw_resource(id_t rid)
+  bool context::is_resource_immediatly_available(id_t rid) const
   {
+    std::lock_guard _l { spinlock_shared_adapter::adapt(root._get_lock()) };
     const index::entry entry = root.get_entry(rid);
-    if (!root.has_entry(rid) || !entry.is_valid() || ((entry.flags & flags::type_mask) != flags::type_data))
+    if (!root.has_entry(rid) || !entry.is_valid())
+      return true;
+    if (((entry.flags & flags::type_mask) != flags::type_data))
+      return true;
+
+    if ((entry.flags & flags::embedded_data) != flags::none)
+      return true;
+    if (!io_context.is_file_mapped(entry.pack_file))
+      return true;
+
+    return false;
+  }
+
+  io::context::read_chain context::read_raw_resource(id_t rid) const
+  {
+    std::lock_guard _l { spinlock_shared_adapter::adapt(root._get_lock()) };
+    const index::entry entry = root.get_entry(rid);
+    if (!root.has_entry(rid) || !entry.is_valid())
     {
-      cr::out().warn("failed to load resource: {}: resource does not exist or is not a data resource", resource_name(rid));
-      return io::context::read_chain::create_and_complete({}, false);
+      cr::out().warn("failed to load resource: {}: resource does not exist", resource_name(rid));
+      return io::context::read_chain::create_and_complete({}, false, 0);
     }
+    if (((entry.flags & flags::type_mask) != flags::type_data))
+    {
+      cr::out().warn("failed to load resource: {}: resource exists but is not a data resource", resource_name(rid));
+      return io::context::read_chain::create_and_complete({}, false, 0);
+    }
+
+    const bool is_compressed = ((entry.flags & flags::compressed) != flags::none);
 
     // check for embedded data, as it's data already in memory
     if ((entry.flags & flags::embedded_data) != flags::none)
     {
-      if (raw_data* data = root.get_embedded_data(rid); data != nullptr)
+      if (const raw_data* data = root.get_embedded_data(rid); data != nullptr)
       {
         // duplicate and return the data
-        if ((entry.flags & flags::compressed) == flags::none)
+        if (!is_compressed)
         {
           cr::out().debug("loaded resource: {} [size: {}b] (from embedded data)", resource_name(rid), data->size);
-          return io::context::read_chain::create_and_complete(raw_data::duplicate(*data), true);
+          return io::context::read_chain::create_and_complete(raw_data::duplicate(*data), true, data->size);
         }
 #if N_RES_LZMA_COMPRESSION
-        return uncompress(data->duplicate(), &ctx.tm, threading::k_non_transient_task_group)
+        return uncompress(data->duplicate(), compressor_dispatcher, threading::k_non_transient_task_group)
                .then([rid, this](raw_data && data)
         {
           cr::out().debug("loaded resource: {} [size: {}b] (uncompressed, from embedded data)", resource_name(rid), data.size);
-          return io::context::read_chain::create_and_complete(std::move(data), true);
+          uint32_t size = (uint32_t)data.size;
+          return io::context::read_chain::create_and_complete(std::move(data), true, size);
         });
 #else
         neam::cr::out().error("read_raw_resource: trying to read a compressed resource without LZMA support");
@@ -497,52 +571,72 @@ namespace neam::resources
       else
       {
         cr::out().warn("failed to load resource: {}: was marked as embedded data but no embedded data found", resource_name(rid));
-        return io::context::read_chain::create_and_complete({}, false);
+        return io::context::read_chain::create_and_complete({}, false, 0);
       }
     }
 
     if (!io_context.is_file_mapped(entry.pack_file))
     {
       cr::out().warn("failed to load resource: {}: pack file is not in the file-map", resource_name(rid));
-      return io::context::read_chain::create_and_complete({}, false);
+      return io::context::read_chain::create_and_complete({}, false, 0);
     }
 
-    return io_context.queue_read(entry.pack_file, entry.offset,
-                                 (entry.flags & flags::standalone_file) != flags::none ? io::context::whole_file : entry.size)
-           .then([rid, this](raw_data && data, bool success)
+    auto read_lambda = [this, entry, rid]()
     {
-      if (!success)
-        cr::out().warn("failed to load resource: {} (read failed)", resource_name(rid));
-      else
-        cr::out().debug("loaded resource: {} [size: {}b]", resource_name(rid), data.size);
-
-
-      return io::context::read_chain::create_and_complete(std::move(data), success);
-    })
-    .then([this, res_flags = entry.flags](raw_data&& data, bool success)
-    {
-      if (!success)
-        return io::context::read_chain::create_and_complete({}, false);
-      // TODO: unxor data properly
-
-      if ((res_flags & flags::compressed) == flags::none)
-        return io::context::read_chain::create_and_complete(std::move(data), success);
-
-#if N_RES_LZMA_COMPRESSION
-      return uncompress(std::move(data), &ctx.tm, threading::k_non_transient_task_group)
-             .then([success](raw_data && data)
+      return io_context.queue_read(entry.pack_file, entry.offset,
+                                  (entry.flags & flags::standalone_file) != flags::none ? io::context::whole_file : entry.size)
+            .then(&ctx.tm, threading::k_non_transient_task_group, [rid, this](raw_data && data, bool success, size_t size)
       {
-        return io::context::read_chain::create_and_complete(std::move(data), success);
+        if (!success)
+          cr::out().warn("failed to load resource: {} (read failed)", resource_name(rid));
+        else
+          cr::out().debug("loaded resource: {} [size: {}b]", resource_name(rid), data.size);
+
+        return io::context::read_chain::create_and_complete(std::move(data), success, size);
+      })
+      .then([this, res_flags = entry.flags](raw_data&& data, bool success, uint32_t size)
+      {
+        if (!success || async::is_current_chain_canceled())
+          return io::context::read_chain::create_and_complete({}, false, 0);
+        // TODO: unxor data properly
+
+        if ((res_flags & flags::compressed) == flags::none)
+          return io::context::read_chain::create_and_complete(std::move(data), success, size);
+
+  #if N_RES_LZMA_COMPRESSION
+        return uncompress(std::move(data), compressor_dispatcher, threading::k_non_transient_task_group, true /* high prio */)
+              .then([success](raw_data&& data)
+        {
+          uint32_t size = data.size;
+          return io::context::read_chain::create_and_complete(std::move(data), success, size);
+        });
+  #else
+        neam::cr::out().error("read_raw_resource: trying to read a compressed resource without LZMA support");
+        return io::context::read_chain::create_and_complete({}, false, 0);
+  #endif // N_RES_LZMA_COMPRESSION
       });
-#else
-      neam::cr::out().error("read_raw_resource: trying to read a compressed resource without LZMA support");
-      return io::context::read_chain::create_and_complete({}, status::failure);
-#endif // N_RES_LZMA_COMPRESSION
-    });
+    };
+    if (is_compressed)
+    {
+      io::context::read_chain ret;
+      compressor_dispatcher.dispatch(threading::k_non_transient_task_group, [read_lambda = std::move(read_lambda), state = ret.create_state()]() mutable
+      {
+        if (state.is_canceled())
+          return;
+
+        read_lambda().use_state(state);
+      });
+      return ret;
+    }
+    else
+    {
+      return read_lambda();
+    }
   }
 
   context::status_chain context::write_raw_resource(id_t rid, raw_data&& data)
   {
+    std::lock_guard _l { spinlock_shared_adapter::adapt(root._get_lock()) };
     const index::entry entry = root.get_entry(rid);
     if (!root.has_entry(rid) || !entry.is_valid() || ((entry.flags & flags::type_mask) != flags::type_data))
     {
@@ -563,20 +657,20 @@ namespace neam::resources
       // uncompressed resources are simply written as is for now:
       if ((entry.flags & flags::compressed) == flags::none)
       {
-        return io_context.queue_write(rid, io::context::truncate, std::move(data)).then([](bool success)
+        return io_context.queue_write(rid, io::context::truncate, std::move(data)).then([](raw_data&& data, bool success, size_t write_size)
         {
-          return success ? status::success : status::failure;
+          return success && write_size == data.size ? status::success : status::failure;
         });
       }
       else
       {
 #if N_RES_LZMA_COMPRESSION
-        return compress(std::move(data), &ctx.tm, threading::k_non_transient_task_group)
+        return compress(std::move(data), compressor_dispatcher, threading::k_non_transient_task_group)
         .then([this, rid](raw_data&& data)
         {
-          return io_context.queue_write(rid, io::context::truncate, std::move(data)).then([](bool success)
+          return io_context.queue_write(rid, io::context::truncate, std::move(data)).then([](raw_data&& data, bool success, size_t write_size)
           {
-            return success ? status::success : status::failure;
+            return success && write_size == data.size ? status::success : status::failure;
           });
         });
 #else
@@ -590,22 +684,32 @@ namespace neam::resources
     return status_chain::create_and_complete(status::failure);
   }
 
+  void context::_prepare_engine_shutdown()
+  {
+    configuration.remove_watch();
+
+    // flush anything that was waiting to be dispatch (so when we start shutting down the task manager, those tasks are already queued)
+    compressor_dispatcher.enable(false);
+  }
+
   context::status_chain context::reload_index(id_t index_id, id_t fid)
   {
     return io_context.queue_read(fid, 0, io::context::whole_file)
-           .then([=, this](raw_data&& data, bool success)
+           .then([=, this](raw_data&& data, bool success, size_t)
     {
-      if (!check::debug::n_check(success, "Failed to load index {}", io_context.get_filename(fid)))
+      if (!check::debug::n_check(success, "Failed to load index {}", io_context.get_string_for_id(fid)))
       {
-          has_index = true;
-          return status_chain::create_and_complete(status::failure);
+        has_index = false;
+        return status_chain::create_and_complete(status::failure);
       }
 
       bool has_rejected_entries = false;
-      root = index::read_index(index_id, data, &has_rejected_entries);
-      neam::cr::out().debug("loaded index: {} [contains {} entries]", io_context.get_filename(fid), root.entry_count());
-      has_index = true;
-      index_file_id = fid;
+      {
+        root = index::read_index(index_id, data, &has_rejected_entries);
+        neam::cr::out().debug("loaded index: {} [contains {} entries]", io_context.get_string_for_id(fid), root.entry_count());
+        has_index = true;
+        index_file_id = fid;
+      }
 
       // grab the embedded file-map, if any:
       return load_file_map(k_boot_file_map)
@@ -618,7 +722,6 @@ namespace neam::resources
 
         return (has_rejected_entries || fm_st != status::success) ? status::partial_success : status::success;
       });
-
     });
   }
 
@@ -632,6 +735,7 @@ namespace neam::resources
     }
 
     cr::out().debug("Applying file-map with {} entries (prefix: {})", fm.files.size(), fm.prefix_path);
+    // const std::string prefix = io_context.get_prefix_directory();
     io_context.set_prefix_directory(prefix + (prefix.empty() ? "" : "/") + fm.prefix_path);
     current_file_map.prefix_path = fm.prefix_path;
     cr::out().debug("File-map consolidated prefix: {}", io_context.get_prefix_directory());
@@ -676,7 +780,7 @@ namespace neam::resources
     std::lock_guard _l(file_map_lock);
     for (id_t rid : rids)
     {
-      current_file_map.files.erase((std::string)io_context.get_filename(rid));
+      current_file_map.files.erase((std::string)io_context.get_string_for_id(rid));
       io_context.close(rid);
       io_context.unmap_file(rid);
     }
@@ -723,7 +827,7 @@ namespace neam::resources
 
     // queue the resource read:
     auto res_chn = io_context.queue_read(fid, 0, io::context::whole_file)
-    .then([=, this](raw_data&& data, bool success)
+    .then([=, this](raw_data&& data, bool success, size_t)
     {
       io_context.unmap_file(fid);
       if (!success)
@@ -736,7 +840,8 @@ namespace neam::resources
 
     // queue the metadata read:
     auto md_chn = io_context.queue_read(mdfid, 0, io::context::whole_file)
-    .then(/*&ctx.tm, threading::k_non_transient_task_group, */[=, overrides = std::move(overrides)](raw_data&& raw_metadata, bool success) mutable
+    .then(/*&ctx.tm, threading::k_non_transient_task_group, */
+    [=, overrides = std::move(overrides)](raw_data&& raw_metadata, bool success, size_t) mutable
     {
       metadata_t metadata;
 
@@ -841,7 +946,7 @@ namespace neam::resources
       if (!proc)
       {
         // not really an error, in normal mode we skip the file, but in debug we send a warn message
-        if (cr::out.min_severity == cr::logger::severity::debug)
+        if (cr::get_global_logger().min_severity == cr::logger::severity::debug)
         {
           cr::out().warn("import_resource: resource {}: could not find a processor (mimetype: {}, extension: {})",
                          resource.c_str(), mime::get_mimetype(data), resource.extension().c_str());
@@ -861,6 +966,7 @@ namespace neam::resources
     return chn.then([=, this](processor::processed_data&& pd, status s)
     {
       // FIXME: should handle caching results to avoid re-processing data
+      cr::out()./*debug*/log("import: processed resource {} (with {} entries to pack and {} to further process)", resource.c_str(), pd.to_pack.size(), pd.to_process.size());
 
       // maintain the db state, even in case of import failure
       for (auto& it : pd.to_process)
@@ -951,15 +1057,21 @@ namespace neam::resources
       {
         default_resource_metadata_t resource_metadata;
         if (v[i].metadata.empty() || !v[i].metadata.contains<default_resource_metadata_t>())
+        {
           v[0].metadata.try_get<default_resource_metadata_t>(resource_metadata);
+          v[i].metadata.set<default_resource_metadata_t>(resource_metadata);
+        }
         else
+        {
           v[i].metadata.try_get<default_resource_metadata_t>(resource_metadata);
+        }
 
 #if N_RES_LZMA_COMPRESSION
-        if (v[i].data.size > N_RES_MAX_SIZE_TO_COMPRESS && (v[i].mode == packer::mode_t::data) && !resource_metadata.skip_compression)
+        if (!configuration.enable_background_compression && v[i].data.size >= configuration.min_size_to_compress
+            && (v[i].mode == packer::mode_t::data) && !resource_metadata.skip_compression)
         {
           // compress
-          compress_chains.push_back(compress(std::move(v[i].data), &ctx.tm, threading::k_non_transient_task_group)
+          compress_chains.push_back(compress(std::move(v[i].data), compressor_dispatcher, threading::k_non_transient_task_group)
           .then([i, d = std::move(v[i])](raw_data&& data) mutable
           {
             d.data = std::move(data);
@@ -969,12 +1081,14 @@ namespace neam::resources
         else
 #endif // N_RES_LZMA_COMPRESSION
         {
-          pcv[i] = { std::move(v[i]), false, }; // uncompressed
+          pcv[i].data = std::move(v[i]);
+          pcv[i].is_compressed = false; // uncompressed
         }
       }
       async::multi_chain(std::move(pcv), std::move(compress_chains), [](auto& state, packer::data&& data, uint32_t index)
       {
-        state[index] = { std::move(data), true };
+        state[index].data = std::move(data);
+        state[index].is_compressed = true;
       }).then([pack_id, s, state = std::move(state)](std::vector<post_compression_data>&& v) mutable
       {
         state.complete(std::move(v), pack_id, s);
@@ -1013,8 +1127,6 @@ namespace neam::resources
       uint64_t offset = 0;
       for (auto& it : v)
       {
-        static_assert(N_RES_MAX_SIZE_TO_EMBED > 0, "N_RES_MAX_SIZE_TO_EMBED must be > 0");
-
         auto& pack_data = it.data;
         default_resource_metadata_t resource_metadata;
         if (pack_data.metadata.empty() || !pack_data.metadata.contains<default_resource_metadata_t>())
@@ -1036,17 +1148,17 @@ namespace neam::resources
         if (pack_data.mode == packer::mode_t::data)
         {
           // save the resource + add it to the index:
-          if (pack_data.data.size > N_RES_MAX_SIZE_TO_EMBED && !resource_metadata.embed_in_index)
+          if (pack_data.data.size > configuration.max_size_to_embed && !resource_metadata.embed_in_index)
           {
             const uint64_t sz = pack_data.data.size;
             const uint64_t file_offset = offset;
             offset += sz;
             has_any_write_to_packfile = true;
             // write to disk:
-            chains.emplace_back(io_context.queue_write(pack_file, file_offset, std::move(pack_data.data), false)
-              .then([=, this, id = pack_data.id, is_compressed = it.is_compressed](bool success)
+            chains.emplace_back(io_context.queue_write(pack_file, file_offset, std::move(pack_data.data))
+              .then([=, this, id = pack_data.id, is_compressed = it.is_compressed](raw_data&& data, bool success, size_t write_size)
             {
-              if (!success)
+              if (!success || write_size != data.size)
               {
                 cr::out().error("pack_resource: failed to write sub-resource to pack-file: {} (sub resource: {})", filename, resource_name(id));
                 return status_chain::create_and_complete(status::failure);
@@ -1063,7 +1175,7 @@ namespace neam::resources
               return status_chain::create_and_complete(index_success ? status::success : status::failure);
             }));
           }
-          else // size <= N_RES_MAX_SIZE_TO_EMBED
+          else // size <= configuration.max_size_to_embed
           {
             cr::out().debug("pack_resource: pack-file {} sub-resources {}: embedding in index", filename, it.data.id);
             // entries of size 0 should always be embedded (it's a smaller footprint than a full index entry):
@@ -1098,9 +1210,9 @@ namespace neam::resources
               if (final_hash != pack_data.metadata.initial_hash)
               {
                 chains.push_back(io_context.queue_write(pack_data.metadata.file_id, io::context::truncate, std::move(raw_metadata))
-                .then([](bool res)
+                .then([](raw_data&& data, bool success, size_t write_size)
                 {
-                  return res ? status::success : status::failure;
+                  return success && write_size == data.size ? status::success : status::failure;
                 }));
               }
             }
@@ -1117,6 +1229,60 @@ namespace neam::resources
         }
       }
 
+      // write all the metadata (only for valid resources:)
+      // we place metadata all the way at the end of the file to avoid them having an extra cost by preventing vector reads.
+      for (auto& it : v)
+      {
+        auto& pack_data = it.data;
+        default_resource_metadata_t resource_metadata;
+        if (pack_data.metadata.empty() || !pack_data.metadata.contains<default_resource_metadata_t>())
+        {
+          v[0].data.metadata.try_get<default_resource_metadata_t>(resource_metadata);
+          pack_data.metadata.set<default_resource_metadata_t>(resource_metadata);
+        }
+        else
+        {
+          pack_data.metadata.try_get<default_resource_metadata_t>(resource_metadata);
+        }
+
+        raw_data serialized_metadata = rle::serialize(pack_data.metadata);
+
+        // metadata are to be stripped from final build
+        if (pack_data.id == id_t::none || pack_data.id == id_t::invalid)
+          continue;
+
+        const id_t metadata_rid = specialize(pack_data.id, "metadata");
+        db.add_resource(res_id, metadata_rid);
+
+        // NOTE: We never embed metadata in the index to avoid bloating it
+        const uint64_t sz = serialized_metadata.size;
+        const uint64_t file_offset = offset;
+        offset += sz;
+        has_any_write_to_packfile = true;
+        const flags extra_flags = flags::to_strip;
+        // write to disk:
+        chains.emplace_back(io_context.queue_write(pack_file, file_offset, std::move(serialized_metadata))
+          .then([=, this, id = metadata_rid](raw_data&& data, bool success, size_t write_size)
+        {
+          if (!success || write_size != data.size)
+          {
+            cr::out().error("pack_resource: failed to write metadata for sub-resource to pack-file: {} (sub resource: {})", filename, resource_name(id));
+            return status_chain::create_and_complete(status::failure);
+          }
+
+          const bool index_success = root.add_entry(index::entry
+          {
+            .id = id,
+            .flags = flags::type_data | extra_flags,
+            .pack_file = pack_file,
+            .offset = file_offset,
+            .size = sz,
+          });
+          return status_chain::create_and_complete(index_success ? status::success : status::failure);
+        }));
+      }
+
+
       if (has_any_write_to_packfile)
       {
         db.set_pack_file(res_id, pack_file);
@@ -1129,7 +1295,7 @@ namespace neam::resources
       })
       .then([this, res_id, sub_res_count = v.size()](status s)
       {
-        cr::out().debug("pack_resource: packed resource {} (with {} sub-resources)", resource_name(res_id), sub_res_count);
+        cr::out()./*debug*/log("pack_resource: packed resource {} (with {} sub-resources)", resource_name(res_id), sub_res_count);
         return s;
       });
     });

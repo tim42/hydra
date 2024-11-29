@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_16129275582719426230_1711728483_GEOMETRY_HPP__
-#define __N_16129275582719426230_1711728483_GEOMETRY_HPP__
+#pragma once
+
 
 #include "mesh.hpp"
 
@@ -40,5 +40,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_16129275582719426230_1711728483_GEOMETRY_HPP__
+
 

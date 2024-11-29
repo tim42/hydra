@@ -45,47 +45,45 @@ namespace neam::hydra
       virtual ~render_context_t() {}
 
       hydra_context& hctx;
+
       pass_manager pm { hctx };
 
-      vk::command_pool graphic_transient_cmd_pool {hctx.gqueue.create_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT)};
-      vk::command_pool compute_transient_cmd_pool {hctx.gqueue.create_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT)};
-
-      struct render_context_ref_t* ref;
+      void* ref = nullptr;
       bool need_setup = true;
+      std::string debug_context;
+
+      vk::semaphore last_transfer_operation { hctx.device, nullptr };
 
       // below this point: managed by the caller
 
-      std::vector<vk::framebuffer> framebuffers {};
-
       glm::uvec2 size {0, 0};
-      VkFormat framebuffer_format = VK_FORMAT_B8G8R8A8_UNORM;
-      VkImageLayout output_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+      VkImageLayout input_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+      VkImageLayout output_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+      bool clear_framebuffer = false;
+
+      virtual std::vector<VkFormat> get_framebuffer_format() const = 0;
       virtual void begin() {}
-      virtual uint32_t get_framebuffer_index() { return 0; }
-      virtual void pre_render(vk::submit_info& gsi) {}
-      virtual void post_render(vk::submit_info& gsi) {}
+      virtual void pre_render(vk::submit_info& si) {}
+      virtual void post_render(vk::submit_info& si) {}
       virtual void post_submit() {}
       virtual void end() {}
-  };
 
-  /// \brief Simple implementation of a offscreen render-context
-  class offscreen_render_context_t : public render_context_t
-  {
-    public:
-      void begin() override;
+      virtual std::vector<vk::image*> get_images() = 0;
+      virtual std::vector<vk::image_view*> get_images_views() = 0;
   };
 
   /// \brief Reference type, as contexts cannot be destructed like a C++ object (they must use a VRD)
+  template<typename T>
   struct render_context_ref_t
   {
-    render_context_t& ref;
+    T& ref;
     class renderer_module& mod;
 
-    render_context_t* operator ->() { return &ref; }
-    const render_context_t* operator ->() const { return &ref; }
+    T* operator ->() { return &ref; }
+    const T* operator ->() const { return &ref; }
     render_context_t& operator *() { return ref; }
-    const render_context_t& operator *() const { return ref; }
+    const T& operator *() const { return ref; }
 
     ~render_context_ref_t();
   };
@@ -97,51 +95,37 @@ namespace neam::hydra
 
     public: // render contexts:
       template<typename T, typename... Args>
-      std::unique_ptr<render_context_ref_t> create_render_context(Args&&... args)
+      std::unique_ptr<render_context_ref_t<T>> create_render_context(Args&&... args)
       {
         static_assert(std::is_base_of_v<render_context_t, T>, "render context created this way must inherit from renderer_module::context_t");
 
         std::unique_ptr<render_context_t> rct { new T(*hctx, std::forward<Args>(args)...) };
-        std::unique_ptr<render_context_ref_t> r {new render_context_ref_t{*rct, *this}};
+        std::unique_ptr<render_context_ref_t<T>> r {new render_context_ref_t<T>{static_cast<T&>(*rct), *this}};
         rct->ref = r.get();
+        std::lock_guard _l(lock);
+        contexts_to_add.push_back(std::move(rct));
         return r;
       }
 
       // automatically called on destruction of context_ref_t
-      void _request_removal(render_context_ref_t& ref)
+      template<typename T>
+      void _request_removal(render_context_ref_t<T>& ref)
       {
         std::lock_guard _l(lock);
         contexts_to_remove.push_back(&ref);
       }
 
       /// \brief Render a render context.
-      void render_context(render_context_ref_t& ref);
+      template<typename T>
+      void render_context(render_context_ref_t<T>& ref)
+      {
+        render_context(ref.ref);
+      }
+      void render_context(render_context_t& context);
 
     public: // render task group API:
-      void register_on_render_start(id_t fid, std::function<void()> func)
-      {
-        functions_start.emplace_back(fid, std::move(func));
-      }
-      void register_on_render_end(id_t fid, std::function<void()> func)
-      {
-        functions_end.emplace_back(fid, std::move(func));
-      }
-      void unregister_on_render_start(id_t fid)
-      {
-        functions_start.erase
-        (
-          std::remove_if(functions_start.begin(), functions_start.end(), [fid](auto & x) { return x.first == fid; }),
-          functions_start.end()
-        );
-      }
-      void unregister_on_render_end(id_t fid)
-      {
-        functions_end.erase
-        (
-          std::remove_if(functions_end.begin(), functions_end.end(), [fid](auto & x) { return x.first == fid; }),
-          functions_end.end()
-        );
-      }
+      cr::event<> on_render_start;
+      cr::event<> on_render_end;
 
     private: // module interface:
       static constexpr const char* module_name = "renderer";
@@ -155,83 +139,38 @@ namespace neam::hydra
         return true;
       }
 
-      void add_task_groups(threading::task_group_dependency_tree& tgd) override
-      {
-        tgd.add_task_group("render"_rid, "render");
-      }
-      void add_task_groups_dependencies(threading::task_group_dependency_tree& tgd) override
-      {
-        tgd.add_dependency("render"_rid, "io"_rid);
-        tgd.add_dependency("render"_rid, "init"_rid);
-      }
+      void init_vulkan_interface(gen_feature_requester& gfr, bootstrap& /*hydra_init*/) override;
 
-      void on_context_initialized() override
-      {
-        hctx->tm.set_start_task_group_callback("render"_rid, [this]
-        {
-          skip_frame = true;
-          if (chrono.get_accumulated_time() >= min_frame_time)
-          {
-            chrono.reset();
-            skip_frame = false;
-          }
+      void add_named_threads(threading::threads_configuration& tc) override;
+      void add_task_groups(threading::task_group_dependency_tree& tgd) override;
+      void add_task_groups_dependencies(threading::task_group_dependency_tree& tgd) override;
 
-          if (skip_frame)
-            return;
+      void on_context_initialized() override;
 
-          // start a task to avoid stalling the task manager:
-          // (and so that tasks that are spawned by the functions are immediatly dispatched)
-          cctx->tm.get_task([this]
-          {
-            // Housekeeping: cleanup resources that need cleanup
-            hctx->vrd.update();
+      void on_shutdown_post_idle_gpu() override;
+      void on_start_shutdown() override;
 
-            // Call the different functions:
-            for (auto& it : functions_start)
-              it.second();
-
-          });
-        });
-        hctx->tm.set_end_task_group_callback("render"_rid, [this]
-        {
-          if (skip_frame)
-            return;
-
-          // may stall the task manager :/
-          for (auto& it : functions_end)
-            it.second();
-        });
-      }
+    private: // internal api:
+      void prepare_renderer();
 
     private:
-      struct render_pass_pair
-      {
-        vk::render_pass init_render_pass;
-        vk::render_pass output_render_pass;
-      };
-
-    private: // utilities:
-      render_pass_pair& get_pass_pair_for(VkFormat framebuffer_format, VkImageLayout output_layout);
-
-    private:
-      // render task-group:
-      std::vector<std::pair<id_t, std::function<void()>>> functions_start;
-      std::vector<std::pair<id_t, std::function<void()>>> functions_end;
-
-
       // render contexts:
-      std::map<uint64_t, render_pass_pair> render_pass_cache;
       std::vector<std::unique_ptr<render_context_t>> contexts;
 
       spinlock lock;
       std::vector<std::unique_ptr<render_context_t>> contexts_to_add;
-      std::vector<render_context_ref_t*> contexts_to_remove;
+      std::vector<void*> contexts_to_remove;
 
       cr::chrono chrono;
       bool skip_frame = false;
 
       friend class engine_t;
       friend engine_module<renderer_module>;
+
+      cr::event_token_t on_frame_start_tk;
   };
+
+  template<typename T>
+  render_context_ref_t<T>::~render_context_ref_t() { mod._request_removal(*this); }
 }
 

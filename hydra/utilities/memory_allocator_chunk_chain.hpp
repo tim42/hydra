@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_504010956183331340_3179031897_MEMORY_ALLOCATOR_CHUNK_CHAIN_HPP__
-#define __N_504010956183331340_3179031897_MEMORY_ALLOCATOR_CHUNK_CHAIN_HPP__
+#pragma once
+
 
 #include "memory_allocator_chunk.hpp"
 #include "memory_allocation.hpp"
@@ -124,7 +124,7 @@ namespace neam
           if (chunk_count == 0)
             return;
 
-//           cr::out.log() << "chain@" << this << "[" << name << "]:" << cr::newline
+//           cr::get_global_logger().log() << "chain@" << this << "[" << name << "]:" << cr::newline
 //                              << "  free memory:           " << (free_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
 //                              << "  allocated memory:      " << ((total_memory - free_memory) / (1024.f * 1024.f)) << " Mio" << cr::newline
 //                              << "  total memory:          " << (total_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
@@ -151,5 +151,5 @@ namespace neam
 } // namespace neam
 
 #endif
-#endif // __N_504010956183331340_3179031897_MEMORY_ALLOCATOR_CHUNK_CHAIN_HPP__
+
 

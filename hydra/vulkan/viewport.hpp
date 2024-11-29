@@ -30,7 +30,8 @@
 #pragma once
 
 
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 #include <vulkan/vulkan.h>
 
 #include "rect2D.hpp"
@@ -80,6 +81,9 @@ namespace neam
           void set_offset(const glm::vec2 &offset) { vk_viewport.x = offset.x; vk_viewport.y = offset.y; }
           /// \brief Get the offset of the viewport
           glm::vec2 get_offset() const { return glm::vec2(vk_viewport.x, vk_viewport.y); }
+
+          /// \brief Get the aspect ratio (x over y) of the viewport
+          float get_aspect_ratio() const { return vk_viewport.width / vk_viewport.height; }
 
           /// \brief Set a rect2D for the offset/size
           void set_rect2d(const rect2D &r)

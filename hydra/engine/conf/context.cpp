@@ -145,12 +145,37 @@ namespace neam::hydra::conf
             file = it->second.source_file;
           }
         }
-#if !N_STRIP_DEBUG
-        if (file.empty() && conf_id.get_string() != nullptr)
-          file = conf_id.get_string_view();
-#endif
+
         if (!file.empty())
         {
+          //   substep 0: try to index-local / index-program-local:
+          if (cctx.res._has_prefix_directory())
+          {
+            std::filesystem::path index_local_path = (std::filesystem::path)cctx.res._get_prefix_directory() / "local";
+            if (!cctx.program_name.empty())
+            {
+              std::filesystem::path fullpath = index_local_path / cctx.program_name / file;
+              if (std::filesystem::is_regular_file(fullpath))
+              {
+                const id_t source_fid = cctx.io.map_unprefixed_file(fullpath);
+                update_confs_map(source_fid, location_t::index_program_local_dir, cctx.io.get_modified_or_created_time(source_fid));
+                cctx.io.queue_read(source_fid, 0, io::context::whole_file).use_state(state);
+                return;
+              }
+            }
+
+            {
+              std::filesystem::path fullpath = index_local_path / file;
+              if (std::filesystem::is_regular_file(fullpath))
+              {
+                const id_t source_fid = cctx.io.map_unprefixed_file(fullpath);
+                update_confs_map(source_fid, location_t::index_local_dir, cctx.io.get_modified_or_created_time(source_fid));
+                cctx.io.queue_read(source_fid, 0, io::context::whole_file).use_state(state);
+                return;
+              }
+            }
+          }
+
           //   substep 1: try in the source folder:
           if (!cctx.res.source_folder.empty())
           {
@@ -192,20 +217,23 @@ namespace neam::hydra::conf
       const id_t rid = specialize(conf_id, "raw");
       update_confs_map(id_t::none, location_t::none, {});
 
-      if (cctx.res.has_resource(rid))
+      cctx.res.has_resource(rid).then([this, rid, state = std::move(state)](bool has_resource) mutable
       {
-        cctx.res.read_raw_resource(rid).use_state(state);
-        return;
-      }
+        if (has_resource)
+        {
+          cctx.res.read_raw_resource(rid).use_state(state);
+          return;
+        }
 
-      state.complete({}, false);
+        state.complete({}, false, 0);
+      });
     });
     return ret;
   }
 
   async::chain<raw_data&& /*data*/, raw_data&& /*metadata*/, bool /*success*/> context::read_raw_conf(string_id conf_id)
   {
-    return direct_read_raw_conf(conf_id).then([](raw_data&& src_data, bool success)
+    return direct_read_raw_conf(conf_id).then([](raw_data&& src_data, bool success, uint32_t)
     {
       // handle the failure case:
       if (!success)
@@ -224,6 +252,7 @@ namespace neam::hydra::conf
     {
       if (!success)
       {
+        std::lock_guard _el(spinlock_shared_adapter::adapt(confs_lock));
         cr::out().error("hconf: {}: failed to read source file", conf_id);
         if (auto it = confs.find(conf_id); it != confs.end())
         {
@@ -244,7 +273,7 @@ namespace neam::hydra::conf
     });
   }
 
-  io::context::write_chain context::write_raw_conf(string_id conf_id, raw_data&& data, raw_data&& metadata)
+  async::chain<bool /*success*/> context::write_raw_conf(string_id conf_id, raw_data&& data, raw_data&& metadata)
   {
     raw_data final_data = _to_hconf(std::move(data), std::move(metadata));
 
@@ -255,13 +284,31 @@ namespace neam::hydra::conf
         const id_t mapped_file = it->second.io_mapped_file;
         const location_t loc = it->second.location;
         const std::string file = it->second.source_file;
-        confs_lock.unlock_shared();
 
         if (mapped_file != id_t::none && cctx.io.is_file_mapped(mapped_file))
         {
+          if (auto it = confs.find(conf_id); it != confs.end())
+          {
+            // prevent reloading during the write:
+            it->second.is_file_being_written = true;
+          }
+          confs_lock.unlock_shared();
           cr::out().debug("hconf: writing hconf file: {} (file is still io-mapped)", conf_id);
-          return cctx.io.queue_write(mapped_file, io::context::truncate, std::move(final_data));
+          return cctx.io.queue_write(mapped_file, io::context::truncate, std::move(final_data))
+            .then([this, conf_id](raw_data&& /*data*/, bool success, size_t /*write_size*/)
+          {
+            confs_lock.lock_shared();
+            if (auto it = confs.find(conf_id); it != confs.end())
+            {
+              // put the exact mtime:
+              it->second.last_mtime = cctx.io.get_modified_or_created_time(it->second.io_mapped_file);
+              it->second.is_file_being_written = false;
+            }
+            confs_lock.unlock_shared();
+            return success;
+          });
         }
+        confs_lock.unlock_shared();
 #if N_HCONF_ALLOW_FILESYSTEM_ACCESS
         if (!file.empty())
         {
@@ -289,7 +336,7 @@ namespace neam::hydra::conf
     });
   }
 
-  io::context::write_chain context::write_raw_conf_to_file(location_t loc, const std::string& file, raw_data&& data, raw_data&& metadata)
+  async::chain<bool /*success*/> context::write_raw_conf_to_file(location_t loc, const std::string& file, raw_data&& data, raw_data&& metadata)
   {
     raw_data final_data = _to_hconf(std::move(data), std::move(metadata));
 
@@ -298,6 +345,32 @@ namespace neam::hydra::conf
     id_t source_fid;
     switch (loc)
     {
+      case location_t::none:
+        cr::out().warn("hconf: trying to write hconf file: {} using location as none", file);
+        return async::chain<bool /*success*/>::create_and_complete(false);
+      case location_t::index_local_dir:
+        if (cctx.res._has_prefix_directory())
+        {
+          cr::out().debug("hconf: writing hconf file: {} (index-local)", file);
+          const std::filesystem::path parent_path = (std::filesystem::path)cctx.res._get_prefix_directory() / "local";
+          std::filesystem::create_directories(parent_path);
+          source_fid = cctx.io.map_unprefixed_file(parent_path / file);
+          break;
+        }
+        cr::out().warn("hconf: trying to write hconf file: {} using location as index-local, but index is not a file/has no prefix directory", file);
+        return async::chain<bool /*success*/>::create_and_complete(false);
+      case location_t::index_program_local_dir:
+        if (cctx.res._has_prefix_directory())
+        {
+          cr::out().debug("hconf: writing hconf file: {} (index+program-local ({}))", file, cctx.program_name);
+          const std::filesystem::path parent_path = (std::filesystem::path)cctx.res._get_prefix_directory() / "local" / cctx.program_name;
+          std::filesystem::create_directories(parent_path);
+          source_fid = cctx.io.map_unprefixed_file(parent_path / file);
+
+          break;
+        }
+        cr::out().warn("hconf: trying to write hconf file: {} using location as index-local, but index is not a file/has no prefix directory", file);
+        return async::chain<bool /*success*/>::create_and_complete(false);
       case location_t::io_prefixed:
         cr::out().debug("hconf: writing hconf file: {} (io-prefixed)", file);
         source_fid = cctx.io.map_file(file);
@@ -310,7 +383,6 @@ namespace neam::hydra::conf
           break;
         }
         [[fallthrough]];
-      // case location_t::none:
       case location_t::cwd:
       default:
         cr::out().debug("hconf: writing hconf file: {} (unprefixed)", file);
@@ -318,10 +390,12 @@ namespace neam::hydra::conf
         break;
     }
 
-    return cctx.io.queue_write(source_fid, io::context::truncate, std::move(final_data));
+    return cctx.io.queue_write(source_fid, io::context::truncate, std::move(final_data))
+      .then([](raw_data&& /*data*/, bool success, size_t /*write_size*/) { return success; });
 #endif
 
-    return io::context::write_chain::create_and_complete(false);
+    cr::out().warn("hconf: trying to write hconf file: {} while filesystem access has been compiled-out", file);
+    return async::chain<bool /*success*/>::create_and_complete(false);
   }
 
   void neam::hydra::conf::context::on_index_changed()
@@ -351,7 +425,7 @@ namespace neam::hydra::conf
       std::lock_guard _sl(spinlock_shared_adapter::adapt(confs_lock));
       for (auto& it : confs)
       {
-        if (it.second.io_mapped_file != id_t::none)
+        if (it.second.io_mapped_file != id_t::none && !it.second.is_file_being_written)
         {
           if (!cctx.io.is_file_mapped(it.second.io_mapped_file))
           {

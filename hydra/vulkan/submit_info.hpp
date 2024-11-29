@@ -30,23 +30,30 @@
 #pragma once
 
 
-#include <vector>
-#include <deque>
+#include <ntools/mt_check/vector.hpp>
+#include <ntools/mt_check/map.hpp>
 #include <vulkan/vulkan.h>
 
+#include "engine/vk_context.hpp"
+#include "engine/core_context.hpp"
 #include "command_buffer.hpp"
 #include "semaphore.hpp"
 #include "fence.hpp"
+#include "queue.hpp"
+#include "buffer.hpp"
+#include "image_subresource.hpp"
 
 namespace neam
 {
   namespace hydra
   {
+    class memory_allocation;
+
     namespace vk
     {
       /// \brief This class loosely wraps the VkSubmitInfo structure, holding
       /// information about dependencies, semaphores and fences.
-      /// It can wraps more than one vkQueueSubmit call.
+      /// It can wraps more than one vkQueueSubmit / vkQueueSparseBind call, and can contain submit information for multiple queues
       /// \note the class is create-only, thus you can't modify things once they
       ///       are inserted, the only operation possible is a clear() that will
       ///       clear every information held by the object
@@ -55,178 +62,159 @@ namespace neam
       ///       until the object is destructed or a clear() call is done
       ///
       /// \note You have to sumbit datas in that order:
-      ///       add_wait (semaphores) -> add (command_buffers) -> add_signal(semaphores) -> add_signal (fences)
+      ///       wait (semaphores) -> execute (command_buffers) | bind (memory) -> signal(semaphores) -> signal (fences)
       ///       You can skip any parts of that chain, or submit multiples elements of the same type.
-      ///       The reason of that is the submit info is constructed in "linear" order, aka
+      ///       The reason of that is the submit info is constructed in "linear" order,
       ///       in the order of execution: you wait for the semaphores to be signaled,
       ///       then execute the command buffers, then signal the semaphores, then the fence.
       class submit_info
       {
         private:
+          enum class operation_t : int
+          {
+            _cut = -1,
+            initial = 0,
+            wait = initial,
+            cmd_buff_or_bind = 1,
+            signal_sema = 2,
+            signal_fence = 3,
+          };
+
+          struct vk_si_vectors
+          {
+            std::mtc_vector<VkPipelineStageFlags> wait_dst_stage_mask;
+            std::mtc_vector<VkCommandBuffer> vk_cmd_bufs;
+
+            std::mtc_vector<VkSemaphore> vk_wait_semas;
+            std::mtc_vector<VkSemaphore> vk_sig_semas;
+
+            void update(VkSubmitInfo& si);
+          };
+
+          struct vk_sbi_vectors
+          {
+            std::mtc_vector<VkSparseBufferMemoryBindInfo> vk_buffer_binds;
+            std::mtc_vector<VkSparseImageOpaqueMemoryBindInfo> vk_image_opaque_binds;
+            std::mtc_vector<VkSparseImageMemoryBindInfo> vk_image_binds;
+
+            std::mtc_vector<VkSemaphore> vk_wait_semas;
+            std::mtc_vector<VkSemaphore> vk_sig_semas;
+
+            std::mtc_map<VkBuffer, std::mtc_vector<VkSparseMemoryBind>> buffer_sparse_binds;
+            std::mtc_map<VkImage, std::mtc_vector<VkSparseMemoryBind>> image_sparse_opaque_binds;
+            std::mtc_map<VkImage, std::mtc_vector<VkSparseImageMemoryBind>> image_sparse_binds;
+
+            void update(VkBindSparseInfo& sbi);
+          };
+
           struct vk_si_wrapper
           {
-            std::vector<VkSubmitInfo> vk_submit_infos;
-            std::deque<std::vector<VkPipelineStageFlags>> wait_dst_stage_mask;
-            std::deque<std::vector<VkCommandBuffer>> vk_cmd_bufs;
-            std::deque<std::vector<VkSemaphore>> vk_wait_semas;
-            std::deque<std::vector<VkSemaphore>> vk_sig_semas;
+            std::mtc_vector<VkSubmitInfo> vk_submit_infos;
+            std::mtc_vector<vk_si_vectors> si_vectors;
+
+            std::mtc_vector<VkBindSparseInfo> vk_sparse_bind_infos;
+            std::mtc_vector<vk_sbi_vectors> sbi_vectors;
+
             VkFence fence = VK_NULL_HANDLE;
-            bool fence_only = false;
 
-            vk_si_wrapper() {add();}
+            const bool sparse_bind = false;
 
-            void update()
+            vk_si_wrapper(bool is_sparse_bind = false) : sparse_bind(is_sparse_bind)
             {
-              if (vk_submit_infos.size() != 0)
-              {
-                vk_submit_infos.back().commandBufferCount = vk_cmd_bufs.back().size();
-                vk_submit_infos.back().pWaitDstStageMask = wait_dst_stage_mask.back().data();
-                vk_submit_infos.back().pCommandBuffers = vk_cmd_bufs.back().data();
-                vk_submit_infos.back().waitSemaphoreCount = vk_wait_semas.back().size();
-                vk_submit_infos.back().pWaitSemaphores = vk_wait_semas.back().data();
-                vk_submit_infos.back().signalSemaphoreCount = vk_sig_semas.back().size();
-                vk_submit_infos.back().pSignalSemaphores = vk_sig_semas.back().data();
-
-                fence_only = vk_submit_infos.size() == 1
-                             && vk_submit_infos.back().commandBufferCount == 0
-                             && vk_submit_infos.back().waitSemaphoreCount == 0
-                             && vk_submit_infos.back().signalSemaphoreCount == 0;
-              }
+              add();
             }
 
-            void add()
-            {
-              update();
+            void update(uint32_t index = ~0u);
 
-              vk_submit_infos.emplace_back();
-              wait_dst_stage_mask.emplace_back();
-              vk_cmd_bufs.emplace_back();
-              vk_wait_semas.emplace_back();
-              vk_sig_semas.emplace_back();
+            void full_update();
 
-              vk_submit_infos.back().sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-              vk_submit_infos.back().pNext = nullptr;
-              vk_submit_infos.back().commandBufferCount = 0;
-              vk_submit_infos.back().pWaitDstStageMask = wait_dst_stage_mask.back().data();
-              vk_submit_infos.back().pCommandBuffers = vk_cmd_bufs.back().data();
-              vk_submit_infos.back().waitSemaphoreCount = 0;
-              vk_submit_infos.back().pWaitSemaphores = vk_wait_semas.back().data();
-              vk_submit_infos.back().signalSemaphoreCount = 0;
-              vk_submit_infos.back().pSignalSemaphores = vk_sig_semas.back().data();
-            }
+            void add();
 
-            void submit(const device &dev, VkQueue vk_queue)
-            {
-              update();
-              if (fence_only)
-              {
-                if (this->fence)
-                    check::on_vulkan_error::n_assert_success(dev._vkQueueSubmit(vk_queue, 0, nullptr, this->fence));
-              }
-              else
-                check::on_vulkan_error::n_assert_success(dev._vkQueueSubmit(vk_queue, vk_submit_infos.size(), vk_submit_infos.data(), this->fence));
-            }
+            void submit(vk_context& vkctx, vk::queue* queue);
           };
 
         public:
-          submit_info() = default;
+          explicit submit_info(vk_context& _vkctx) : vkctx(_vkctx) {};
           ~submit_info() = default;
 
           /// \brief Clear the whole submit info
-          void clear()
-          {
-            queue_submits.clear();
-          }
+          void clear();
+
+          /// \brief Indicate which queue is to be used for the following commands.
+          /// \note following commands will be normal submit commands, not sparse-bind ones
+          /// \note Commands are registered per queue and switching between queue will not create new entries.
+          ///       Call sync() to ensure that the new entry will be submit after any previous entries
+          submit_info& on(vk::queue& q);
+
+          /// \brief Indicate which queue is to be used for the following commands, and that the following commands will be sparse-bind commands
+          /// \note Commands are registered per queue and switching between queue will not create new entries.
+          ///       Call sync() to ensure that the new entry will be submit after any previous entries
+          submit_info& sparse_bind_on(vk::queue& q);
+
+          /// \brief Ensure that anything following this statement will be submit after anything previously queued
+          void sync();
 
           /// \brief Add a semaphore to wait on
-          void add_wait(const semaphore &sem, VkPipelineStageFlags wait_flags)
-          {
-            init(0);
+          submit_info& wait(const semaphore& sem, VkPipelineStageFlags wait_flags);
 
-            queue_submits.back().vk_wait_semas.back().push_back(sem._get_vk_semaphore());
-            queue_submits.back().wait_dst_stage_mask.back().push_back(wait_flags);
-          }
+          /// \brief Add a semaphore to wait on
+          /// \warning Only valid on sparse-binding queues. Will assert otherwise.
+          submit_info& wait(const semaphore& sem);
 
           /// \brief Add a command buffer
-          void add(const command_buffer &cmdbuf)
-          {
-            init(1);
+          submit_info& execute(const command_buffer &cmdbuf);
 
-            queue_submits.back().vk_cmd_bufs.back().push_back(cmdbuf._get_vk_command_buffer());
-          }
+          /// \brief Bind a memory area to a buffer
+          submit_info& bind(const buffer& buff, memory_allocation& alloc, size_t offset_in_buffer);
+
+          /// \brief Bind a memory area to an image (in the mip-tail segment)
+          submit_info& bind_mip_tail(const image& img, memory_allocation& alloc, size_t offset_in_mip_tail);
+
+          /// \brief Bind a memory area to an image
+          submit_info& bind(const image& img, memory_allocation& alloc, size_t offset_in_opaque);
+
+          /// \brief Bind a memory area to an image (in the opaque segment)
+          submit_info& bind(const image& img, memory_allocation& alloc, glm::uvec3 offset, glm::uvec3 extent, const image_subresource& subres);
 
           /// \brief Add a semaphore to signal
-          void add_signal(const semaphore &sem)
-          {
-            init(2);
-
-            queue_submits.back().vk_sig_semas.back().push_back(sem._get_vk_semaphore());
-          }
+          submit_info& signal(const semaphore &sem);
 
           /// \brief Add a fence to signal
-          void add_signal(const fence &fnc)
-          {
-            if (!queue_submits.size() || queue_submits.back().fence != VK_NULL_HANDLE)
-              queue_submits.emplace_back();
-            last_op = 3;
-            queue_submits.back().fence = fnc._get_vk_fence();
-          }
+          submit_info& signal(const fence &fnc);
 
-        public: // advanced
-          /// \brief Submit everything to a vulkan queue
-          /// \note you should use instead queue::submit()
-          void _submit(const device &dev, VkQueue vk_queue)
-          {
-            for (vk_si_wrapper &it : queue_submits)
-              it.submit(dev, vk_queue);
-          }
+          /// \brief Append a \e copy of \p info in the current submit_info
+          submit_info& append(const submit_info& info);
+
+          /// \brief Submit everything using the deferred queue submission
+          /// \note Will try to do parallel submits as much as possible
+          void deferred_submit();
+
+
+        public:
+          bool has_any_entries_for(vk::queue& q) const;
+
+          vk::queue* get_current_queue() const { return current_queue; }
 
         private:
-          inline void init(size_t current_op)
-          {
-            if (!queue_submits.size() || (last_op > current_op && queue_submits.back().fence != VK_NULL_HANDLE))
-              queue_submits.emplace_back();
-            else if (last_op > current_op)
-              queue_submits.back().add();
-            last_op = current_op;
-          }
+          void step(operation_t current_op);
+          void sparse_bind_ops(bool do_sparse_bind);
+
+          void switch_to(vk::queue* q);
+
+          void cut();
+
         private:
-          size_t last_op = 0;
-          std::deque<vk_si_wrapper> queue_submits;
+          struct queue_operations_t
+          {
+            operation_t last_op = operation_t::initial;
+            std::mtc_vector<vk_si_wrapper> queue_submits;
+          };
+          vk_context& vkctx;
+          queue_operations_t* current = nullptr;
+          vk::queue* current_queue = nullptr;
+
+          std::mtc_vector<std::mtc_map<vk::queue*, std::mtc_vector<queue_operations_t>>> queues;
       };
-
-      /// \brief Alias for si.add_wait(semaphore)
-      using cmd_sema_pair = std::pair<const semaphore &, VkPipelineStageFlags>;
-      inline submit_info &operator << (submit_info &si, const cmd_sema_pair &sem)
-      {
-        si.add_wait(sem.first, sem.second);
-        return si;
-      }
-
-
-      /// \brief Alias for si.add(command_buffer)
-      inline submit_info &operator << (submit_info &si, const command_buffer &cb)
-      {
-        si.add(cb);
-        return si;
-      }
-
-      /// \brief Alias for si.add_signal(semaphore)
-      inline submit_info &operator >> (submit_info &si, const semaphore &sem)
-      {
-        si.add_signal(sem);
-        return si;
-      }
-
-      /// \brief Alias for si.add_signal(fence)
-      inline submit_info &operator >> (submit_info &si, const fence &fnc)
-      {
-        si.add_signal(fnc);
-        return si;
-      }
     } // namespace vk
   } // namespace hydra
 } // namespace neam
-
-
-

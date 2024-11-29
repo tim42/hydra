@@ -34,7 +34,8 @@
 #include <deque>
 #include <initializer_list>
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 #include "attachment_color_blending.hpp"
 

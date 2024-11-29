@@ -27,7 +27,7 @@
 #pragma once
 
 #include <string>
-#include <set>
+#include <ntools/mt_check/set.hpp>
 
 #include "asset.hpp"
 #include <ntools/id/string_id.hpp>
@@ -36,7 +36,7 @@ namespace neam::resources
 {
   struct file_map_v0
   {
-    std::set<std::string> files;
+    std::mtc_set<std::string> files;
   };
 
   /// \brief :file-map resource struct
@@ -49,7 +49,7 @@ namespace neam::resources
 
     // data:
     std::string prefix_path;
-    std::set<std::string> files = {};
+    std::mtc_set<std::string> files = {};
 
     static file_map migrate_from(file_map_v0&& v0)
     {

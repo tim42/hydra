@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2988198851275212374_722318918_HYDRA_TYPES_HPP__
-#define __N_2988198851275212374_722318918_HYDRA_TYPES_HPP__
+#pragma once
+
 
 #include <cstddef>
 
@@ -38,9 +38,9 @@ namespace neam
   {
     /// \brief A temporary ID for queues that you request. This can be exchanged
     /// by the vk::device class into a small queue familly object
-    using temp_queue_familly_id_t = size_t;
+    using temp_queue_familly_id_t = uint32_t;
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_2988198851275212374_722318918_HYDRA_TYPES_HPP__
+
 

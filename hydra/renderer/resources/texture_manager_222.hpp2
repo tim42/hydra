@@ -1,0 +1,172 @@
+//
+// created by : Timothée Feuillet
+// date: 2024-3-8
+//
+//
+// Copyright (c) 2024 Timothée Feuillet
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//
+
+#pragma once
+
+#include <ntools/spinlock.hpp>
+#include <ntools/id/string_id.hpp>
+#include <ntools/event.hpp>
+
+#include <hydra/assets/image.hpp>
+#include <hydra/utilities/holders.hpp>
+#include <hydra/utilities/transfer_context.hpp>
+
+
+#include "texture_manager_shader_structs.hpp"
+
+namespace neam::hydra
+{
+  struct hydra_context;
+
+  using texture_index_t = uint32_t;
+  static constexpr texture_index_t k_invalid_texture_index = ~0u;
+
+  /// \brief Handle texture stream-in/stream-out, default textures, ...
+  /// \todo Stream-out based on usage (need gpu->cpu transfers)
+  class texture_manager
+  {
+    public:
+      explicit texture_manager(hydra_context& _hctx);
+
+      /// \brief Ask for that texture to be considered for streamed-in, return a unique index for that texture
+      /// \note That function can be called multiple time for the same resource, and will always return the same value
+      /// \note The returned index is valid until the next call to clear()
+      /// \warning If the resource is invalid (which cannot be know immediatly in some cases) or not of the proper type,
+      ///          The returned index will be kept valid but shaders will default to either a purple or black texture
+      ///          (+ an error will be logged)
+      [[nodiscard]] texture_index_t request_texture_index(string_id texture_rid);
+
+      /// \brief Indicate, cpu-side, that the specified texture is being used at a specified mip-level
+      ///        Will trigger stream-in of the texture or prevent it from being streamed-out
+      /// \note There is a mechanism to perform this operation directly/automatically in the shaders reading the texture
+      /// \todo that mechanism
+      void indicate_texture_usage(texture_index_t tid, uint32_t targetted_mip_level);
+
+      /// \brief Fully clear all textures, invalidating all the texture indices
+      /// \note trigger on_texture_pool_cleared
+      /// \note the answer to an index reload is not a clear of the pool, but a reload of it
+      /// \warning Should prooobably be called outside rendering operations / when no rendering context is active
+      void clear();
+
+      /// \brief Force a full reload of all the data the pool hold.
+      /// Does not change anything, just reload everything from disk and upload it to the gpu
+      void force_full_reload();
+
+      cr::event<> on_texture_pool_cleared;
+
+      shader_structs::texture_manager_descriptor_set_t& get_descriptor_set() { return gpu_state.descriptor_set; }
+      const shader_structs::texture_manager_descriptor_set_t& get_descriptor_set() const { return gpu_state.descriptor_set; }
+
+    public: // management:
+      void process_start_of_frame(vk::submit_info& si, vk_resource_destructor& vrd);
+
+    private:
+      static constexpr uint32_t k_invalid_index = ~0u;
+      static constexpr uint32_t k_invalid_mip = 0xFF;
+
+      static constexpr uint32_t k_entries_to_allocate_at_once = 32; // fixme: maybe a bigger number?
+      static constexpr uint32_t k_max_entries = 8192; // fixme: more?
+      static constexpr uint64_t k_min_frame_for_eviction = 960; // when there's contention. fixme: maybe time based?
+      static constexpr uint64_t k_evict_no_question_asked = 7200; // fixme: maybe time based?
+
+
+      struct texture_entry
+      {
+        shaders::texture_type_t type = shaders::no_type;
+
+        uint8_t requested_mip_level = k_invalid_mip;
+        uint8_t streamed_mip_level = k_invalid_mip;
+
+        bool invalid_resource = true;
+
+        uint64_t last_frame_with_usage = 0;
+
+        string_id asset_rid;
+        assets::image image_information;
+
+        // if type is no_type: only next is valid and point toward the next free entry (or k_invalid_index)
+        // if type is not no_type, and frames_without_usage is > 0: point toward the (sorted) list of unused textures (by type)
+        uint32_t next = k_invalid_index;
+        uint32_t prev = k_invalid_index;
+      };
+      struct image_t
+      {
+        image_t(vk::device& dev) : sampler(dev, nullptr) {}
+        image_t(image_t&& o) : image(std::move(o.image)), sampler(std::move(o.sampler)) {}
+        std::optional<image_holder> image;
+        vk::sampler sampler;
+
+        shared_spinlock lock;
+      };
+      struct gpu_state_t
+      {
+        // buffer of type: shader_structs::texture_indirection_t
+        std::optional<buffer_holder> indirection_buffer;
+
+        // all the images.
+        std::vector<image_t> images;
+
+        // the descriptor set:
+        shader_structs::texture_manager_descriptor_set_t descriptor_set;
+      };
+
+    private:
+      void load_texture_data_unlocked(texture_index_t tid, string_id rid);
+      void load_mip_data_unlocked(texture_entry& entry, texture_index_t tid);
+
+    private:
+      hydra_context& hctx;
+
+      cr::event_token_t on_index_loaded_tk;
+
+      shared_spinlock texture_id_map_lock;
+      std::unordered_map<id_t, uint32_t> texture_id_map;
+
+      uint64_t frame_counter = 1;
+
+      // allocation strategie:
+      //  1: try to use the first free entry
+      //  2: try to evict the first unused entry (if above the threshold)
+      //  3: add new entries at the end of the array
+      std::vector<texture_entry> entries;
+
+      uint32_t first_free_entry = k_invalid_index;
+
+      uint32_t first_unused_entry = k_invalid_index;
+      uint32_t last_unused_entry = k_invalid_index;
+
+      // gpu resources:
+      gpu_state_t gpu_state;
+
+      transfer_context txctx { hctx };
+      vk_resource_destructor vrd;
+
+      vk::sampler default_sampler;
+      image_holder default_texture;
+      bool first_init = true;
+  };
+}
+

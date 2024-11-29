@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_70305883316559647_442029613_UTILITIES_HPP__2___
-#define __N_70305883316559647_442029613_UTILITIES_HPP__2___
+#pragma once
+
 
 
 // Batch transfers asynchronously
@@ -46,8 +46,6 @@
 // Avoid creating multiple time the same pipeline and improve pipeline re-use
 #include "pipeline_manager.hpp"
 
-#include "vk_resource_destructor.hpp"
-
 #include "image_loader.hpp"
 
 namespace neam
@@ -58,5 +56,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_70305883316559647_442029613_UTILITIES_HPP__2___
+
 

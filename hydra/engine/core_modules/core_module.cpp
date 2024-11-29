@@ -36,7 +36,7 @@ namespace neam::hydra
 {
   void core_module::add_named_threads(threading::threads_configuration& tc)
   {
-    tc.add_named_thread("main"_rid, { .can_run_general_tasks = true, .can_run_general_long_duration_tasks = false });
+    tc.add_named_thread("main"_rid, { .can_run_general_tasks = false, .can_run_general_long_duration_tasks = false });
   }
 
   void core_module::add_task_groups(threading::task_group_dependency_tree& tgd)
@@ -104,11 +104,12 @@ namespace neam::hydra
         on_frame_end();
       });
 
+      cctx->tm.min_frame_length = min_frame_length;
       // if we have anything, we dispatch a task
-      if (min_frame_length > std::chrono::microseconds{0})
-      {
-        cctx->tm.get_task([this]() { throttle_frame(); });
-      }
+      // if (min_frame_length > std::chrono::microseconds{0})
+      // {
+      //   cctx->tm.get_task([this]() { throttle_frame(); });
+      // }
     });
   }
 
@@ -125,7 +126,7 @@ namespace neam::hydra
     {
       neam::cr::out().debug("core_module: index change detected, reloading index");
       last_index_timestamp = index_mtime;
-      cctx->res.reload_index();
+      [[maybe_unused]] auto chr = cctx->res.reload_index();
     }
   }
 
@@ -143,6 +144,7 @@ namespace neam::hydra
       // we still fully lock a thread tho
       if (cctx->tm.has_pending_tasks() || cctx->tm.is_stop_requested())
       {
+        TRACY_SCOPED_ZONE;
         std::this_thread::sleep_for(min_frame_length - delta - min_delta_time_to_sleep);
         last_frame_timepoint = std::chrono::high_resolution_clock::now();
       }
@@ -153,6 +155,7 @@ namespace neam::hydra
         // if we fail to request a stop, we simply sleep
         const bool will_stop = cctx->tm.try_request_stop([this]
         {
+          TRACY_SCOPED_ZONE;
           const auto current_timepoint = std::chrono::high_resolution_clock::now();
           const auto delta = current_timepoint - last_frame_timepoint;
           if (delta + min_delta_time_to_sleep < min_frame_length)
@@ -163,6 +166,7 @@ namespace neam::hydra
         });
         if (!will_stop)
         {
+          TRACY_SCOPED_ZONE;
           std::this_thread::sleep_for(min_frame_length - delta - min_delta_time_to_sleep);
           last_frame_timepoint = std::chrono::high_resolution_clock::now();
         }

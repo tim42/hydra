@@ -34,6 +34,8 @@
 #include <ntools/id/id.hpp>
 #include <ntools/rle/rle.hpp>
 #include <ntools/type_id.hpp>
+#include <ntools/mt_check/map.hpp>
+#include <ntools/mt_check/set.hpp>
 
 #include "metadata.hpp"
 
@@ -105,6 +107,9 @@ namespace neam::resources
 
       /// \brief Return the metadata info for the given type
       metadata_type_registration_t get_type_metadata(id_t type_id) const;
+
+      /// \brief Build string_id debug table
+      void build_string_ids() const;
 
     public: // processor&packers entries:
       void resource_name(id_t rid, std::string name);
@@ -196,32 +201,32 @@ namespace neam::resources
         id_t processor_hash = id_t::none;
         id_t metadata_hash = id_t::none;
 
-        std::set<std::string> child_files = {};
-        std::set<id_t> child_resources = {};
+        std::mtc_set<std::string> child_files = {};
+        std::mtc_set<id_t> child_resources = {};
 
         std::string parent_file = {};
 
-        std::set<std::string> depend_on = {}; // file -> all files it depends on
-        std::set<std::string> dependent = {}; // file -> all files that depend on it
+        std::mtc_set<std::string> depend_on = {}; // file -> all files it depends on
+        std::mtc_set<std::string> dependent = {}; // file -> all files that depend on it
 
-        std::set<id_t> referenced_metadata_types;
+        std::mtc_set<id_t> referenced_metadata_types;
       };
       struct root_resource_info_t
       {
         std::string parent_file = {};
         id_t packer_hash = id_t::none;
         id_t pack_file = id_t::none;
-        std::set<id_t> sub_resources = {};
+        std::mtc_set<id_t> sub_resources = {};
       };
 
     private: // serialized:
-      std::map<std::string, file_info_t> files_resources;
-      std::map<id_t, root_resource_info_t> root_resources;
-      std::map<id_t, id_t> sub_resources; // sub-resource -> root-resource
-      std::map<id_t, std::string> resources_names;
-      std::map<id_t, message_list_t> resources_messages;
+      std::mtc_map<std::string, file_info_t> files_resources;
+      std::mtc_map<id_t, root_resource_info_t> root_resources;
+      std::mtc_map<id_t, id_t> sub_resources; // sub-resource -> root-resource
+      std::mtc_map<id_t, std::string> resources_names;
+      std::mtc_map<id_t, message_list_t> resources_messages;
 
-      std::map<id_t, metadata_type_registration_t> metadata_types;
+      std::mtc_map<id_t, metadata_type_registration_t> metadata_types;
     private: // non-serialized:
       mutable shared_spinlock lock;
 

@@ -32,6 +32,21 @@
 
 namespace neam::hydra::assets
 {
+  struct push_constant_entry
+  {
+    uint32_t offset;
+  };
+  struct push_constant_range
+  {
+    id_t id;
+    uint16_t size;
+  };
+  struct descriptor_set_entry
+  {
+    id_t id;
+    uint32_t set;
+  };
+
   struct spirv_variation : public resources::rle_data_asset<"spirv-variation", spirv_variation>
   {
     // handle versioning:
@@ -43,6 +58,10 @@ namespace neam::hydra::assets
     std::string entry_point = "main";
     raw_data module;
     id_t root;
+    uint32_t stage;
+
+    std::vector<push_constant_range> push_constant_ranges;
+    std::vector<descriptor_set_entry> descriptor_set;
   };
 
   struct spirv_shader : public resources::rle_data_asset<"spirv", spirv_shader>
@@ -62,7 +81,36 @@ N_METADATA_STRUCT(neam::hydra::assets::spirv_variation)
   <
     N_MEMBER_DEF(entry_point),
     N_MEMBER_DEF(module),
-    N_MEMBER_DEF(root)
+    N_MEMBER_DEF(root),
+    N_MEMBER_DEF(stage),
+
+    N_MEMBER_DEF(push_constant_ranges),
+    N_MEMBER_DEF(descriptor_set)
+  >;
+};
+
+N_METADATA_STRUCT(neam::hydra::assets::push_constant_entry)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(offset)
+  >;
+};
+
+N_METADATA_STRUCT(neam::hydra::assets::push_constant_range)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(id),
+    N_MEMBER_DEF(size)
+  >;
+};
+N_METADATA_STRUCT(neam::hydra::assets::descriptor_set_entry)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(id),
+    N_MEMBER_DEF(set)
   >;
 };
 

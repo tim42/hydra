@@ -23,7 +23,7 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 //
 
-#ifndef __N_955277827674830425_113778684__EVENT_LISTENER_HPP__
+#pragma once
 # define __N_955277827674830425_113778684__EVENT_LISTENER_HPP__
 
 #include "event.hpp"
@@ -90,7 +90,7 @@ namespace neam::hydra::events
   };
 } // namespace neam::hydra::events
 
-#endif /*__N_955277827674830425_113778684__EVENT_LISTENER_HPP__*/
+
 
 // kate: indent-mode cstyle; indent-width 2; replace-tabs on; 
 

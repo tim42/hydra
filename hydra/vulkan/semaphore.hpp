@@ -54,7 +54,12 @@ namespace neam
 
         public:
           /// \brief Create a new semaphore object
-          semaphore(device &_dev)
+          semaphore(device& _dev, const std::source_location& sloc = std::source_location::current())
+           : semaphore(_dev, fmt::format("semaphore: {} : {} [{}]", sloc.file_name(), sloc.line(), sloc.function_name()))
+          {}
+
+          /// \brief Create a new semaphore object
+          semaphore(device &_dev, const std::string& name)
             : dev(_dev)
           {
             VkSemaphoreCreateInfo sci;
@@ -64,6 +69,7 @@ namespace neam
             sci.flags = 0;
 
             check::on_vulkan_error::n_assert_success(dev._vkCreateSemaphore(&sci, nullptr, &vk_semaphore));
+            _set_debug_name(name);
           }
 
           /// \brief Move constructor
@@ -71,6 +77,16 @@ namespace neam
            : dev(o.dev), vk_semaphore(o.vk_semaphore)
           {
             o.vk_semaphore = nullptr;
+          }
+
+          semaphore& operator = (semaphore &&o)
+          {
+            if (&o == this) return *this;
+
+            check::debug::n_assert(&dev == &o.dev, "Cannot assign semaphore from another device");
+            vk_semaphore = o.vk_semaphore;
+            o.vk_semaphore = nullptr;
+            return *this;
           }
 
           ~semaphore()
@@ -84,6 +100,11 @@ namespace neam
           VkSemaphore _get_vk_semaphore() const
           {
             return vk_semaphore;
+          }
+
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_semaphore, VK_OBJECT_TYPE_SEMAPHORE, name);
           }
 
         private:

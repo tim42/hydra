@@ -25,8 +25,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_2246147043172013516_472317908_HYDRA_IMGUI_EXT_HPP__
-#define __N_2246147043172013516_472317908_HYDRA_IMGUI_EXT_HPP__
+#pragma once
+
 
 /// \file hydra_imgui_ext.hpp
 /// \brief Header file that includes all the IMGUI extensions for hydra
@@ -34,5 +34,5 @@
 
 #include "imgui/imgui.hpp"
 
-#endif // __N_2246147043172013516_472317908_HYDRA_IMGUI_EXT_HPP__
+
 

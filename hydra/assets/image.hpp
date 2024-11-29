@@ -31,7 +31,8 @@
 #include <resources/asset.hpp>
 #include <resources/packer.hpp>
 
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 namespace neam::hydra::assets
 {

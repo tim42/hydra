@@ -31,7 +31,8 @@
 
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 namespace neam
 {
@@ -43,9 +44,9 @@ namespace neam
       class image_2d
       {
         public:
-          image_2d(const glm::uvec2 &_size, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage)
-           : size(_size), format(_format), tiling(_tiling), usage(_usage) {}
-          image_2d(const image_2d &o) : size(o.size), format(o.format), tiling(o.tiling), usage(o.usage) {}
+          image_2d(const glm::uvec2 &_size, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, uint32_t _mip_levels = 1, VkImageLayout _initial_layout = VK_IMAGE_LAYOUT_PREINITIALIZED)
+           : size(_size), format(_format), tiling(_tiling), usage(_usage), mip_levels(_mip_levels), initial_layout(_initial_layout) {}
+          image_2d(const image_2d &o) = default;
 
           void update_image_create_info(VkImageCreateInfo &create_info) const
           {
@@ -55,9 +56,8 @@ namespace neam
             create_info.tiling = tiling;
             create_info.usage = usage;
             create_info.arrayLayers = 1;
-            create_info.mipLevels = 1;
-            create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            create_info.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+            create_info.mipLevels = mip_levels;
+            create_info.initialLayout = initial_layout;
             create_info.samples = VK_SAMPLE_COUNT_1_BIT;
           }
 
@@ -66,6 +66,8 @@ namespace neam
           VkFormat format;
           VkImageTiling tiling;
           VkImageUsageFlags usage;
+          uint32_t mip_levels;
+          VkImageLayout initial_layout;
       };
     } // namespace vk
   } // namespace hydra

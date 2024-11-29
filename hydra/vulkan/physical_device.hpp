@@ -56,8 +56,17 @@ namespace neam
         public: // advanced
           physical_device(VkPhysicalDevice _gpu) : gpu(_gpu)
           {
-            vkGetPhysicalDeviceProperties(gpu, &properties);
             vkGetPhysicalDeviceMemoryProperties(gpu, &memory_properties);
+
+            VkPhysicalDeviceProperties2 device_properties;
+            device_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
+            device_properties.pNext = &descriptor_buffer_properties;
+
+            descriptor_buffer_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
+            descriptor_buffer_properties.pNext = nullptr;
+            vkGetPhysicalDeviceProperties2(gpu, &device_properties);
+
+            properties = device_properties.properties;
 
             // load features
             features.clear();
@@ -210,6 +219,7 @@ namespace neam
           VkPhysicalDevice gpu;
           VkPhysicalDeviceProperties properties;
           VkPhysicalDeviceMemoryProperties memory_properties;
+          VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_properties;
           device_features features;
 
           std::vector<VkQueueFamilyProperties> queues;

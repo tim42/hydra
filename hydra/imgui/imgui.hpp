@@ -24,10 +24,11 @@
 // SOFTWARE.
 //
 
-#ifndef __N_23433187981268130206_308313449_IMGUI_HPP__
-#define __N_23433187981268130206_308313449_IMGUI_HPP__
+#pragma once
+
 
 #include <imgui.h>
+#include <implot.h>
 
 #include "imgui_context.hpp"
 #include "imgui_renderpass.hpp"
@@ -43,5 +44,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_23433187981268130206_308313449_IMGUI_HPP__
+
 

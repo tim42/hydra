@@ -67,18 +67,21 @@ namespace neam
       class command_buffer_recorder
       {
         public: // advanced
-          command_buffer_recorder(device &_dev, command_buffer &_cmd_buff) : dev(_dev), cmd_buff(_cmd_buff) {}
+          command_buffer_recorder(device& _dev, command_buffer& _cmd_buff) : dev(_dev), cmd_buff(_cmd_buff) {}
           command_buffer_recorder(const command_buffer_recorder &o) : dev(o.dev), cmd_buff(o.cmd_buff) {}
 
         public:
           /// \brief Bind a pipeline object to a command buffer
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdBindPipeline.html">vulkan khr doc</a>
-          void bind_pipeline(const pipeline &p, VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS)
+          void bind_pipeline(const pipeline &p)
           {
             last_bound_pipeline = &p;
             if (!last_bound_pipeline->is_valid())
+            {
+              cr::out().debug("command_buffer_recorder: binding invalid pipeline");
               return;
-            dev._vkCmdBindPipeline(cmd_buff._get_vk_command_buffer(), bind_point, p.get_vk_pipeline());
+            }
+            dev._vkCmdBindPipeline(cmd_buff._get_vk_command_buffer(), p.get_pipeline_bind_point(), p.get_vk_pipeline());
           }
 
 #if N_VK_CBR_STATE_TRACKING
@@ -88,11 +91,11 @@ namespace neam
           {
             if (last_rp != nullptr)
             {
-              bind_pipeline(ppmgr.get_pipeline(pid, *last_rp, last_rp_subpass, std::forward<Params>(p)...), VK_PIPELINE_BIND_POINT_GRAPHICS);
+              bind_pipeline(ppmgr.get_pipeline(pid, *last_rp, last_rp_subpass, std::forward<Params>(p)...));
             }
             else if (has_dyn_rendering_state)
             {
-              bind_pipeline(ppmgr.get_pipeline(pid, last_dyn_rendering_state, std::forward<Params>(p)...), VK_PIPELINE_BIND_POINT_GRAPHICS);
+              bind_pipeline(ppmgr.get_pipeline(pid, last_dyn_rendering_state, std::forward<Params>(p)...));
             }
             else
             {
@@ -237,7 +240,7 @@ namespace neam
 
           /// \brief Dispatch compute work items
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdDispatch.html">vulkan khr doc</a>
-          void dispatch(uint32_t x, uint32_t y, uint32_t z)
+          void dispatch(uint32_t x, uint32_t y = 1, uint32_t z = 1)
           {
             if (!last_bound_pipeline || !last_bound_pipeline->is_valid())
               return;
@@ -248,6 +251,7 @@ namespace neam
           /// \brief Dispatch compute work items
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdDispatch.html">vulkan khr doc</a>
           void dispatch(const glm::uvec3 &work_group_num) { dispatch(work_group_num.x, work_group_num.y, work_group_num.z); }
+          void dispatch(const glm::uvec2 &work_group_num) { dispatch(work_group_num.x, work_group_num.y); }
 
           /// \brief Dispatch compute work items using indirect parameters
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdDispatchIndirect.html">vulkan khr doc</a>
@@ -357,6 +361,7 @@ namespace neam
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdPushConstants.html">vulkan khr doc</a>
           void push_constants(const pipeline_layout &pl, VkShaderStageFlags stage_flags, uint32_t offset, uint32_t size, const void *values)
           {
+            if (!pl._get_vk_pipeline_layout()) return;
             dev._vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), stage_flags, offset, size, values);
           }
 
@@ -365,6 +370,7 @@ namespace neam
           template<typename Type>
           void push_constants(const pipeline_layout &pl, VkShaderStageFlags stage_flags, uint32_t offset, const Type &value)
           {
+            if (!pl._get_vk_pipeline_layout()) return;
             dev._vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), stage_flags, offset, sizeof(value), (const void *)&value);
           }
 
@@ -374,6 +380,7 @@ namespace neam
           template<typename Type>
           void push_constants(const pipeline_layout &pl, uint32_t offset, const Type &value)
           {
+            if (!pl._get_vk_pipeline_layout()) return;
             dev._vkCmdPushConstants(cmd_buff._get_vk_command_buffer(), pl._get_vk_pipeline_layout(), Type::stage_flags, offset, sizeof(value), (const void *)&value);
           }
 
@@ -583,8 +590,30 @@ namespace neam
             std::vector<VkDescriptorSet> vk_ds_vct;
             vk_ds_vct.reserve(ds_vct.size());
             for (auto it : ds_vct)
-              vk_ds_vct.push_back(it->_get_vk_descritpor_set());
+            {
+              if (it->_get_vk_descritpor_set() != nullptr)
+                vk_ds_vct.push_back(it->_get_vk_descritpor_set());
+            }
+            if (!vk_ds_vct.size() || pl._get_vk_pipeline_layout() == nullptr)
+              return;
             dev._vkCmdBindDescriptorSets(cmd_buff._get_vk_command_buffer(), point, pl._get_vk_pipeline_layout(), first_set, vk_ds_vct.size(), vk_ds_vct.data(), 0, nullptr);
+          }
+
+          template<typename PPMGR>
+          void bind_descriptor_set(const PPMGR& ppmgr, const string_id pid, uint32_t first_set, const std::vector<descriptor_set *> &ds_vct)
+          {
+            bind_descriptor_set(ppmgr.get_pipeline_bind_point(pid), ppmgr.get_pipeline_layout(pid), first_set, ds_vct);
+          }
+          template<typename HCTX, typename Struct>
+          void bind_descriptor_set(HCTX& hctx, Struct& s)
+          {
+            if (!last_bound_pipeline)
+              return;
+            const uint32_t set = last_bound_pipeline->get_set_for_struct((id_t)ct::type_hash<Struct>);
+            if (set == ~0u)
+              return;
+            auto* ds = s.get_descriptor_set();
+            bind_descriptor_set(last_bound_pipeline->get_pipeline_bind_point(), hctx.ppmgr.get_pipeline_layout(last_bound_pipeline->get_pipeline_id()), set, {ds});
           }
 
           /// <a href="https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/vkCmdBeginRendering.html">vulkan khr doc</a>
@@ -605,6 +634,38 @@ namespace neam
             has_dyn_rendering_state = false;
 #endif
             dev._vkCmdEndRendering(cmd_buff._get_vk_command_buffer());
+          }
+
+          void begin_marker(std::string_view name, glm::vec4 color = {1, 1, 1, 1})
+          {
+            if (!dev._has_vkCmdBeginDebugUtilsLabel()) return;
+            VkDebugUtilsLabelEXT marker
+            {
+              .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+              .pNext = nullptr,
+              .pLabelName = name.data(),
+              .color = {color.r, color.g, color.b, color.a},
+            };
+            dev._vkCmdBeginDebugUtilsLabel(cmd_buff._get_vk_command_buffer(), &marker);
+          }
+
+          void end_marker()
+          {
+            if (!dev._has_vkCmdEndDebugUtilsLabel()) return;
+            dev._vkCmdEndDebugUtilsLabel(cmd_buff._get_vk_command_buffer());
+          }
+
+          void insert_marker(std::string_view name, glm::vec4 color = {1, 1, 1, 1})
+          {
+            if (!dev._has_vkCmdInsertDebugUtilsLabel()) return;
+            VkDebugUtilsLabelEXT marker
+            {
+              .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+              .pNext = nullptr,
+              .pLabelName = name.data(),
+              .color = {color.r, color.g, color.b, color.a},
+            };
+            dev._vkCmdInsertDebugUtilsLabel(cmd_buff._get_vk_command_buffer(), &marker);
           }
 
 //           /// \brief
@@ -632,7 +693,7 @@ namespace neam
           command_buffer &cmd_buff;
 
           // state information
-          const pipeline *last_bound_pipeline = nullptr;
+          const pipeline* last_bound_pipeline = nullptr;
 
 #if N_VK_CBR_STATE_TRACKING
           const vk::render_pass* last_rp = nullptr;
@@ -747,6 +808,20 @@ namespace neam
 
         return command_buffer_recorder(dev, *this);
       }
+
+      class cbr_debug_marker
+      {
+        public:
+          template<typename... Args>
+          cbr_debug_marker(command_buffer_recorder& _cbr, Args&&... args)
+           : cbr(_cbr)
+          {
+            cbr.begin_marker(std::forward<Args>(args)...);
+          }
+          ~cbr_debug_marker() { cbr.end_marker(); }
+        private:
+          command_buffer_recorder& cbr;
+      };
     } // namespace vk
   } // namespace hydra
 } // namespace neam

@@ -30,7 +30,8 @@
 #pragma once
 
 
-#include <vector>
+#include <ntools/mt_check/map.hpp>
+#include <ntools/mt_check/vector.hpp>
 #include <vulkan/vulkan.h>
 
 #include <ntools/id/string_id.hpp>
@@ -183,7 +184,7 @@ namespace neam
             return h;
           }
         private:
-          std::map<id_t, parameter> parameters;
+          std::mtc_map<id_t, parameter> parameters;
       };
 
       /// \brief Wraps operations around VkSpecializationInfo & VkSpecializationMapEntry
@@ -266,7 +267,7 @@ namespace neam
         private:
           VkSpecializationInfo vk_specialization_info;
 
-          std::vector<VkSpecializationMapEntry> sme;
+          std::mtc_vector<VkSpecializationMapEntry> sme;
           raw_data data;
       };
     } // namespace vk

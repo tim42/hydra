@@ -27,21 +27,28 @@
 // SOFTWARE.
 //
 
-#ifndef __N_23433187981268130206_308313449_GLFW_HPP__
-#define __N_23433187981268130206_308313449_GLFW_HPP__
+#pragma once
 
-#include "glfw_extension.hpp"
+#include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
 
-namespace neam
+namespace neam::hydra::glfw
 {
-  namespace hydra
+  enum class cursor
   {
-    namespace glfw
-    {
-      
-    } // namespace glfw
-  } // namespace hydra
-} // namespace neam
+    arrow,
+    ibeam,
+    crosshair,
+    pointing_hand,
+    resize_ew,
+    resize_ns,
+    resize_nwse,
+    resize_nesw,
+    resize_all,
+    not_allowed,
+    _count,
+  };
+}
 
-#endif // __N_23433187981268130206_308313449_GLFW_HPP__
+
 

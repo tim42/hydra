@@ -47,27 +47,38 @@ namespace neam
       class render_pass;
       class framebuffer;
 
-      class command_buffer
+      class command_buffer : public cr::mt_checked<command_buffer>
       {
         public: // advanced
           /// \brief Create the command buffer from a vulkan structure
-          command_buffer(device &_dev, command_pool &_pool, VkCommandBuffer _cmd_buf)
-            : dev(_dev), vk_pool(_pool._get_vulkan_command_pool()), cmd_buf(_cmd_buf)
+          command_buffer(device& _dev, command_pool& _pool, VkCommandBuffer _cmd_buf)
+            : dev(_dev), pool(&_pool), cmd_buf(_cmd_buf)
           {
           }
 
         public:
           /// \brief Move constructor
-          command_buffer(command_buffer &&o)
-            : dev(o.dev), vk_pool(o.vk_pool), cmd_buf(o.cmd_buf)
+          command_buffer(command_buffer&& o)
+            : dev(o.dev), pool(o.pool), cmd_buf(o.cmd_buf)
           {
             o.cmd_buf = nullptr;
+            o.pool = nullptr;
+#if !N_DISABLE_CHECKS
+            queue = o.queue;
+#endif
           }
 
           ~command_buffer()
           {
             if (cmd_buf)
-              dev._vkFreeCommandBuffers(vk_pool, 1, &cmd_buf);
+            {
+              check::debug::n_assert(pool != nullptr, "command_buffer: vk resource is not null but the pool is");
+              pool->_free_command_buffer(cmd_buf);
+            }
+            else
+            {
+              check::debug::n_assert(pool == nullptr, "command_buffer: vk resource is null but the pool is not");
+            }
           }
 
           /// \brief Start the recording of the command buffer
@@ -115,11 +126,22 @@ namespace neam
         public: // advanced
           /// \brief Return the vulkan command buffer
           VkCommandBuffer _get_vk_command_buffer() const { return cmd_buf; }
+          device& _get_device() { return dev; }
+
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)cmd_buf, VK_OBJECT_TYPE_COMMAND_BUFFER, name);
+          }
 
         private:
-          device &dev;
-          VkCommandPool vk_pool;
+          device& dev;
+          command_pool* pool = nullptr;
           VkCommandBuffer cmd_buf;
+#if !N_DISABLE_CHECKS
+          VkQueue queue = nullptr;
+          friend class command_pool;
+          friend class submit_info;
+#endif
       };
 
 
@@ -130,6 +152,10 @@ namespace neam
 
       inline command_buffer command_pool::create_command_buffer(VkCommandBufferLevel level)
       {
+        allocated_buffer_counter.fetch_add(1, std::memory_order_release);
+
+        N_MTC_WRITER_SCOPE;
+
         VkCommandBufferAllocateInfo cmd_cr;
         cmd_cr.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         cmd_cr.pNext = nullptr;
@@ -140,11 +166,18 @@ namespace neam
         VkCommandBuffer cmd_buf;
         check::on_vulkan_error::n_assert_success(dev._vkAllocateCommandBuffers(&cmd_cr, &cmd_buf));
 
-        return command_buffer(dev, *this, cmd_buf);
+        command_buffer ret(dev, *this, cmd_buf);
+#if !N_DISABLE_CHECKS
+        ret.queue = queue;
+#endif
+        return ret;
       }
 
-      inline std::vector<command_buffer> command_pool::create_command_buffers(size_t count, VkCommandBufferLevel level)
+      inline std::vector<command_buffer> command_pool::create_command_buffers(uint32_t count, VkCommandBufferLevel level)
       {
+        allocated_buffer_counter.fetch_add(count, std::memory_order_release);
+
+        N_MTC_WRITER_SCOPE;
         VkCommandBufferAllocateInfo cmd_cr;
         cmd_cr.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         cmd_cr.pNext = nullptr;
@@ -159,7 +192,12 @@ namespace neam
         std::vector<command_buffer> cmd_bufs;
         cmd_bufs.reserve(count);
         for (VkCommandBuffer it : vk_cmd_bufs)
+        {
           cmd_bufs.emplace_back(dev, *this, it);
+#if !N_DISABLE_CHECKS
+          cmd_bufs.back().queue = queue;
+#endif
+        }
 
         return cmd_bufs;
       }

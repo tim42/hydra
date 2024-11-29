@@ -31,12 +31,11 @@
 
 
 #include <tuple>
+#include <vector>
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
 
-// #include "../tools/execute_pack.hpp"
-// #include "../tools/genseq.hpp"
 
 #include "../hydra_debug.hpp"
 
@@ -45,11 +44,14 @@
 
 // default creators
 #include "image_creators/image_2d.hpp"
+#include "image_creators/image_sparse.hpp"
 
 namespace neam
 {
   namespace hydra
   {
+    struct vk_context;
+
     namespace vk
     {
       /// \brief Wrap a vulkan image.
@@ -64,6 +66,13 @@ namespace neam
               do_not_destroy(_do_not_destroy)
             {
               dev._vkGetImageMemoryRequirements(vk_image, &mem_requirements);
+              if ((image_create_info.flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) != 0)
+              {
+                uint32_t count;
+                dev._vkGetImageSparseMemoryRequirements(vk_image, &count, nullptr);
+                sparse_mem_requirements.resize(count);
+                dev._vkGetImageSparseMemoryRequirements(vk_image, &count, sparse_mem_requirements.data());
+              }
             }
 
         public:
@@ -128,6 +137,7 @@ namespace neam
             ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
             ici.pNext = nullptr;
 
+            ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             ici.queueFamilyIndexCount = 0;
             ici.pQueueFamilyIndices = nullptr;
 
@@ -174,6 +184,7 @@ namespace neam
             ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
             ici.pNext = nullptr;
 
+            ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             ici.queueFamilyIndexCount = 0;
             ici.pQueueFamilyIndices = nullptr;
 
@@ -217,6 +228,7 @@ namespace neam
             ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
             ici.pNext = nullptr;
 
+            ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             ici.queueFamilyIndexCount = 0;
             ici.pQueueFamilyIndices = nullptr;
 
@@ -235,6 +247,9 @@ namespace neam
           {
             check::on_vulkan_error::n_assert_success(dev._vkBindImageMemory(vk_image, mem._get_vk_device_memory(), offset));
           }
+
+
+          void bind_memory(vk_context& vkctx);
 
           /// \brief Return a structure that describe the image resource
           /// (this is a vulkan structure)
@@ -279,9 +294,14 @@ namespace neam
           }
 
           /// \brief Return the memory requirements of the image
-          const VkMemoryRequirements &get_memory_requirements() const
+          const VkMemoryRequirements& get_memory_requirements() const
           {
             return mem_requirements;
+          }
+
+          const std::vector<VkSparseImageMemoryRequirements>& get_sparse_memory_requirements() const
+          {
+            return sparse_mem_requirements;
           }
 
         public: // advanced
@@ -289,6 +309,11 @@ namespace neam
           VkImage get_vk_image() const
           {
             return vk_image;
+          }
+
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_image, VK_OBJECT_TYPE_IMAGE, name);
           }
 
         private:
@@ -299,6 +324,7 @@ namespace neam
 
           bool do_not_destroy;
           VkMemoryRequirements mem_requirements;
+          std::vector<VkSparseImageMemoryRequirements> sparse_mem_requirements;
       };
     } // namespace vk
   } // namespace hydra

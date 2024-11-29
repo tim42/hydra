@@ -49,6 +49,8 @@ namespace neam::hydra
     size_t index_size;
     const void* index_data;
 
+    std::string argv0 {};
+
     template<typename T, uint32_t Count>
     static index_boot_parameters_t from(id_t index_key, const T (&ar)[Count])
     {
@@ -65,6 +67,7 @@ namespace neam::hydra
       resources::context res = { io, *this };
       conf::context hconf = { *this };
 
+      std::string program_name {};
 
     public:
       ~core_context();
@@ -94,6 +97,7 @@ namespace neam::hydra
 
     private:
       std::vector<std::thread> threads;
+      std::atomic<uint32_t> thread_index;
       spinlock destruction_lock;
       bool should_stop = false;
       bool can_return = false;

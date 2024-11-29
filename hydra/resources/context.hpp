@@ -32,6 +32,7 @@
 #include <ntools/rle/rle.hpp>
 #include <ntools/ct_string.hpp>
 #include <ntools/macro.hpp>
+#include <ntools/threading/utilities/rate_limit.hpp>
 
 #include <hydra/engine/conf/conf.hpp>
 
@@ -46,9 +47,15 @@ namespace neam::hydra { class core_context; }
 
 namespace neam::resources
 {
-  struct resource_configuration : hydra::conf::hconf<resource_configuration>
+  struct resource_configuration : hydra::conf::hconf<resource_configuration, "configuration/resources_context.hcnf">
   {
     std::vector<std::string> extensions_to_ignore;
+    int32_t max_compressor_tasks = -4;
+    int32_t max_decompressor_tasks = -4;
+
+    uint32_t max_size_to_embed = 64;
+    uint32_t min_size_to_compress = 256;
+    bool enable_background_compression = true;
   };
 }
 
@@ -63,7 +70,47 @@ N_METADATA_STRUCT(neam::resources::resource_configuration)
       "To exclude all PNG files by filetype, add an entry with: `image/png`\n\n"
       "To get filetype of a file, use the command: `file --mime-type the-file-name-here`.\n"
       "Beware of using a too generic file-type as it may prevent other files from being considered for import."
+      >}),
+
+    N_MEMBER_DEF(max_compressor_tasks, neam::metadata::info{.description = c_string_t
+      <
+       "Force a max number of resource compression task to be launched at the same time\n"
+       "Please note that it's not task running at the same time, but tasks queued for execution.\n"
+       "Decreasing the value decrease task contention when in (de)compression heavy situations\n"
+       "Set a value of 0 to completely disable the limit\n"
+       "Set a negative value to use the number of CPU threads minus the absolute value\n"
+       "  (if the value is -2, and there are 8 cpu threads, the effective limit will be 6 (8 - 2))\n"
+       " If the nuber of cpu threads is below the value, it will default to 1"
+      >}),
+    N_MEMBER_DEF(max_decompressor_tasks, neam::metadata::info{.description = c_string_t
+      <
+       "Force a max number of resource decompression task to be launched at the same time\n"
+       "Please note that it's not task running at the same time, but tasks queued for execution.\n"
+       "Decreasing the value decrease task contention when in (de)compression heavy situations\n"
+       "Set a value of 0 to completely disable the limit\n"
+       "Set a negative value to use the number of CPU threads minus the absolute value\n"
+       "  (if the value is -2, and there are 8 cpu threads, the effective limit will be 6 (8 - 2))\n"
+       " If the nuber of cpu threads is below the value, it will default to 1"
+      >}),
+    N_MEMBER_DEF(max_size_to_embed, neam::metadata::info{.description = c_string_t
+      <
+       "Resources <= this size will be written in the index and always be in memory\n"
+       "Accessing those resources will not have to go through IO and will always be immediate\n"
+       "Because the resource will always be loaded, only smaller resources should be embedded"
+      >}),
+    N_MEMBER_DEF(min_size_to_compress, neam::metadata::info{.description = c_string_t
+      <
+       "Minimum size to consider compression, if compression is supported.\n"
+       "Size below that will be stored uncompressed."
+      >}),
+    N_MEMBER_DEF(enable_background_compression, neam::metadata::info{.description = c_string_t
+      <
+       "If true, imported resources will be written on disk as-is (uncompressed) to greatly increase packing speed\n"
+       "A list of resources needing compression can then be generated and the context has the capability to repack and compress those resources\n"
+       "\n"
+       "If false, imported resources will wait to go through compression before being writen to disk (which can be slow)\n"
       >})
+
   >;
 };
 namespace neam::resources
@@ -95,12 +142,11 @@ N_METADATA_STRUCT(neam::resources::default_resource_metadata_t)
       "Whether this resource should be placed directly in the index instead of in a pack file\n"
       "Doing so will increase the size of the index and will force the resources to always be loaded in memory\n"
       "This also make sure that no filesystem access is needed to retrieve the resource\n"
-      "The default behavior (if false) is controlled by N_RES_MAX_SIZE_TO_EMBED (currently: " N_EXP_STRINGIFY(N_RES_MAX_SIZE_TO_EMBED) "b)."
+      "The default behavior (if false) is controlled by `max_size_to_embed` in the resource configuration."
       >}),
     N_MEMBER_DEF(skip_compression, neam::metadata::info{.description = c_string_t
       <
-      "Whether this resource should skip compression.\n"
-      "Note that only resources bigger than " N_EXP_STRINGIFY(N_RES_MAX_SIZE_TO_COMPRESS) " bytes will be considered for compression\n"
+      "Whether this resource should skip compression."
 #if !N_RES_LZMA_COMPRESSION
       "\n"
       "NOTE: LZMA compression disabled, flag will not do anything as everything will skip compression.\n"
@@ -137,15 +183,13 @@ namespace neam::resources
       static constexpr char k_pack_extension[] = ".hpd";
       static constexpr char k_rel_db_extension[] = ".hrdb";
 
-      static constexpr string_id k_configuration_name = "configuration/resources_context.hcnf"_rid;
-
     public:
-      context(io::context& io, hydra::core_context& _ctx) : io_context(io), ctx(_ctx) {}
+      context(io::context& io, hydra::core_context& _ctx);
 
       /// \brief Returns the IO context.
       /// \note Unless trying to access non-resource files directly, please use the resources:: facilities,
       ///       particularly those located in this file
-      io::context& get_io_context() { return io_context; }
+      [[nodiscard]] io::context& get_io_context() { return io_context; }
 
       /// \brief Setup the context from the boot index to the final stuff
       /// \note the boot index should be named boot.index and boot.pack
@@ -162,7 +206,7 @@ namespace neam::resources
       ///
       /// If the boot index has file-id:/initial_index set to none, it is treated as the final index and the process stops here
       ///
-      status_chain boot(id_t boot_index_id, const std::string& index_path = "boot.index")
+      [[nodiscard]] status_chain boot(id_t boot_index_id, const std::string& index_path = "boot.index")
       {
         io_context._wait_for_submit_queries();
         io_context.clear_mapped_files();
@@ -171,7 +215,12 @@ namespace neam::resources
         return boot(boot_index_id, io_context.map_unprefixed_file(index_path));
       }
 
-      status_chain boot(id_t boot_index_id, id_t _index_file_id, unsigned max_depth = 5, bool reload = false);
+      [[nodiscard]] status_chain boot(id_t boot_index_id, id_t _index_file_id, unsigned max_depth = 5, bool reload = false);
+
+      /// \brief Connect to a resource context that has a server enabled
+      /// If a connection is properly established, the resource context is fully setup, as if it was booted with this index
+      /// \note any rel-db operations are not possible. No index is loaded in memory
+      [[nodiscard]] status_chain connect(const std::string& host, uint32_t port);
 
       /// \brief Create base_index_path.index / base_index_path.pack so that they are self-bootable
       /// \note this will not override any loaded index but will alter the mapped files to contain the index / pack / file-map
@@ -180,22 +229,22 @@ namespace neam::resources
       /// The created index will contain the following entries:
       ///   - k_boot_file_map an embedded file-map)
       ///   - k_initial_index set to id_t::none
-      status_chain make_self_boot(id_t boot_index_id, const std::string& index_path = "boot.index", file_map&& boot_file_map = {});
+      [[nodiscard]] status_chain make_self_boot(id_t boot_index_id, const std::string& index_path = "boot.index", file_map&& boot_file_map = {});
 
       /// \brief Create base_index_path.index / base_index_path.pack so that they refer to another index
       /// \param target_index_path The prefix to use. After loading this index, all file access will be relative to this directory
       /// \param target_index_file Relative to \e target_index_path Indicates target the index to chain load
       /// \note The target index must be self-bootable or chain-bootable.
       /// \see make_self_boot
-      status_chain make_chain_boot(id_t target_index_id, std::string target_index_path, std::string target_index_file, id_t boot_index_id, const std::string& boot_index_path = "boot.index");
+      [[nodiscard]] status_chain make_chain_boot(id_t target_index_id, std::string target_index_path, std::string target_index_file, id_t boot_index_id, const std::string& boot_index_path = "boot.index");
 
       /// \brief Init the context from a clean index (and an optional rel-db)
       /// \note If saved, that index is self-contained, but cannot be reloaded (it does not self-reference, it does not have a prefix)
       void _init_with_clean_index(id_t index_key, bool init_empty_reldb = true);
 
-      status_chain _init_with_index_data(id_t index_key, const void* data, uint32_t data_size);
+      [[nodiscard]] status_chain _init_with_index_data(id_t index_key, const void* data, uint32_t data_size);
       template<typename T, uint32_t Count>
-      status_chain _init_with_index_data(id_t index_key, const T (&ar)[Count])
+      [[nodiscard]] status_chain _init_with_index_data(id_t index_key, const T (&ar)[Count])
       {
         return _init_with_index_data(index_key, ar, Count * sizeof(T));
       }
@@ -207,7 +256,7 @@ namespace neam::resources
       /// \brief Asynchronously loads an index.
       /// \note Only one index is associated with a context, load_index will replace the loaded one
       /// \note Queries done before the index gets loaded will be using the old index
-      status_chain load_index(id_t index_id, const std::string& file_path)
+      [[nodiscard]] status_chain load_index(id_t index_id, const std::string& file_path)
       {
         prefix = get_prefix_from_filename(file_path);
         io_context.set_prefix_directory(prefix);
@@ -218,14 +267,14 @@ namespace neam::resources
 
       /// \brief Reloads an already setup/loaded index
       /// \note the operation is asynchronous, all operation done before the index is actually reloaded are done with the current one
-      status_chain reload_index()
+      [[nodiscard]] status_chain reload_index()
       {
         return boot(root.get_index_id(), index_file_id, 5, true);
       }
 
       /// \brief Additively load a new index.
       /// \see index::add_index
-      status_chain add_index(id_t index_id, const std::string& file_path)
+      [[nodiscard]] status_chain add_index(id_t index_id, const std::string& file_path)
       {
         check::debug::n_assert(has_index, "Trying to combines indexes while no index has been ever loaded. Are you loading and combining right away?");
         const id_t fid = io_context.map_file(file_path);
@@ -234,19 +283,19 @@ namespace neam::resources
 
       /// \brief Additively load a new index.
       /// \see index::add_index
-      status_chain add_index(id_t index_id, id_t index_fid);
+      [[nodiscard]] status_chain add_index(id_t index_id, id_t index_fid);
 
       /// \brief Saves the current index and the rel-db if present (must have a loaded index)
       /// \note This operation is asynchronous.
       ///       It is possible to save and immediatly load another index without waiting for the IO to complete.
-      status_chain save_index() const;
+      [[nodiscard]] status_chain save_index() const;
 
 
       /// \brief Return whether an index has been loaded
-      bool is_index_loaded() const { return has_index; }
+      [[nodiscard]] bool is_index_loaded() const { return has_index; }
 
       /// \brief Return whether a resource is present
-      bool has_resource(id_t rid) const { return is_index_loaded() && root.has_entry(rid); }
+      [[nodiscard]] async::chain<bool> has_resource(id_t rid) const;
 
       /// \brief Return the created/modified time on the index
       std::filesystem::file_time_type get_index_modified_time() const
@@ -261,14 +310,21 @@ namespace neam::resources
       /// \see _has_embedded_reldb
       void _embed_reldb();
 
-      bool _has_embedded_reldb() const;
+      [[nodiscard]] bool _has_embedded_reldb() const;
 
       /// \brief return whether the index is mapped to io or not (that a reload can happen or not)
-      bool is_index_mapped() const { return has_index && io_context.is_file_mapped(index_file_id); }
+      [[nodiscard]] bool is_index_mapped() const { return has_index && io_context.is_file_mapped(index_file_id); }
+
+      /// \brief return whether the prefix directory is valid (it's not valid if there's no loaded index or if the loaded index is a direct init from memory)
+      [[nodiscard]] bool _has_prefix_directory() const { return has_index && index_file_id != id_t::invalid; }
+
+      /// \brief return the index prefix directory (relative path from cwd to get to the index, if not an absolute path).
+      /// \note Check with _has_prefix_directory() if the returned value is valid
+      [[nodiscard]] std::string _get_prefix_directory() const { return prefix; }
 
     public:
       /// \brief Load a map-file. Map files contains the list of all the necessary files that io::context can use.
-      status_chain load_file_map(const id_t rid);
+      [[nodiscard]] status_chain load_file_map(const id_t rid);
 
       /// \brief Add a file to the file-map (and apply the change)
       /// \note index changes require a call to save_index() (not done by this function)
@@ -288,20 +344,20 @@ namespace neam::resources
       void repack_data();
 
     public: // queries:
-      std::string resource_name(id_t rid) const;
+      [[nodiscard]] std::string resource_name(id_t rid) const;
 
       /// \brief Return whether a db is loaded or not
       /// \note Some operations (notably resource import and a few others) require a db to be loaded
       ///       DB are stripped from builds as they contains un-necessary information
-      bool has_db() const { return has_rel_db; }
+      [[nodiscard]] bool has_db() const { return has_rel_db; }
 
       /// \brief Return a const ref to the rel-db.
       /// \warning It is incorrect to call this function when has_db() is false
-      const rel_db& get_db() const;
+      [[nodiscard]] const rel_db& get_db() const;
 
       /// \brief Return a ref to the rel-db.
       /// \warning It is incorrect to call this function when has_db() is false
-      rel_db& _get_non_const_db();
+      [[nodiscard]] rel_db& _get_non_const_db();
 
     public: // resource handling stuff:
       /// \brief reads and decode a resource.
@@ -309,9 +365,9 @@ namespace neam::resources
       /// \note only resources with flags::type_data can be read this way
       /// \see read_raw_resource
       template<concepts::Asset T>
-      resource_chain<T> read_resource(id_t rid)
+      [[nodiscard]] resource_chain<T> read_resource(id_t rid)
       {
-        return read_raw_resource(rid).then([](raw_data&& data, bool success)
+        return read_raw_resource(rid).then([](raw_data&& data, bool success, uint32_t)
         {
           if (!success)
             return resource_chain<T>::create_and_complete({}, status::failure);
@@ -326,7 +382,7 @@ namespace neam::resources
       /// \see write_raw_resource
       /// \note resource serialization is done synchronously for now
       template<concepts::Asset T>
-      status_chain write_resource(id_t rid, const T& res)
+      [[nodiscard]] status_chain write_resource(id_t rid, const T& res)
       {
         // serialize the resource:
         status st = status::success;
@@ -345,7 +401,13 @@ namespace neam::resources
       /// \brief reads a raw resource.
       /// \note asynchronous
       /// \note only resources with flags::type_data can be read this way
-      io::context::read_chain read_raw_resource(id_t rid);
+      [[nodiscard]] io::context::read_chain read_raw_resource(id_t rid) const;
+
+      /// \brief return whether a call to read*_resource will immediatly resolve and not be async
+      /// \note the only intended use case is to allow a specific "immediate" path when some resource (or part of a resource) is immediatly available
+      /// \note if the resource doesn't exist/is not data, returns true as well, as the result will be immediate
+      /// \warning never assume that a resource will always be immediatly available.
+      [[nodiscard]] bool is_resource_immediatly_available(id_t rid) const;
 
       /// \brief write a raw resource.
       /// \note asynchronous
@@ -353,7 +415,7 @@ namespace neam::resources
       /// (FIXME: support writing to packed resources when the data size is the same or smaller)
       /// \warning The index is not/must not be modified by this function. Compression flag will also be respected.
       ///          If writing a resource would require an index modification to work, the operation will fail
-      status_chain write_raw_resource(id_t rid, raw_data&& data);
+      [[nodiscard]] status_chain write_raw_resource(id_t rid, raw_data&& data);
 
     public: // importing/packing:
       /// \brief (re)Import (process and pack) a resource from a file on disk. The file must be a valid, readable file.
@@ -361,7 +423,7 @@ namespace neam::resources
       /// \note asynchrnous, potentially multi-threaded.
       /// \note index changes require a call to save_index() (not done by this function)
       /// \warning the resource must be a valid path to the file (either relative to the CWD or absolute)
-      status_chain import_resource(const std::filesystem::path& resource, std::optional<metadata_t>&& overrides = {});
+      [[nodiscard]] status_chain import_resource(const std::filesystem::path& resource, std::optional<metadata_t>&& overrides = {});
 
       /// \brief Import (process and pack) a resource from a memory buffer.
       /// The resource path will only be used for the resource id and determine the processor to apply if it can be determined from the content of the buffer.
@@ -370,10 +432,10 @@ namespace neam::resources
       /// \note index changes require a call to save_index() (not done by this function)
       /// \note if the metadata provided has a valid file-id, it will be saved back if non-empty (if it is empty, it will be removed).
       /// \warning the resource must be relative to the source folder.
-      status_chain import_resource(const std::filesystem::path& resource, raw_data&& data, metadata_t&& metadata);
+      [[nodiscard]] status_chain import_resource(const std::filesystem::path& resource, raw_data&& data, metadata_t&& metadata);
 
       /// \brief Helper for packing processed resources.
-      status_chain _pack_resource(processor::data&& proc_data);
+      [[nodiscard]] status_chain _pack_resource(processor::data&& proc_data);
 
       /// \brief Where the source folder is
       std::filesystem::path source_folder;
@@ -382,21 +444,21 @@ namespace neam::resources
     public: // resource removal
       /// \brief Handle the removal of a source file and all its related metadata/resources/subresources/pack files/...
       /// \note File must be relative to the source folder
-      async::continuation_chain on_source_file_removed(const std::filesystem::path& file, bool reimport = false);
+      [[nodiscard]] async::continuation_chain on_source_file_removed(const std::filesystem::path& file, bool reimport = false);
 
     public: // resource management
       /// \brief Return the files that require a repack because of processor/packer version change
       /// Should be called only once
-      std::set<std::filesystem::path> get_sources_needing_reimport() const;
+      [[nodiscard]] std::set<std::filesystem::path> get_sources_needing_reimport() const;
 
       /// \brief Return the files present in the index but missing in 'state'
-      std::set<std::filesystem::path> get_removed_sources(const std::deque<std::filesystem::path>& state) const
+      [[nodiscard]] std::set<std::filesystem::path> get_removed_sources(const std::deque<std::filesystem::path>& state) const
       {
         check::debug::n_assert(has_rel_db, "cannot return removed sources without a rel db present");
         return db.get_removed_resources(state);
       }
       /// \brief Return the files present in the index but missing in 'state'
-      std::set<std::filesystem::path> get_non_imported_sources(const std::deque<std::filesystem::path>& state) const
+      [[nodiscard]] std::set<std::filesystem::path> get_non_imported_sources(const std::deque<std::filesystem::path>& state) const
       {
         check::debug::n_assert(has_rel_db, "cannot return non imported sources without a rel db present");
         return filter_files(db.get_absent_resources(state));
@@ -416,29 +478,26 @@ namespace neam::resources
       }
 
       /// \brief Remove files that have extensions to be ignored
-      std::set<std::filesystem::path> filter_files(std::set<std::filesystem::path>&& files) const;
+      [[nodiscard]] std::set<std::filesystem::path> filter_files(std::set<std::filesystem::path>&& files) const;
       std::set<std::filesystem::path>& filter_files(std::set<std::filesystem::path>& files) const;
 
-      raw_data _get_serialized_reldb() const
+      [[nodiscard]] raw_data _get_serialized_reldb() const
       {
         check::debug::n_assert(has_rel_db, "cannot call to _get_serialized_reldb without a rel db present");
         return db.serialize();
       }
 
     public: // management:
-      void _prepare_engine_shutdown()
-      {
-        configuration.remove_watch();
-      }
+      void _prepare_engine_shutdown();
 
     public: // events:
       // Called after an index has been loaded/reloaded. Called asynchronously.
       cr::event<> on_index_loaded;
 
     private:
-      status_chain reload_index(id_t index_id, id_t fid);
+      [[nodiscard]] status_chain reload_index(id_t index_id, id_t fid);
 
-      io::context::write_chain write_index(id_t file_id, const index& idx) const;
+      [[nodiscard]] status_chain write_index(id_t file_id, const index& idx) const;
 
       /// \brief apply the map-file to the current state:
       /// Map files contains a line-encoded data with the following format:
@@ -465,6 +524,9 @@ namespace neam::resources
       rel_db db;
       bool has_rel_db = false;
 
+      mutable threading::rate_limiter compressor_dispatcher;
+
       resource_configuration configuration;
+      cr::event_token_t on_configuration_changed_tk;
   };
 }

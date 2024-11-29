@@ -31,7 +31,8 @@
 
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 #include "../hydra_debug.hpp"
 #include "device.hpp"
@@ -59,7 +60,7 @@ namespace neam
         public:
           /// \brief Most commonly used values
           sampler(device &_dev, VkFilter mag, VkFilter min, VkSamplerMipmapMode mipmap, float miplodbias, float minlod, float maxlod,
-                  sampler_address_mode sam = sampler_address_mode(VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT))
+                  sampler_address_mode sam = sampler_address_mode(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER))
             : sampler(_dev, VkSamplerCreateInfo
           {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, nullptr, 0,
@@ -74,7 +75,7 @@ namespace neam
           })
           {}
           sampler(device &_dev, VkFilter mag, VkFilter min, VkSamplerMipmapMode mipmap, float miplodbias, float minlod, float maxlod, float max_anisotropy,
-                  sampler_address_mode sam = sampler_address_mode(VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT))
+                  sampler_address_mode sam = sampler_address_mode(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER))
             : sampler(_dev, VkSamplerCreateInfo
           {
             VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, nullptr, 0,
@@ -115,6 +116,12 @@ namespace neam
           /// \brief Return the VkSampler
           VkSampler _get_vk_sampler() const { return vk_sampler; }
           const VkSampler* _get_vk_sampler_ptr() const { return &vk_sampler; }
+
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_sampler, VK_OBJECT_TYPE_SAMPLER, name);
+          }
+
         private:
           device &dev;
           VkSampler vk_sampler;

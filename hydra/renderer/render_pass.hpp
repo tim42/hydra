@@ -42,16 +42,17 @@ namespace neam::hydra
   ///
   /// Allocations marked as pass-local are expected to be heavilly re-used, so they must not leave the pass.
   /// Allocations marked as frame-local are not reused during the frame and so can leave the pass, but not the frame.
-  class render_pass
+  class base_render_pass
   {
     public:
-      render_pass(hydra_context& _context);
-      virtual ~render_pass();
+      base_render_pass(hydra_context& _context);
+      virtual ~base_render_pass() = default;
 
       virtual bool enabled() const
       {
         return true;
       }
+
 
       // Called at init
       // Single threaded, in order of insertion in the pass manager
@@ -60,6 +61,11 @@ namespace neam::hydra
       }
 
       // Single threaded, in order of insertion in the pass manager
+      virtual void setup_dependencies(/* FIXME !*/)
+      {
+      }
+
+      // Single threaded*, in order of insertion in the pass manager
       virtual void prepare(render_pass_context& /*rpctx*/)
       {
         // create buffers, allocate memory, setup cpu -> gpu transfers, ...
@@ -72,7 +78,7 @@ namespace neam::hydra
         return {};
       }
 
-      virtual void cleanup()
+      virtual void cleanup(render_pass_context& /*rpctx*/)
       {
         // end !
       }
@@ -80,10 +86,18 @@ namespace neam::hydra
   protected:
       hydra_context& context;
 
-      vk::command_pool graphic_transient_cmd_pool;
-      vk::command_pool compute_transient_cmd_pool;
-
       bool need_setup = true;
       friend class pass_manager;
+  };
+
+  template<typename Child>
+  class render_pass : public base_render_pass
+  {
+    public:
+      /// \brief Setup global \e static dependencies
+      /// Those dependencies are gathered at the start of the engine and compiled in a set of instruction
+      /// Adding a pass to a render-context will automatically add requisites before and "hook" passes after
+      /// \note Circular dependencies are checked for and will generate an error (and disable all the passes in the cycle and those that depend on them)
+      static void setup_static_dependencies() {}
   };
 }

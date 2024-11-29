@@ -27,14 +27,14 @@
 // SOFTWARE.
 //
 
-#ifndef __N_30181263603267010772_2083712051_MESH_HPP__
-#define __N_30181263603267010772_2083712051_MESH_HPP__
+#pragma once
+
 
 #include <deque>
 
 #include "../vulkan/vulkan.hpp"
-#include "../utilities/transfer.hpp"
 #include "../utilities/memory_allocation.hpp"
+#include "../utilities/transfer_context.hpp"
 
 namespace neam
 {
@@ -102,7 +102,7 @@ namespace neam
           {
 // #ifndef HYDRA_NO_MESSAGES
 //             if ((usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT))
-//               neam::cr::out.info() << "adding a buffer with VK_BUFFER_USAGE_INDEX_BUFFER_BIT as a vertex buffer" << neam::cr::newline
+//               neam::get_global_logger().info() << "adding a buffer with VK_BUFFER_USAGE_INDEX_BUFFER_BIT as a vertex buffer" << neam::cr::newline
 //                                    << "'cause an index buffer is already present and this buffer has another usage bit enabled";
 // #endif
             buffers.emplace_back(dev, size, usage, flags);
@@ -206,7 +206,7 @@ namespace neam
         /// \brief Bind a memory area to every single buffers
         /// (it does alignement & everything else).
         /// \see get_memory_requirements()
-        void _bind_memory_area(const vk::device_memory &dm, size_t offset)
+        void _bind_memory_area(const vk::device_memory &dm, size_t offset, const std::string& debug_name = "mesh")
         {
           buffers_offsets.clear();
           for (vk::buffer &it : buffers)
@@ -217,6 +217,7 @@ namespace neam
 
             buffers_offsets.push_back(offset);
             it.bind_memory(dm, offset);
+            it._set_debug_name(debug_name);
 
             offset += reqs.size;
           }
@@ -236,21 +237,23 @@ namespace neam
 
         /// \brief Transfer some data to a buffer (using a batch transfer utility)
         /// \param signal_semaphore If specified, a semaphore that will become signaled when the transfer as been completed
-        void transfer_data(batch_transfers &bt, size_t buffer_index, size_t data_size, const void *_data, size_t dst_queue_familly, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
+        void transfer_data(transfer_context& txctx, size_t buffer_index, raw_data&& data, vk::queue& q, vk::semaphore* signal_semaphore = nullptr)
         {
-          transfer_data(bt, buffer_index, 0, data_size, _data, dst_queue_familly, signal_semaphore, signal_fence);
+          transfer_data(txctx, buffer_index, 0, std::move(data), q, signal_semaphore);
         }
 
         /// \brief Transfer some data to a buffer (using a batch transfer utility)
         /// \param signal_semaphore If specified, a semaphore that will become signaled when the transfer as been completed
-        void transfer_data(batch_transfers &bt, size_t buffer_index, size_t offset, size_t data_size, const void *_data, size_t dst_queue_familly, vk::semaphore *signal_semaphore = nullptr, vk::fence *signal_fence = nullptr)
+        void transfer_data(transfer_context& txctx, size_t buffer_index, size_t offset, raw_data&& data, vk::queue& q, vk::semaphore* signal_semaphore = nullptr)
         {
-          bt.add_transfer(buffers.at(buffer_index), offset, data_size, _data, dst_queue_familly, signal_semaphore, signal_fence);
+          txctx.acquire(buffers.at(buffer_index), q);
+          txctx.transfer(buffers.at(buffer_index), std::move(data), offset);
+          txctx.release(buffers.at(buffer_index), q, signal_semaphore);
         }
 
         /// \brief Call this to setup the vertex description
         /// \see get_vertex_input_state()
-        void setup_vertex_description(vk::pipeline_creator &pc)
+        void setup_vertex_description(vk::graphics_pipeline_creator &pc)
         {
           pc.get_vertex_input_state() = pvis;
           pc.get_input_assembly_state().set_topology(topology).enable_primitive_restart(primitive_restart);
@@ -304,5 +307,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_30181263603267010772_2083712051_MESH_HPP__
+
 

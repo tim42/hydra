@@ -434,6 +434,28 @@ namespace neam::resources
     return {};
   }
 
+  void rel_db::build_string_ids() const
+  {
+#if !N_STRIP_DEBUG
+    // if support for those strings is removed, completely skip this step
+    for (const auto& it : files_resources)
+    {
+      [[maybe_unused]] string_id _ = string_id::_runtime_build_from_string(it.first);
+      _ = string_id::_runtime_build_from_string(it.second.parent_file);
+      for (const auto& ch_it : it.second.child_files)
+        _ = string_id::_runtime_build_from_string(ch_it);
+      for (const auto& ch_it : it.second.depend_on)
+        _ = string_id::_runtime_build_from_string(ch_it);
+      for (const auto& ch_it : it.second.dependent)
+        _ = string_id::_runtime_build_from_string(ch_it);
+    }
+    for (const auto& it : resources_names)
+    {
+      [[maybe_unused]] string_id _ = string_id::_runtime_build_from_string(it.second);
+    }
+#endif
+  }
+
   std::string rel_db::resource_name(id_t rid) const
   {
     {

@@ -32,6 +32,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <ntools/mt_check/mt_check_base.hpp>
+
 #include "device.hpp"
 #include "../hydra_debug.hpp"
 
@@ -42,7 +44,7 @@ namespace neam
     namespace vk
     {
       /// \brief Wrap a vulkan event
-      class event
+      class event : public cr::mt_checked<event>
       {
         public: // advanced
           /// \brief Create an event from the vulkan object
@@ -68,11 +70,14 @@ namespace neam
           event(event &&o)
            : dev(o.dev), vk_event(o.vk_event)
           {
+            N_MTC_WRITER_SCOPE;
+            N_MTC_WRITER_SCOPE_OBJ(o);
             o.vk_event = nullptr;
           }
 
           ~event()
           {
+            N_MTC_WRITER_SCOPE;
             if (vk_event)
               dev._vkDestroyEvent(vk_event, nullptr);
           }
@@ -81,6 +86,7 @@ namespace neam
           /// (set the event to unsignaled)
           void reset()
           {
+            N_MTC_WRITER_SCOPE;
             VkResult res = dev._vkResetEvent(vk_event);
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
             check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkResetEvent() */);
@@ -90,6 +96,7 @@ namespace neam
           /// \brief Set the event to the signaled state
           void signal()
           {
+            N_MTC_WRITER_SCOPE;
             VkResult res = dev._vkSetEvent(vk_event);
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
             check::on_vulkan_error::n_assert_success(forward_result(res) /* from vkSetEvent() */);
@@ -99,7 +106,8 @@ namespace neam
           /// \brief Return the status of the event. True: signaled, false: unsignaled (reset)
           bool get_status() const
           {
-            VkResult res = dev._vkSetEvent(vk_event);
+            N_MTC_READER_SCOPE;
+            VkResult res = dev._vkGetEventStatus(vk_event);
             if (res == VK_EVENT_RESET)
               return false;
             else if (res == VK_EVENT_SET)
@@ -119,6 +127,13 @@ namespace neam
 
         private:
           inline static VkResult forward_result(VkResult res) {return res; }
+
+          void _set_debug_name(const std::string& name)
+          {
+            N_MTC_WRITER_SCOPE;
+            dev._set_object_debug_name((uint64_t)vk_event, VK_OBJECT_TYPE_EVENT, name);
+          }
+
         private:
           device &dev;
           VkEvent vk_event;

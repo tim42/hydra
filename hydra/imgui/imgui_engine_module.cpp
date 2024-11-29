@@ -28,5 +28,136 @@
 
 namespace neam::hydra::imgui
 {
+  void imgui_module::register_function(id_t fid, std::function<void()> func)
+  {
+    functions.emplace_back(fid, std::move(func));
+  }
+  void imgui_module::unregister_function(id_t fid)
+  {
+    functions.erase(std::remove_if(functions.begin(), functions.end(), [fid](auto & x)
+    {
+      return x.first == fid;
+    }), functions.end());
+  }
+
+  void imgui_module::create_context(glfw::glfw_module::state_ref_t& viewport)
+  {
+    check::debug::n_check(!context, "creating an imgui context over an existing imgui context");
+    {
+      std::lock_guard _lg(lock);
+      context.emplace(*hctx, *engine, viewport);
+    }
+    viewport.pm.add_pass<imgui::render_pass>(get_imgui_context(), *hctx, ImGui::GetMainViewport());
+    if (res_have_loaded)
+      on_resource_index_loaded();
+  }
+
+  void imgui_module::reload_fonts()
+  {
+    if (res_have_loaded)
+      on_resource_index_loaded();
+  }
+
+  bool imgui_module::is_compatible_with(runtime_mode m)
+  {
+    // we need vulkan for imgui to be active
+    if ((m & runtime_mode::hydra_context) != runtime_mode::hydra_context)
+      return false;
+    return true;
+  }
+
+  void imgui_module::add_task_groups(threading::task_group_dependency_tree& tgd)
+  {
+    tgd.add_task_group("imgui_render"_rid);
+
+    // restricted to main because it needs to interract with GLFW in a sync way
+    tgd.add_task_group("imgui"_rid, { .restrict_to_named_thread = "main"_rid, });
+  }
+  void imgui_module::add_task_groups_dependencies(threading::task_group_dependency_tree& tgd)
+  {
+    tgd.add_dependency("imgui"_rid, "events"_rid);
+    tgd.add_dependency("imgui_render"_rid, "imgui"_rid);
+    tgd.add_dependency("imgui_render"_rid, "render"_rid);
+
+    // tgd.add_dependency("imgui"_rid, "render"_rid); // TODO: remove
+    // tgd.add_dependency("imgui_render"_rid, "render"_rid);
+    // tgd.add_dependency("render"_rid, "imgui_render"_rid);
+  }
+
+  void imgui_module::on_context_initialized()
+  {
+    static bool has_rendered_anything = false;
+    hctx->tm.set_start_task_group_callback("imgui_render"_rid, [this]
+    {
+      if (!context.has_value())
+        return;
+
+      hctx->tm.get_task([]
+      {
+        // if (!has_rendered_anything)
+          // return;
+        TRACY_SCOPED_ZONE;
+        ImGui::Render();
+
+        // Duplication of the draw data
+        {
+          ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+          for (int i = 1; i < platform_io.Viewports.Size; i++)
+          {
+            auto* vp = platform_io.Viewports[i];
+            if (vp->RendererUserData)
+              delete ((draw_data_t*)vp->RendererUserData);
+            vp->RendererUserData = nullptr;
+
+            if ((vp->Flags & ImGuiViewportFlags_IsMinimized) == 0 && vp->DrawData != nullptr)
+            {
+              vp->RendererUserData = new draw_data_t(*vp->DrawData);
+            }
+          }
+        }
+
+        // has_rendered_anything = false;
+      });
+    });
+
+    hctx->tm.set_start_task_group_callback("imgui"_rid, [this]
+    {
+      // no context, nothing to do
+      if (!context.has_value())
+        return;
+
+      hctx->tm.get_task([this]
+      {
+        TRACY_SCOPED_ZONE;
+        get_imgui_context().new_frame();
+
+        for (auto& it : functions)
+          it.second();
+
+        ImGui::EndFrame();
+        has_rendered_anything = true;
+        ImGui::UpdatePlatformWindows();
+      });
+    });
+  }
+
+  void imgui_module::on_resource_index_loaded()
+  {
+    std::lock_guard _lg(lock);
+    res_have_loaded = true;
+    if (!context.has_value())
+      return;
+    get_imgui_context().load_default_fonts();
+    if (!has_loaded_conf)
+    {
+      has_loaded_conf = true;
+      get_imgui_context().on_resource_index_loaded();
+    }
+  }
+
+  void imgui_module::on_shutdown_post_idle_gpu()
+  {
+    context.reset();
+  }
 }
 

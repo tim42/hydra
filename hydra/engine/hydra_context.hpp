@@ -32,11 +32,14 @@
 #include "core_context.hpp"
 
 #include <hydra/utilities/memory_allocator.hpp>
-#include <hydra/utilities/vk_resource_destructor.hpp>
+#include <hydra/utilities/deferred_fence_execution.hpp>
 #include <hydra/utilities/shader_manager.hpp>
 #include <hydra/utilities/pipeline_manager.hpp>
+#include <hydra/utilities/command_pool_manager.hpp>
 #include <hydra/utilities/transfer.hpp>
+#include <hydra/utilities/descriptor_allocator.hpp>
 #include <hydra/renderer/renderer.hpp>
+#include <hydra/renderer/resources/texture_manager.hpp>
 
 namespace neam::hydra
 {
@@ -46,14 +49,32 @@ namespace neam::hydra
   {
     // rendering stuff:
     memory_allocator allocator = { device };
-    vk_resource_destructor vrd;
+    deferred_fence_execution dfe { *this };
     shader_manager shmgr = { device, res };
-    pipeline_manager ppmgr = { device };
-    batch_transfers transfers = { device, tqueue, vrd};
+    pipeline_manager ppmgr = { *this, device };
+
+    command_pool_manager gcpm = { *this, gqueue };
+    command_pool_manager tcpm = { *this, tqueue };
+    command_pool_manager slow_tcpm = { *this, slow_tqueue };
+    command_pool_manager ccpm = { *this, cqueue };
+
+    descriptor_allocator da { *this };
+
+    texture_manager textures { *this };
 
     using vk_context::vk_context;
 
     hydra_context(hydra_context&&) = delete;
     hydra_context& operator = (hydra_context&&) = delete;
+
+    command_pool_manager& get_cpm(vk::queue& q)
+    {
+      if (&q == &gqueue) return gcpm;
+      if (&q == &tqueue) return tcpm;
+      if (&q == &slow_tqueue) return slow_tcpm;
+      if (&q == &cqueue) return ccpm;
+      check::debug::n_assert(false, "get_cpm: could not find queue");
+      return gcpm;
+    }
   };
 }

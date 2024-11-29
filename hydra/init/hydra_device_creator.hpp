@@ -330,16 +330,13 @@ namespace neam
         /// \brief Create the device wrapper
         vk::device create_device(vk::instance& instance, vk::physical_device &gpu)
         {
-          // please use a device from filter_devices
-          check::on_vulkan_error::n_assert(check_device(instance, gpu) == true, "the selected device does not fulfill the requirements of the application");
-
           // init queues
           std::vector<size_t> queue_consumption;
           for (size_t i = 0; i < gpu.get_queue_count(); ++i)
             queue_consumption.push_back(0);
 
           // this maps the temporary familly id to a [queue familly index ; #queue ]
-          std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> id_to_fq;
+          std::map<temp_queue_familly_id_t, std::pair<uint32_t, uint32_t>> id_to_fq;
 
           // shared queues
           for (const queue_caps &it : shared_queue_caps)
@@ -404,6 +401,25 @@ namespace neam
           std::vector<std::vector<float>> queue_prios;
           queue_prios.resize(shared_queue_caps.size() + unique_queue_caps.size());
 
+          {
+            cr::out().debug("Device queue famillies:");
+            for (size_t i = 0; i < gpu.get_queue_count(); ++i)
+            {
+              const VkQueueFamilyProperties& qfp = gpu.get_queue_properties(i);
+              const VkQueueFlags flags = qfp.queueFlags;
+
+              const bool graphic = (flags & VK_QUEUE_GRAPHICS_BIT) != 0;
+              const bool compute = (flags & VK_QUEUE_COMPUTE_BIT) != 0;
+              const bool transfer = (flags & VK_QUEUE_TRANSFER_BIT) != 0;
+              const bool sparse_binding = (flags & VK_QUEUE_SPARSE_BINDING_BIT) != 0;
+              const bool prot = (flags & VK_QUEUE_PROTECTED_BIT) != 0;
+              const bool vdecode = (flags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) != 0;
+              const bool vencode = (flags & VK_QUEUE_VIDEO_ENCODE_BIT_KHR) != 0;
+              cr::out().debug(" - queue familly {}: queue count: {} [gfx: {}, cmp: {}, tx: {}, sp: {}, prot: {}, vdc: {}, vec: {}]", i, qfp.queueCount,
+                              graphic, compute, transfer, sparse_binding, prot, vdecode, vencode);
+            }
+          }
+
           uint32_t queue_info_count = 0;
           for (size_t i = 0; i < gpu.get_queue_count(); ++i)
           {
@@ -417,6 +433,10 @@ namespace neam
             queue_info[queue_info_count].queueCount = queue_consumption[i];
             queue_info[queue_info_count].queueFamilyIndex = i;
             queue_info[queue_info_count].pQueuePriorities = queue_prios[i].data();
+
+            {
+              cr::out().debug("Creating {} queues on queue familly {}", queue_consumption[i], i);
+            }
 
             ++queue_info_count;
           }
@@ -436,6 +456,8 @@ namespace neam
             cr::out().debug("log requesting dev ext: {}", it);
             device_extensions_c_str.push_back(it.c_str());
           }
+
+          requested_features.simplify();
 
           // create the device create info struct
           VkDeviceCreateInfo device_info;

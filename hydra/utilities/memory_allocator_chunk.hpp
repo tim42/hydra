@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_25333212431235330807_348316347_MEMORY_ALLOCATOR_CHUNK_HPP__
-#define __N_25333212431235330807_348316347_MEMORY_ALLOCATOR_CHUNK_HPP__
+#pragma once
+
 
 #include <cstdint>
 #include <cstddef>
@@ -177,7 +177,7 @@ namespace neam
         /// \brief Print information about the chunk
         static void print_nfo()
         {
-//           cr::out.log() << "chunk size: " << (chunk_allocation_size / (1024.f * 1024.f)) << " Mio with " << bitmap_entries << " bitmap entries" << cr::newline
+//           cr::get_global_logger().log() << "chunk size: " << (chunk_allocation_size / (1024.f * 1024.f)) << " Mio with " << bitmap_entries << " bitmap entries" << cr::newline
 //                         << "first level bits: " << first_level_bits << ", second level entries: " << second_level_entries << " (" << second_level_entries * 64 << " bits)" << cr::newline
 //                         << "first_level_granularity: " << (first_level_granularity / 1024.f) << "Kio, second_level_granularity: " << (second_level_granularity / 1024.f) << "Kio" << cr::newline
 //                         << "granularity: " << granularity << " bytes" << std::endl;
@@ -186,7 +186,7 @@ namespace neam
         /// \brief Print some stats about the current chunk
         void print_stats()
         {
-//           auto &x = cr::out.log() << "chunk@" << this << ":" << cr::newline
+//           auto &x = cr::get_global_logger().log() << "chunk@" << this << ":" << cr::newline
 //                    << "free memory:      " << (free_memory / (1024.f * 1024.f)) << " Mio" << cr::newline
 //                    << "1st lvl bl:       " << std::bitset<first_level_bits>(first_level_bl) << cr::newline
 //                    << "1st lvl wh:       " << std::bitset<first_level_bits>(first_level_wh) << cr::newline;
@@ -779,5 +779,5 @@ namespace neam
 } // namespace neam
 
 #endif
-#endif // __N_25333212431235330807_348316347_MEMORY_ALLOCATOR_CHUNK_HPP__
+
 

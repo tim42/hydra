@@ -31,8 +31,10 @@
 
 
 #include <vector>
+#include <deque>
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 #include "device.hpp"
 #include "surface.hpp"
@@ -44,6 +46,8 @@
 #include "viewport.hpp"
 #include "rect2D.hpp"
 #include "pipeline_viewport_state.hpp"
+
+#include <ntools/tracy.hpp>
 
 namespace neam
 {
@@ -100,10 +104,10 @@ namespace neam
             : dev(_dev), surf(_surf), sw_viewport(glm::vec2(image_size.x, image_size.y)),
               sw_rect(glm::ivec2(0, 0), image_size)
           {
-            size_t image_count = 3;
+            size_t image_count = 4;
             if (image_count < _surf.get_min_image_count() || _surf.get_max_image_count() == 0)
-              image_count = _surf.get_min_image_count();
-            else if (image_count > _surf.get_max_image_count())
+              image_count = _surf.get_min_image_count() + 1;
+            if (image_count > _surf.get_max_image_count() && _surf.get_max_image_count() != 0)
               image_count = _surf.get_max_image_count();
 
             create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -183,6 +187,7 @@ namespace neam
 
           /// \brief Recreate the swapchain (do not forget to invalidate comand buffers and everything that depends on the swapchain !)
           /// \note You should call this at a correct timing (to avoid freeing in-use objects)
+          /// \return the old swapchain (for destruction only)
           [[nodiscard]] swapchain recreate_swapchain(const glm::uvec2 &image_size)
           {
             create_info.oldSwapchain = vk_swapchain;
@@ -204,8 +209,6 @@ namespace neam
             }
             check::on_vulkan_error::n_assert_success(vkCreateSwapchainKHR(dev._get_vk_device(), &create_info, nullptr, &vk_swapchain));
 
-//             if (create_info.oldSwapchain)
-//               vkDestroySwapchainKHR(dev._get_vk_device(), create_info.oldSwapchain, nullptr);
             create_info.oldSwapchain = nullptr;
 
             sw_viewport.set_size({create_info.imageExtent.width, create_info.imageExtent.height});
@@ -222,8 +225,13 @@ namespace neam
           /// \throw neam::hydra::exception_tpl on any error
           uint32_t get_next_image_index(uint64_t timeout_ns = std::numeric_limits<uint64_t>::max(), bool *should_recreate = nullptr)
           {
+            TRACY_SCOPED_ZONE;
             uint32_t image_index;
-            VkResult res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, nullptr, nullptr, &image_index);
+            VkResult res;
+            {
+              std::lock_guard _lg(lock);
+              res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, nullptr, nullptr, &image_index);
+            }
 
             if (res == VK_ERROR_OUT_OF_DATE_KHR)
             {
@@ -246,8 +254,13 @@ namespace neam
           /// \throw neam::hydra::exception_tpl on any error
           uint32_t get_next_image_index(fence &fnc, uint64_t timeout_ns = std::numeric_limits<uint64_t>::max(), bool *should_recreate = nullptr)
           {
+            TRACY_SCOPED_ZONE;
             uint32_t image_index;
-            VkResult res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, nullptr, fnc._get_vk_fence(), &image_index);
+            VkResult res;
+            {
+              std::lock_guard _lg(lock);
+              res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, nullptr, fnc._get_vk_fence(), &image_index);
+            }
 
             if (res == VK_ERROR_OUT_OF_DATE_KHR)
             {
@@ -270,9 +283,13 @@ namespace neam
           /// \throw neam::hydra::exception_tpl on any error
           uint32_t get_next_image_index(semaphore &sema, uint64_t timeout_ns = std::numeric_limits<uint64_t>::max(), bool *should_recreate = nullptr)
           {
+            TRACY_SCOPED_ZONE;
             uint32_t image_index;
-            VkResult res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, sema._get_vk_semaphore(), nullptr, &image_index);
-
+            VkResult res;
+            {
+              std::lock_guard _lg(lock);
+              res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, sema._get_vk_semaphore(), nullptr, &image_index);
+            }
             if (res == VK_ERROR_OUT_OF_DATE_KHR)
             {
               if (should_recreate)
@@ -294,8 +311,13 @@ namespace neam
           /// \throw neam::hydra::exception_tpl on any error
           uint32_t get_next_image_index(semaphore &sema, fence &fnc, uint64_t timeout_ns = std::numeric_limits<uint64_t>::max(), bool *should_recreate = nullptr)
           {
+            TRACY_SCOPED_ZONE;
             uint32_t image_index;
-            VkResult res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, sema._get_vk_semaphore(), fnc._get_vk_fence(), &image_index);
+            VkResult res;
+            {
+              std::lock_guard _lg(lock);
+              res = vkAcquireNextImageKHR(dev._get_vk_device(), vk_swapchain, timeout_ns, sema._get_vk_semaphore(), fnc._get_vk_fence(), &image_index);
+            }
 
             if (res == VK_ERROR_OUT_OF_DATE_KHR)
             {
@@ -350,6 +372,13 @@ namespace neam
             return surf;
           }
 
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_swapchain, VK_OBJECT_TYPE_SWAPCHAIN_KHR, name);
+          }
+
+          spinlock lock;
+
         private: // helper
           void populate_image_vector()
           {
@@ -360,10 +389,16 @@ namespace neam
             vkGetSwapchainImagesKHR(dev._get_vk_device(), vk_swapchain, &image_count, vk_images.data());
 
             // a fake create info with just enough populated to make the image class works correctly
-            VkImageCreateInfo img_create_info;
-            img_create_info.imageType = VK_IMAGE_TYPE_2D;
-            img_create_info.format = create_info.imageFormat;
-            img_create_info.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            VkImageCreateInfo img_create_info
+            {
+              .imageType = VK_IMAGE_TYPE_2D,
+              .format = create_info.imageFormat,
+              .extent = { .width = sw_rect.get_size().x, .height = sw_rect.get_size().y, .depth = 1, },
+              .mipLevels = 1,
+              .arrayLayers = 1,
+              .samples = VK_SAMPLE_COUNT_1_BIT,
+              .initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            };
 
             // update/populate the vk::image vector
             for (size_t i = 0; i < vk_images.size(); ++i)
@@ -372,6 +407,7 @@ namespace neam
                 swapchain_images.emplace_back(dev, vk_images[i], img_create_info, true);
               else
                 swapchain_images[i] = image(dev, vk_images[i], img_create_info, true);
+              swapchain_images[i]._set_debug_name(fmt::format("swapchain image [{}]", i));
             }
 
             // update/populate the vk::image_view vector
@@ -381,6 +417,7 @@ namespace neam
                 swapchain_image_views.emplace_back(dev, swapchain_images[i], VK_IMAGE_VIEW_TYPE_2D);
               else
                 swapchain_image_views[i] = image_view(dev, swapchain_images[i], VK_IMAGE_VIEW_TYPE_2D);
+              swapchain_image_views[i]._set_debug_name(fmt::format("swapchain image-view [{}]", i));
             }
           }
 

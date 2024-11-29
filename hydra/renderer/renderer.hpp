@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_1651312409143832211_229263180_RENDERER_HPP__
-#define __N_1651312409143832211_229263180_RENDERER_HPP__
+#pragma once
+
 
 #include "render_pass.hpp"
 #include "pass_manager.hpp"
@@ -40,5 +40,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_1651312409143832211_229263180_RENDERER_HPP__
+
 

@@ -189,10 +189,10 @@ namespace neam::hydra::imgui
       generic_ui::member_name_ui(payload, type);
       ImGui::TableSetColumnIndex(1);
       ImGui::PushItemWidth(-FLT_MIN);
-      constexpr uint32_t format_len = sizeof(Format.string);
+      constexpr uint32_t format_len = sizeof(Format.str);
       constexpr bool is_hex = (format_len > 2
-                               && (Format.string[std::max(2u, format_len) - 2] == 'X'
-                                   || Format.string[std::max(2u, format_len) - 2] == 'x'));
+                               && (Format.str[std::max(2u, format_len) - 2] == 'X'
+                                   || Format.str[std::max(2u, format_len) - 2] == 'x'));
       if constexpr (is_hex)
       {
         ImGui::TextUnformatted("");
@@ -207,18 +207,18 @@ namespace neam::hydra::imgui
         if (range.min != range.max)
         {
           if (((range.max - range.min) / (range.step == 0 ? 1 : range.step)) < VT(120))
-            ImGui::SliderScalarN("", DT, &v, ComponentCount, &range.min, &range.max, format_len > 2 ? Format.string : nullptr);
+            ImGui::SliderScalarN("", DT, &v, ComponentCount, &range.min, &range.max, format_len > 2 ? Format.str : nullptr);
           else
-            ImGui::DragScalarN("", DT, &v, ComponentCount, range.step > 0 ? range.step : 1, &range.min, &range.max, format_len > 2 ? Format.string : nullptr);
+            ImGui::DragScalarN("", DT, &v, ComponentCount, range.step > 0 ? range.step : 1, &range.min, &range.max, format_len > 2 ? Format.str : nullptr);
         }
         else
         {
-          ImGui::DragScalarN("", DT, &v, ComponentCount, range.step > 0 ? range.step : 1, nullptr, nullptr, format_len > 2 ? Format.string : nullptr);
+          ImGui::DragScalarN("", DT, &v, ComponentCount, range.step > 0 ? range.step : 1, nullptr, nullptr, format_len > 2 ? Format.str : nullptr);
         }
       }
       else
       {
-        ImGui::DragScalarN("", DT, &v, ComponentCount, 1, nullptr, nullptr, format_len > 2 ? Format.string : nullptr);
+        ImGui::DragScalarN("", DT, &v, ComponentCount, 1, nullptr, nullptr, format_len > 2 ? Format.str : nullptr);
       }
       if constexpr (is_hex)
       {
@@ -246,8 +246,6 @@ namespace neam::hydra::imgui
     memcpy(payload.ec.allocate(sizeof(T)), addr, sizeof(T));
   }
 
-  static std::vector<helpers::type_helper_t> type_helpers;
-
 #define N_GUI_RAW_TYPE_BASE(Type, VectType, IGDT) \
   {rle::serialization_metadata::hash_of<Type>(), &raw_type_helper<Type, VectType, ImGuiDataType_##IGDT>}
 
@@ -265,44 +263,68 @@ namespace neam::hydra::imgui
   N_GUI_RAW_TYPE_BASE(Type, Type, IGDT), \
   N_GUI_RAW_TYPE_VECT(Type, IGDT)
 
-  static std::map<rle::type_hash_t, helpers::on_type_raw_fnc_t> raw_type_helpers =
+  static auto& raw_type_helpers()
   {
-    {rle::serialization_metadata::hash_of<bool>(), bool_raw_type_helper<1>},
-    // glm bool vectors:
-    {rle::serialization_metadata::hash_of<glm::vec<2, bool, glm::qualifier::packed_highp>>(), bool_raw_type_helper<2>},
-    {rle::serialization_metadata::hash_of<glm::vec<2, bool, glm::qualifier::packed_mediump>>(), bool_raw_type_helper<2>},
-    {rle::serialization_metadata::hash_of<glm::vec<2, bool, glm::qualifier::packed_lowp>>(), bool_raw_type_helper<2>},
-    {rle::serialization_metadata::hash_of<glm::vec<3, bool, glm::qualifier::packed_highp>>(), bool_raw_type_helper<3>},
-    {rle::serialization_metadata::hash_of<glm::vec<3, bool, glm::qualifier::packed_mediump>>(), bool_raw_type_helper<3>},
-    {rle::serialization_metadata::hash_of<glm::vec<3, bool, glm::qualifier::packed_lowp>>(), bool_raw_type_helper<3>},
-    {rle::serialization_metadata::hash_of<glm::vec<4, bool, glm::qualifier::packed_highp>>(), bool_raw_type_helper<4>},
-    {rle::serialization_metadata::hash_of<glm::vec<4, bool, glm::qualifier::packed_mediump>>(), bool_raw_type_helper<4>},
-    {rle::serialization_metadata::hash_of<glm::vec<4, bool, glm::qualifier::packed_lowp>>(), bool_raw_type_helper<4>},
+    static std::map<rle::type_hash_t, helpers::on_type_raw_fnc_t> data =
+    {
+      {rle::serialization_metadata::hash_of<bool>(), bool_raw_type_helper<1>},
+      // glm bool vectors:
+      {rle::serialization_metadata::hash_of<glm::vec<2, bool, glm::qualifier::packed_highp>>(), bool_raw_type_helper<2>},
+      {rle::serialization_metadata::hash_of<glm::vec<2, bool, glm::qualifier::packed_mediump>>(), bool_raw_type_helper<2>},
+      {rle::serialization_metadata::hash_of<glm::vec<2, bool, glm::qualifier::packed_lowp>>(), bool_raw_type_helper<2>},
+      {rle::serialization_metadata::hash_of<glm::vec<3, bool, glm::qualifier::packed_highp>>(), bool_raw_type_helper<3>},
+      {rle::serialization_metadata::hash_of<glm::vec<3, bool, glm::qualifier::packed_mediump>>(), bool_raw_type_helper<3>},
+      {rle::serialization_metadata::hash_of<glm::vec<3, bool, glm::qualifier::packed_lowp>>(), bool_raw_type_helper<3>},
+      {rle::serialization_metadata::hash_of<glm::vec<4, bool, glm::qualifier::packed_highp>>(), bool_raw_type_helper<4>},
+      {rle::serialization_metadata::hash_of<glm::vec<4, bool, glm::qualifier::packed_mediump>>(), bool_raw_type_helper<4>},
+      {rle::serialization_metadata::hash_of<glm::vec<4, bool, glm::qualifier::packed_lowp>>(), bool_raw_type_helper<4>},
 
-    N_GUI_RAW_TYPE(uint8_t, U8), N_GUI_RAW_TYPE(int8_t, S8),
-    N_GUI_RAW_TYPE(uint16_t, U16), N_GUI_RAW_TYPE(int16_t, S16),
-    N_GUI_RAW_TYPE(uint32_t, U32), N_GUI_RAW_TYPE(int32_t, S32),
-    N_GUI_RAW_TYPE(uint64_t, U64), N_GUI_RAW_TYPE(int64_t, S64),
+      N_GUI_RAW_TYPE(uint8_t, U8), N_GUI_RAW_TYPE(int8_t, S8),
+      N_GUI_RAW_TYPE(uint16_t, U16), N_GUI_RAW_TYPE(int16_t, S16),
+      N_GUI_RAW_TYPE(uint32_t, U32), N_GUI_RAW_TYPE(int32_t, S32),
+      N_GUI_RAW_TYPE(uint64_t, U64), N_GUI_RAW_TYPE(int64_t, S64),
 
-//     N_GUI_RAW_TYPE_CHAR(unsigned char), N_GUI_RAW_TYPE_CHAR(char),
+  //     N_GUI_RAW_TYPE_CHAR(unsigned char), N_GUI_RAW_TYPE_CHAR(char),
 
-    N_GUI_RAW_TYPE(unsigned short, U8), N_GUI_RAW_TYPE(short, S8),
-    N_GUI_RAW_TYPE(unsigned int, U16), N_GUI_RAW_TYPE(int, S16),
-    N_GUI_RAW_TYPE(unsigned long, U32), N_GUI_RAW_TYPE(long, S32),
-    N_GUI_RAW_TYPE(unsigned long long, U64), N_GUI_RAW_TYPE(long long, S64),
+      N_GUI_RAW_TYPE(unsigned short, U8), N_GUI_RAW_TYPE(short, S8),
+      N_GUI_RAW_TYPE(unsigned int, U16), N_GUI_RAW_TYPE(int, S16),
+      N_GUI_RAW_TYPE(unsigned long, U32), N_GUI_RAW_TYPE(long, S32),
+      N_GUI_RAW_TYPE(unsigned long long, U64), N_GUI_RAW_TYPE(long long, S64),
 
-    N_GUI_RAW_TYPE(float, Float), N_GUI_RAW_TYPE(double, Double),
-  };
+      N_GUI_RAW_TYPE(float, Float), N_GUI_RAW_TYPE(double, Double),
+    };
+    return data;
+  }
 #undef N_GUI_RAW_TYPE
 #undef N_GUI_RAW_TYPE_VECT
 
+  static auto& type_helpers()
+  {
+    static std::vector<helpers::type_helper_t> data;
+    return data;
+  }
+
   void helpers::add_generic_ui_type_helper(const type_helper_t& h)
   {
-    type_helpers.push_back(h);
+    type_helpers().push_back(h);
   }
+
+  void helpers::remove_generic_ui_type_helper(walk_type_fnc_t fnc)
+  {
+    type_helpers().erase(std::find_if(type_helpers().begin(), type_helpers().end(), [fnc](auto & it)
+    {
+      return it.walk_type == fnc;
+    }));
+  }
+
   void helpers::add_generic_ui_raw_type_helper(const raw_type_helper_t& h)
   {
-    raw_type_helpers.emplace(h.target_type, h.on_type_raw);
+    raw_type_helpers().emplace(h.target_type, h.on_type_raw);
+  }
+
+  void helpers::remove_generic_ui_raw_type_helper(rle::type_hash_t target_type)
+  {
+    raw_type_helpers().erase(target_type);
   }
 
   struct generic_ui_walker : public rle::empty_walker<helpers::payload_arg_t>
@@ -318,12 +340,12 @@ namespace neam::hydra::imgui
 
       uint32_t resize_to;
     };
-    static uint32_t get_type_helper_count() { return (uint32_t)type_helpers.size(); }
-    static helpers::type_helper_t* get_type_helper(uint32_t index) { return &type_helpers[index]; }
+    static uint32_t get_type_helper_count() { return (uint32_t)type_helpers().size(); }
+    static helpers::type_helper_t* get_type_helper(uint32_t index) { return &type_helpers()[index]; }
 
     static void on_type_raw(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload, const uint8_t* addr, size_t size)
     {
-      if (const auto it = raw_type_helpers.find(type.hash); it != raw_type_helpers.end())
+      if (const auto it = raw_type_helpers().find(type.hash); it != raw_type_helpers().end())
       {
         it->second(md, type, payload, addr, size);
         return;
@@ -356,7 +378,16 @@ namespace neam::hydra::imgui
     static container_edit_t on_type_container_pre(const rle::serialization_metadata& md, const rle::type_metadata& type, payload_arg_t payload,
                                       uint32_t count, const rle::type_metadata& sub_type)
     {
-      if (generic_ui::BeginCollapsingHeader(payload, payload.member_name.c_str()))
+      const bool payload_was_enabled = payload.enabled;
+      const bool is_colapsible_open = (generic_ui::BeginCollapsingHeader(payload, ("##otc"+payload.member_name).c_str()));
+      if (payload_was_enabled)
+      {
+        ImGui::SameLine();
+        ImGui::Dummy({ImGui::GetStyle().FramePadding.x, 0});
+        ImGui::SameLine();
+        generic_ui::member_name_ui(payload, type);
+      }
+      if (is_colapsible_open)
       {
         generic_ui::PushID(payload);
         ImGui::Indent();
@@ -547,9 +578,9 @@ namespace neam::hydra::imgui
     }
   };
 
-  void helpers::walk_type(const rle::serialization_metadata& md, const rle::type_metadata& type, rle::decoder& dc, payload_arg_t payload)
+  void helpers::walk_type(const rle::serialization_metadata& md, const rle::type_metadata& type, const rle::type_reference& type_ref, rle::decoder& dc, payload_arg_t payload)
   {
-    return rle::walker<generic_ui_walker>::walk_type(md, type, dc, payload);
+    return rle::walker<generic_ui_walker>::walk_type(md, type, type_ref, dc, payload);
   }
 
   void helpers::walk_type_generic(const rle::serialization_metadata& md, const rle::type_metadata& type, rle::decoder& dc, payload_arg_t payload)
@@ -567,46 +598,5 @@ namespace neam::hydra::imgui
     rle::walker<generic_ui_walker>::walk(rd, md, payload);
     return payload.ec.to_raw_data();
   }
-
-
-  // builtin helpers:
-
-
-  struct generic_ui_string : helpers::auto_register_generic_ui_type_helper<generic_ui_string>
-  {
-    static rle::type_metadata get_type_metadata()
-    {
-      return rle::type_metadata::from(rle::type_mode::container, {{rle::serialization_metadata::hash_of<char>()}});
-    }
-
-    static void walk_type(const rle::serialization_metadata& md, const rle::type_metadata& type, rle::decoder& dc, helpers::payload_arg_t payload)
-    {
-      uint32_t count = dc.decode<uint32_t>().first;
-      static constexpr uint32_t k_buff_size = 512;
-      char buff[k_buff_size] = {0};
-      memcpy(buff, dc.get_address<char>(), count);
-      buff[count] = 0;
-      dc.skip(count);
-
-      if (!payload.enabled)
-      {
-        memcpy(payload.ec.encode_and_alocate(count), buff, count);
-        return;
-      }
-
-      if (generic_ui::BeginEntryTable(payload))
-      {
-        ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex(0);
-        generic_ui::member_name_ui(payload, type);
-        ImGui::TableSetColumnIndex(1);
-        ImGui::PushItemWidth(-FLT_MIN);
-        ImGui::InputText("", buff, k_buff_size);
-      }
-      generic_ui::EndEntryTable(payload);
-      count = strlen(buff);
-      memcpy(payload.ec.encode_and_alocate(count), buff, count);
-    }
-  };
 }
 

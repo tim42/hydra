@@ -49,8 +49,9 @@ namespace neam
       {
         public: // advanced
         public:
+          pipeline_layout(device& _dev, VkPipelineLayout _playout) : dev(_dev), vk_playout(_playout) {}
           /// \brief Create an empty pipeline layout
-          pipeline_layout(device &_dev)
+          explicit pipeline_layout(device &_dev)
            : dev(_dev)
           {
             VkPipelineLayoutCreateInfo plci
@@ -102,6 +103,11 @@ namespace neam
         public: // advanced
           /// \brief Return the VkPipelineLayout
           VkPipelineLayout _get_vk_pipeline_layout() const { return vk_playout; }
+
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_playout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, name);
+          }
         private:
           device &dev;
           VkPipelineLayout vk_playout = nullptr;

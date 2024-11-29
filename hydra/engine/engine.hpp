@@ -32,6 +32,7 @@
 #include "vk_context.hpp"
 #include "hydra_context.hpp"
 
+#include <ntools/mt_check/map.hpp>
 #include <hydra/hydra_debug.hpp>
 
 namespace neam::hydra
@@ -161,7 +162,7 @@ namespace neam::hydra
         using vk_context::vk_context;
       };
 
-      std::map<id_t, std::unique_ptr<engine_module_base>> modules;
+      std::mtc_map<id_t, std::unique_ptr<engine_module_base>> modules;
       std::variant<std::monostate, core_context, internal_vk_context, hydra_context> context;
 
       engine_settings_t engine_settings;

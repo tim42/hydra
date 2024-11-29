@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "imgui.hpp"
 #include <ntools/raw_data.hpp>
 #include <ntools/rle/rle.hpp>
 
@@ -34,6 +35,11 @@ namespace neam::hydra::imgui
   /// \brief Generate an imgui UI for a given type
   /// (that type might not necessarily be in the current executable, as long as the metadata is availlable)
   raw_data generate_ui(const raw_data& rd, const rle::serialization_metadata& md);
+
+  inline raw_data generate_ui(const raw_data& rd, const raw_data& md)
+  {
+    return generate_ui(rd, rle::deserialize<rle::serialization_metadata>(md));
+  }
 
   // helpers:
   template<typename Type>
@@ -67,7 +73,7 @@ namespace neam::hydra::imgui
 
     /// \brief Allow the type-helpers to go-back to the standard way to recurse over types
     /// \note This alternative \e will call type-helpers (beware of stack-verflows)
-    void walk_type(const rle::serialization_metadata& md, const rle::type_metadata& type, rle::decoder& dc, payload_arg_t payload);
+    void walk_type(const rle::serialization_metadata& md, const rle::type_metadata& type, const rle::type_reference& type_ref, rle::decoder& dc, payload_arg_t payload);
 
     /// \brief Allow the type-helpers to go-back to the standard way to recurse over types
     /// \note This alternative \e will \e not call type-helpers
@@ -82,6 +88,7 @@ namespace neam::hydra::imgui
     struct type_helper_t
     {
       rle::type_metadata target_type;
+      id_t helper_custom_id = id_t::none;
       walk_type_fnc_t walk_type = walk_type_generic;
       get_type_name_fnc_t type_name = nullptr;
     };
@@ -92,11 +99,13 @@ namespace neam::hydra::imgui
       on_type_raw_fnc_t on_type_raw = nullptr;
     };
 
-    /// \brief Add a new to-string helper.
+    /// \brief Add a new helper.
     void add_generic_ui_type_helper(const type_helper_t& h);
+    void remove_generic_ui_type_helper(walk_type_fnc_t fnc);
 
-    /// \brief Add a new to-string raw-type helper.
+    /// \brief Add a new raw-type helper.
     void add_generic_ui_raw_type_helper(const raw_type_helper_t& h);
+    void remove_generic_ui_raw_type_helper(rle::type_hash_t target_type);
 
     /// \brief inherit from this class and:
     ///  - define walk_type (signature of walk_type_fnc_t, as static)
@@ -107,18 +116,30 @@ namespace neam::hydra::imgui
     template<typename Child>
     class auto_register_generic_ui_type_helper
     {
+      public:
+        static constexpr id_t get_custom_helper_id() { return id_t::none; }
+
       private:
         static void register_child()
         {
           add_generic_ui_type_helper(
             {
               Child::get_type_metadata(),
+              Child::get_custom_helper_id(),
               &Child::walk_type,
               Child::get_type_name,
             });
         }
-        static inline int _reg = [] { register_child(); return 0; } ();
-        static_assert(&_reg == &_reg);
+        static void unregister_child()
+        {
+          remove_generic_ui_type_helper(&Child::walk_type);
+        }
+        static inline struct raii_register
+        {
+          raii_register() { register_child(); }
+          ~raii_register() { unregister_child(); }
+        } _registerer;
+        static_assert(&_registerer == &_registerer);
       public:
         static constexpr get_type_name_fnc_t get_type_name = nullptr;
     };
@@ -135,8 +156,16 @@ namespace neam::hydra::imgui
               &Child::on_type_raw,
             });
         }
-        static inline int _reg = [] { register_child(); return 0; } ();
-        static_assert(&_reg == &_reg);
+        static void unregister_child()
+        {
+          remove_generic_ui_raw_type_helper(Child::get_type_hash());
+        }
+        static inline struct raii_register
+        {
+          raii_register() { register_child(); }
+          ~raii_register() { unregister_child(); }
+        } _registerer;
+        static_assert(&_registerer == &_registerer);
     };
   }
 

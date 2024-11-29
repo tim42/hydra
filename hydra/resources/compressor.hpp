@@ -29,19 +29,81 @@
 #include <ntools/raw_data.hpp>
 #include <ntools/async/chain.hpp>
 #include <ntools/threading/task_manager.hpp>
+#include <ntools/threading/utilities/rate_limit.hpp>
 
 namespace neam::resources
 {
-  /// \brief Compress the data, result may be asynchronous / delegated to another thread
+  /// \brief Compress a raw_data into a something that uncompress can inflate
   /// \note the result is not a valid XZ stream, but instead can only be decoded with uncompress
-  async::chain<raw_data> compress(raw_data&& in, threading::task_manager* tm = nullptr, threading::group_t group = threading::k_invalid_task_group);
+  raw_data compress(raw_data&& in);
 
-  /// \brief uncompress the data, result may be asynchronous / delegated to another thread
-  /// \note the input is not a valid XZ stream, but instead something that compress produced
-  async::chain<raw_data> uncompress(raw_data&& in, threading::task_manager* tm = nullptr, threading::group_t group = threading::k_invalid_task_group);
+  /// \brief uncompress data that were produced by compress
+  /// \note the input must not be a valid XZ stream, but instead something that compress produced
+  raw_data uncompress(raw_data&& in);
 
-  /// \brief uncompress the data, result may be asynchronous / delegated to another thread
+  /// \brief uncompress data
   /// \note this version only takes valid XZ data stream
-  async::chain<raw_data> uncompress_raw_xz(raw_data&& in, threading::task_manager* tm = nullptr, threading::group_t group = threading::k_invalid_task_group);
+  raw_data uncompress_raw_xz(raw_data&& in);
+
+
+  // versions using a task manager:
+
+  inline async::chain<raw_data> compress(raw_data&& in, threading::task_manager& tm, threading::group_t group)
+  {
+    async::chain<raw_data> ret;
+    tm.get_task(group, [in = std::move(in), state = ret.create_state()] () mutable
+    {
+      state.complete(compress(std::move(in)));
+    });
+    return ret;
+  }
+  inline async::chain<raw_data> uncompress(raw_data&& in, threading::task_manager& tm, threading::group_t group)
+  {
+    async::chain<raw_data> ret;
+    tm.get_task(group, [in = std::move(in), state = ret.create_state()] () mutable
+    {
+      state.complete(uncompress(std::move(in)));
+    });
+    return ret;
+  }
+  inline async::chain<raw_data> uncompress_raw_xz(raw_data&& in, threading::task_manager& tm, threading::group_t group)
+  {
+    async::chain<raw_data> ret;
+    tm.get_task(group, [in = std::move(in), state = ret.create_state()] () mutable
+    {
+      state.complete(uncompress_raw_xz(std::move(in)));
+    });
+    return ret;
+  }
+
+  // versions using a rate limiter:
+
+  inline async::chain<raw_data> compress(raw_data&& in, threading::rate_limiter& rl, threading::group_t group, bool high_priority = false)
+  {
+    async::chain<raw_data> ret;
+    rl.dispatch(group, [in = std::move(in), state = ret.create_state()] () mutable
+    {
+      state.complete(compress(std::move(in)));
+    }, high_priority);
+    return ret;
+  }
+  inline async::chain<raw_data> uncompress(raw_data&& in, threading::rate_limiter& rl, threading::group_t group, bool high_priority = false)
+  {
+    async::chain<raw_data> ret;
+    rl.dispatch(group, [in = std::move(in), state = ret.create_state()] () mutable
+    {
+      state.complete(uncompress(std::move(in)));
+    }, high_priority);
+    return ret;
+  }
+  inline async::chain<raw_data> uncompress_raw_xz(raw_data&& in, threading::rate_limiter& rl, threading::group_t group, bool high_priority = false)
+  {
+    async::chain<raw_data> ret;
+    rl.dispatch(group, [in = std::move(in), state = ret.create_state()] () mutable
+    {
+      state.complete(uncompress_raw_xz(std::move(in)));
+    }, high_priority);
+    return ret;
+  }
 }
 

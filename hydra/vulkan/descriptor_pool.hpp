@@ -31,6 +31,7 @@
 
 
 #include <vulkan/vulkan.h>
+#include <ntools/mt_check/mt_check_base.hpp>
 
 #include "../hydra_debug.hpp"
 #include "device.hpp"
@@ -45,7 +46,7 @@ namespace neam
     namespace vk
     {
       /// \brief Wraps a VkDescriptorPool
-      class descriptor_pool
+      class descriptor_pool : public cr::mt_checked<descriptor_pool>
       {
         public: // advanced
           descriptor_pool(device &_dev, const VkDescriptorPoolCreateInfo &create_info)
@@ -70,6 +71,8 @@ namespace neam
           descriptor_pool(descriptor_pool &&o) : dev(o.dev), vk_dpool(o.vk_dpool) { o.vk_dpool = nullptr; }
           descriptor_pool& operator = (descriptor_pool &&o)
           {
+            N_MTC_WRITER_SCOPE_OBJ(o);
+            N_MTC_WRITER_SCOPE;
             if (&o == this)
               return *this;
 
@@ -92,6 +95,7 @@ namespace neam
           void reset()
           {
             std::lock_guard _l(pool_lock);
+            N_MTC_WRITER_SCOPE;
             check::on_vulkan_error::n_assert_success(dev._vkResetDescriptorPool(vk_dpool, 0));
           }
 
@@ -111,6 +115,7 @@ namespace neam
             ds_sets.resize(dsl_vct.size());
             {
               std::lock_guard _l(pool_lock);
+              N_MTC_WRITER_SCOPE;
               check::on_vulkan_error::n_assert_success(dev._vkAllocateDescriptorSets(&ds_allocate, ds_sets.data()));
             }
 
@@ -128,24 +133,38 @@ namespace neam
           }
 
           /// \brief Allocate a new descriptor from to the pool
-          descriptor_set allocate_descriptor_set(const descriptor_set_layout &dsl, bool allow_free = false)
+          std::pair<VkResult, descriptor_set> try_allocate_descriptor_set(const descriptor_set_layout& dsl, bool allow_free = true, uint32_t variable_descriptor_count = ~0u)
           {
             VkDescriptorSetLayout vk_dsl = dsl._get_vk_descriptor_set_layout();
+            VkDescriptorSetVariableDescriptorCountAllocateInfo vdc_info
+            {
+              VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO, nullptr,
+              1, &variable_descriptor_count,
+            };
             VkDescriptorSetAllocateInfo ds_allocate
             {
-              VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, vk_dpool,
-              1, &vk_dsl
+              VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, (variable_descriptor_count != ~0u ? &vdc_info : nullptr),
+              vk_dpool, 1, &vk_dsl
             };
             VkDescriptorSet rset;
             {
               std::lock_guard _l(pool_lock);
-              check::on_vulkan_error::n_assert_success(dev._vkAllocateDescriptorSets(&ds_allocate, &rset));
+              N_MTC_WRITER_SCOPE;
+              const VkResult ret = dev._vkAllocateDescriptorSets(&ds_allocate, &rset);
+              if (ret != VK_SUCCESS)
+                return { ret, descriptor_set(dev, nullptr) };
             }
 
             if (allow_free)
-              return descriptor_set(dev, this, rset);
+              return { VK_SUCCESS, descriptor_set(dev, this, rset) };
             else
-              return descriptor_set(dev, rset);
+              return { VK_SUCCESS, descriptor_set(dev, rset) };
+          }
+          descriptor_set allocate_descriptor_set(const descriptor_set_layout& dsl, bool allow_free = true, uint32_t variable_descriptor_count = ~0u)
+          {
+            auto[ret, ds] = try_allocate_descriptor_set(dsl, allow_free, variable_descriptor_count);
+            check::on_vulkan_error::n_assert_success(ret);
+            return std::move(ds);
           }
 
           /// \brief Return a descriptor set to the pool
@@ -154,6 +173,7 @@ namespace neam
             VkDescriptorSet vk_dset = dset._get_vk_descritpor_set();
 
             std::lock_guard _l(pool_lock);
+            N_MTC_WRITER_SCOPE;
             check::on_vulkan_error::n_assert_success(dev._vkFreeDescriptorSets(vk_dpool, 1, &vk_dset));
           }
 
@@ -166,12 +186,20 @@ namespace neam
               vk_dset.push_back(it->_get_vk_descritpor_set());
 
             std::lock_guard _l(pool_lock);
+            N_MTC_WRITER_SCOPE;
             check::on_vulkan_error::n_assert_success(dev._vkFreeDescriptorSets(vk_dpool, vk_dset.size(), vk_dset.data()));
           }
 
         public: // advanced
           /// \brief Return the vulkan descriptor pool
           VkDescriptorPool _get_vk_descriptor_pool() const { return vk_dpool; }
+
+          void _set_debug_name(const std::string& name)
+          {
+            N_MTC_WRITER_SCOPE;
+            dev._set_object_debug_name((uint64_t)vk_dpool, VK_OBJECT_TYPE_DESCRIPTOR_POOL, name);
+          }
+
         private:
           device &dev;
           VkDescriptorPool vk_dpool;

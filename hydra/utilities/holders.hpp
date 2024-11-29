@@ -30,7 +30,6 @@
 #include <hydra/vulkan/image.hpp>
 #include <hydra/vulkan/image_view.hpp>
 #include <hydra/utilities/memory_allocator.hpp>
-#include <hydra/engine/hydra_context.hpp>
 
 namespace neam::hydra
 {
@@ -45,6 +44,11 @@ namespace neam::hydra
     {
       buffer.bind_memory(*allocation.mem(), allocation.offset());
     }
+    buffer_holder(memory_allocation&& _allocation, vk::buffer&& _buffer)
+      : buffer(std::move(_buffer))
+      , allocation(std::move(_allocation))
+    {
+    }
     buffer_holder(buffer_holder&&) = default;
     buffer_holder& operator = (buffer_holder&&) = default;
   };
@@ -55,10 +59,10 @@ namespace neam::hydra
     memory_allocation allocation;
     vk::image_view view;
 
-    image_holder(hydra_context& context, vk::image&& _image, neam::hydra::allocation_type at = neam::hydra::allocation_type::persistent_optimal_image, VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D)
+    image_holder(memory_allocator& allocator, vk::device& dev, vk::image&& _image, neam::hydra::allocation_type at = neam::hydra::allocation_type::persistent_optimal_image, VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D)
       : image(std::move(_image))
-      , allocation(get_allocation(context.allocator, at))
-      , view(context.device, image, view_type)
+      , allocation(get_allocation(allocator, at))
+      , view(dev, image, view_type)
     {
     }
     image_holder(image_holder&&) = default;

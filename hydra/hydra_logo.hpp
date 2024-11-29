@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_200324051639512063_182864571_HYDRA_LOGO_HPP__
-#define __N_200324051639512063_182864571_HYDRA_LOGO_HPP__
+#pragma once
+
 
 #include <cstdint>  // uint*
 #include <cstddef>  // size_t
@@ -91,5 +91,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_200324051639512063_182864571_HYDRA_LOGO_HPP__
+
 

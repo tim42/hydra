@@ -30,6 +30,7 @@
 
 #include <ntools/enum.hpp>
 #include <ntools/type_id.hpp>
+#include <ntools/id/id.hpp>
 
 namespace neam::threading
 {
@@ -44,7 +45,7 @@ namespace neam::hydra
   class gen_feature_requester;
 
   class core_context;
-  class vk_context;
+  struct vk_context;
   struct hydra_context;
   class engine_t;
 
@@ -109,11 +110,12 @@ namespace neam::hydra
     };
 
     /// \brief Register a module
-    /// Might have adverse consequences if done during/after the initialization
+    /// Can be safely called at any time
     void register_module(create_func_t create, filter_func_t filter, const std::string& name);
 
     /// \brief Unregister a module
-    /// Might have adverse consequences if done during/after the initialization
+    /// Can be safely called at any time
+    /// \note Existing instances of modules will still be kept alive until engine shutdown
     void unregister_module(const std::string& name);
 
     /// \brief Filter modules for a given mode.
@@ -140,7 +142,6 @@ namespace neam::hydra
 
       /// \brief Set the core context
       void set_core_context(core_context* _cctx) { cctx = _cctx; }
-
 
     public: // init (core)
       /// \brief Called right before the boot step of the engine.
@@ -189,6 +190,11 @@ namespace neam::hydra
     public: // shutdown:
       /// \brief Called before the task manager is stopping
       virtual void on_start_shutdown() {}
+
+      /// \brief Called right after the gpu is idle and everything has been flushed
+      /// (synchronous/immediate object destruction is OK)
+      virtual void on_shutdown_post_idle_gpu() {}
+
       /// \brief Called after the task manager has stopped (no task allowed), and after the vulkan device is idle.
       /// The place to destroy any vulkan resources
       virtual void on_shutdown() {}
@@ -215,11 +221,19 @@ namespace neam::hydra
         module_manager::register_module([]{ return std::unique_ptr<engine_module_base>(new Mod); }, &Mod::is_compatible_with, Mod::module_name);
       }
 
-      static inline int _reg_placeholder_ = []
+      static void unregister_module()
       {
-        register_module();
-        return 0; // so it's placed in .bss
-      }();
+        module_manager::unregister_module(Mod::module_name);
+      }
+
+      struct raii_register
+      {
+        raii_register() { register_module(); }
+        ~raii_register() { unregister_module(); }
+      };
+
+      static inline raii_register _reg_placeholder_ {};
+
       // force _reg_placeholder_ to be kept and be initialized
       static_assert(&_reg_placeholder_ == &_reg_placeholder_);
   };

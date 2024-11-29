@@ -30,7 +30,10 @@
 #pragma once
 
 
+#include <ntools/mt_check/map.hpp>
+#include <ntools/mt_check/vector.hpp>
 #include <vulkan/vulkan.h>
+#include <assets/spirv.hpp>
 
 #include "device.hpp"
 
@@ -45,15 +48,15 @@ namespace neam
       {
         public: // advanced
           /// \brief Construct from a VkShaderModuleCreateInfo
-          shader_module(device &_dev, const VkShaderModuleCreateInfo &create_info, std::string _entry_point)
-           : dev(_dev), entry_point(std::move(_entry_point))
+          shader_module(device &_dev, const VkShaderModuleCreateInfo &create_info, uint32_t _stage, std::string _entry_point)
+           : dev(_dev), entry_point(std::move(_entry_point)), stage(_stage)
           {
             check::on_vulkan_error::n_assert_success(dev._vkCreateShaderModule(&create_info, nullptr, &vk_shader_module));
           }
 
           /// \brief Construct from a VkShaderModule
-          shader_module(device &_dev, VkShaderModule _vk_shader_module, std::string _entry_point)
-           : dev(_dev), vk_shader_module(_vk_shader_module), entry_point(std::move(_entry_point))
+          shader_module(device &_dev, VkShaderModule _vk_shader_module, uint32_t _stage, std::string _entry_point)
+           : dev(_dev), vk_shader_module(_vk_shader_module), entry_point(std::move(_entry_point)), stage(_stage)
           {
           }
 
@@ -61,7 +64,7 @@ namespace neam
           /// \brief Construct the shader module from a spirv buffer
           /// There's some "rules" about the spirv_data parameter to obey, see
           ///   https://www.khronos.org/registry/vulkan/specs/1.0/man/html/VkShaderModuleCreateInfo.html
-          shader_module(device &_dev, const uint32_t *spirv_data, size_t data_length, std::string _entry_point)
+          shader_module(device &_dev, const uint32_t *spirv_data, size_t data_length, uint32_t _stage, std::string _entry_point)
            : shader_module(_dev, VkShaderModuleCreateInfo
              {
                VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -69,14 +72,17 @@ namespace neam
                0,
                data_length,
                spirv_data
-             }, std::move(_entry_point))
+             }, _stage, std::move(_entry_point))
           {
           }
 
           /// \brief Move constructor
           shader_module(shader_module &&o)
-           : dev(o.dev), vk_shader_module(o.vk_shader_module),
-              entry_point(std::move(o.entry_point)), constant_id(std::move(o.constant_id))
+           : dev(o.dev), vk_shader_module(o.vk_shader_module), entry_point(std::move(o.entry_point)),
+              stage(o.stage), constant_id(std::move(o.constant_id)),
+              push_constant_entries(std::move(o.push_constant_entries)),
+              push_constant_ranges(std::move(o.push_constant_ranges)),
+              descriptor_set(std::move(o.descriptor_set))
           {
             o.vk_shader_module = nullptr;
           }
@@ -91,8 +97,12 @@ namespace neam
               dev._vkDestroyShaderModule(vk_shader_module, nullptr);
             vk_shader_module = o.vk_shader_module;
             o.vk_shader_module = nullptr;
+            stage = o.stage;
             entry_point = std::move(o.entry_point);
             constant_id = std::move(o.constant_id);
+            push_constant_entries = std::move(o.push_constant_entries);
+            push_constant_ranges = std::move(o.push_constant_ranges);
+            descriptor_set = std::move(o.descriptor_set);
             return *this;
           }
 
@@ -115,15 +125,35 @@ namespace neam
             return vk_shader_module;
           }
 
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_shader_module, VK_OBJECT_TYPE_SHADER_MODULE, name);
+          }
+
           auto& _get_constant_id_map() { return constant_id; }
           const auto& _get_constant_id_map() const { return constant_id; }
 
+          auto& get_push_constant_entries() { return push_constant_entries; }
+          const auto& get_push_constant_entries() const { return push_constant_entries; }
+
+          auto& get_push_constant_ranges() { return push_constant_ranges; }
+          const auto& get_push_constant_ranges() const { return push_constant_ranges; }
+
+          auto& get_descriptor_sets() { return descriptor_set; }
+          const auto& get_descriptor_sets() const { return descriptor_set; }
+
+          VkShaderStageFlagBits get_stage() const { return (VkShaderStageFlagBits)stage; }
         private:
           device &dev;
           VkShaderModule vk_shader_module;
           std::string entry_point = "main";
 
-          std::map<id_t, uint32_t> constant_id;
+          uint32_t stage;
+
+          std::mtc_map<id_t, uint32_t> constant_id;
+          std::mtc_map<id_t, assets::push_constant_entry> push_constant_entries;
+          std::mtc_vector<assets::push_constant_range> push_constant_ranges;
+          std::mtc_vector<assets::descriptor_set_entry> descriptor_set;
       };
     } // namespace vk
   } // namespace hydra

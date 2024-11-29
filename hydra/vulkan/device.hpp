@@ -33,7 +33,6 @@
 #include <string.h>
 #include <string>
 #include <map>
-#include <ntools/source_location.hpp>
 #include <ntools/fmt_utils.hpp>
 
 #include <vulkan/vulkan.h>
@@ -58,7 +57,7 @@ namespace neam
           /// \brief You shouldn't have to call this directly, but instead you should
           /// ask the hydra_device_creator class a new device
           device(instance& _instance, VkDevice _vk_device, const physical_device &_phys_dev,
-                 std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>>&& _id_to_familly_queue)
+                 std::map<temp_queue_familly_id_t, std::pair<uint32_t, uint32_t>>&& _id_to_familly_queue)
           : vk_instance(_instance), vk_device(_vk_device), phys_dev(_phys_dev), id_to_familly_queue(std::move(_id_to_familly_queue))
           {
             _load_functions();
@@ -110,7 +109,7 @@ namespace neam
           }
 
           /// \brief Convert a temp_queue_familly_id_t into a queue_desc
-          std::pair<size_t, size_t> _get_queue_info(temp_queue_familly_id_t temp_id)
+          std::pair<uint32_t, uint32_t> _get_queue_info(temp_queue_familly_id_t temp_id)
           {
             auto it = id_to_familly_queue.find(temp_id);
 
@@ -140,7 +139,7 @@ namespace neam
           instance& vk_instance;
           VkDevice vk_device;
           physical_device phys_dev;
-          std::map<temp_queue_familly_id_t, std::pair<size_t, size_t>> id_to_familly_queue;
+          std::map<temp_queue_familly_id_t, std::pair<uint32_t, uint32_t>> id_to_familly_queue;
 
           // /////////////////////////////////////////////////////////////////////
           // /// DIRECT VULKAN WRAPPER /// //
@@ -294,7 +293,27 @@ namespace neam
             HYDRA_LOAD_FNC(vkCmdBeginRendering);
             HYDRA_LOAD_FNC(vkCmdEndRendering);
 
+#define     HYDRA_LOAD_FNC_UNSAFE(fnc)   _fn_##fnc = (PFN_##fnc)_get_proc_addr_unsafe(#fnc)
+
+            // Debug markers / ...
+            HYDRA_LOAD_FNC_UNSAFE(vkQueueBeginDebugUtilsLabelEXT);
+            HYDRA_LOAD_FNC_UNSAFE(vkQueueEndDebugUtilsLabelEXT);
+            HYDRA_LOAD_FNC_UNSAFE(vkQueueInsertDebugUtilsLabelEXT);
+
+            HYDRA_LOAD_FNC_UNSAFE(vkCmdBeginDebugUtilsLabelEXT);
+            HYDRA_LOAD_FNC_UNSAFE(vkCmdEndDebugUtilsLabelEXT);
+            HYDRA_LOAD_FNC_UNSAFE(vkCmdInsertDebugUtilsLabelEXT);
+
+            // Debug names / tags
+            HYDRA_LOAD_FNC_UNSAFE(vkSetDebugUtilsObjectNameEXT);
+            HYDRA_LOAD_FNC_UNSAFE(vkSetDebugUtilsObjectTagEXT);
+
+            HYDRA_LOAD_FNC_UNSAFE(vkCreateDebugUtilsMessengerEXT);
+            HYDRA_LOAD_FNC_UNSAFE(vkDestroyDebugUtilsMessengerEXT);
+            HYDRA_LOAD_FNC_UNSAFE(vkSubmitDebugUtilsMessageEXT);
+
 #undef      HYDRA_LOAD_FNC
+#undef      HYDRA_LOAD_FNC_UNSAFE
           }
 
         private:
@@ -438,6 +457,39 @@ namespace neam
 
           HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBeginRendering);
           HYDRA_VK_DEV_FNC_WRAPPER(vkCmdEndRendering);
+
+          // extensions:
+#undef    HYDRA_VK_DEV_FNC_WRAPPER
+#define   HYDRA_VK_DEV_FNC_WRAPPER(fnc)     template<typename... FncParams> inline auto _##fnc(FncParams... params) { \
+            return _fn_##fnc##EXT(vk_device, std::forward<FncParams>(params)...); \
+          } \
+          bool _has_##fnc() const { return _fn_##fnc##EXT != nullptr; }
+
+          HYDRA_VK_DEV_FNC_WRAPPER(vkSetDebugUtilsObjectName);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkSetDebugUtilsObjectTag);
+
+#undef HYDRA_VK_DEV_FNC_WRAPPER
+#define   HYDRA_VK_DEV_FNC_WRAPPER(fnc)     template<typename... FncParams> inline auto _##fnc(FncParams... params) const { \
+            _get_current_vk_call_str() = fmt::format("{}({})", #fnc, std::tuple<FncParams...>{params...});\
+            _log_current_fnc();\
+            return _fn_##fnc##EXT(std::forward<FncParams>(params)...); \
+          } \
+          bool _has_##fnc() const { return _fn_##fnc##EXT != nullptr; }
+
+          HYDRA_VK_DEV_FNC_WRAPPER(vkQueueBeginDebugUtilsLabel);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkQueueEndDebugUtilsLabel);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkQueueInsertDebugUtilsLabel);
+
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBeginDebugUtilsLabel);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdEndDebugUtilsLabel);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdInsertDebugUtilsLabel);
+
+          // Debug names / tags
+
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCreateDebugUtilsMessenger);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkDestroyDebugUtilsMessenger);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkSubmitDebugUtilsMessage);
+
 #undef    HYDRA_VK_DEV_FNC_WRAPPER
         public:
 #define   HYDRA_DECLARE_VK_FNC(fnc)   PFN_##fnc _fn_##fnc
@@ -569,6 +621,25 @@ namespace neam
 
           HYDRA_DECLARE_VK_FNC(vkCmdBeginRendering);
           HYDRA_DECLARE_VK_FNC(vkCmdEndRendering);
+
+
+
+          HYDRA_DECLARE_VK_FNC(vkQueueBeginDebugUtilsLabelEXT);
+          HYDRA_DECLARE_VK_FNC(vkQueueEndDebugUtilsLabelEXT);
+          HYDRA_DECLARE_VK_FNC(vkQueueInsertDebugUtilsLabelEXT);
+
+          HYDRA_DECLARE_VK_FNC(vkCmdBeginDebugUtilsLabelEXT);
+          HYDRA_DECLARE_VK_FNC(vkCmdEndDebugUtilsLabelEXT);
+          HYDRA_DECLARE_VK_FNC(vkCmdInsertDebugUtilsLabelEXT);
+
+          // Debug names / tags
+          HYDRA_DECLARE_VK_FNC(vkSetDebugUtilsObjectNameEXT);
+          HYDRA_DECLARE_VK_FNC(vkSetDebugUtilsObjectTagEXT);
+
+          HYDRA_DECLARE_VK_FNC(vkCreateDebugUtilsMessengerEXT);
+          HYDRA_DECLARE_VK_FNC(vkDestroyDebugUtilsMessengerEXT);
+          HYDRA_DECLARE_VK_FNC(vkSubmitDebugUtilsMessageEXT);
+
 #undef    HYDRA_DECLARE_VK_FNC
         private:
           PFN_vkVoidFunction _end_offset;
@@ -586,6 +657,27 @@ namespace neam
           {
             thread_local std::string str;
             return str;
+          }
+
+          void _set_object_debug_name(uint64_t object, VkObjectType type, const std::string& name)
+          {
+            if (!_has_vkSetDebugUtilsObjectName()) return;
+            VkDebugUtilsObjectNameInfoEXT name_info
+            {
+              .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+              .pNext = nullptr,
+              .objectType = type,
+              .objectHandle = object,
+              .pObjectName = name.c_str(),
+            };
+            check::on_vulkan_error::n_assert_success(
+              _vkSetDebugUtilsObjectName(&name_info)
+            );
+          }
+
+          void _set_debug_name(const std::string& name)
+          {
+            _set_object_debug_name((uint64_t)vk_device, VK_OBJECT_TYPE_DEVICE, name);
           }
       };
     } // namespace vk

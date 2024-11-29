@@ -27,14 +27,15 @@
 // SOFTWARE.
 //
 
-#ifndef __N_280417525975030333_2706815295_IMAGE_LOADER_HPP__
-#define __N_280417525975030333_2706815295_IMAGE_LOADER_HPP__
+#pragma once
+
 
 #include <cstdint>
 #include <string>
 
 #include <vulkan/vulkan.h> // for image type
-#include <glm/glm.hpp> // for uvec2
+#include <hydra_glm.hpp>
+ // for uvec2
 
 namespace neam
 {
@@ -53,5 +54,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_280417525975030333_2706815295_IMAGE_LOADER_HPP__
+
 

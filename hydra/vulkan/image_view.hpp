@@ -116,6 +116,7 @@ namespace neam
 
             vk_image_view = o.vk_image_view;
             view_create_info = o.view_create_info;
+            o.vk_image_view = nullptr;
             return *this;
           }
 
@@ -134,6 +135,11 @@ namespace neam
           VkImageView get_vk_image_view() const
           {
             return vk_image_view;
+          }
+
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_image_view, VK_OBJECT_TYPE_IMAGE_VIEW, name);
           }
 
         private:

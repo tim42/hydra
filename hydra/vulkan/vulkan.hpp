@@ -58,8 +58,6 @@
 #include "surface.hpp"
 #include "swapchain.hpp"
 
-#include "shader_loaders/spirv_loader.hpp"
-
 namespace neam
 {
   namespace hydra

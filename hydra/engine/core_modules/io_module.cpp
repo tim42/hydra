@@ -53,12 +53,14 @@ namespace neam::hydra
 
       void on_context_initialized() override
       {
+        // cctx->io.force_deferred_execution(&cctx->tm, threading::k_non_transient_task_group);
         cctx->tm.set_start_task_group_callback("io"_rid, [this]
         {
           // we process io in a separate task so as to dispatch io tasks as early as possible
           // while we process io stuff
           // (if we did do the process in the start callback, the dispatched tasks would only run after process() returned)
-          cctx->tm.get_task([this]
+          // cctx->tm.get_task([this]
+          cctx->tm.get_long_duration_task([this]
           {
             TRACY_SCOPED_ZONE;
             if (wait_for_submit_queries)

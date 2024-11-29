@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_16009239742501814934_182762242_HYDRA_REFLECTIVE_HPP__
-#define __N_16009239742501814934_182762242_HYDRA_REFLECTIVE_HPP__
+#pragma once
+
 
 //
 // Hydra will only monitor things with reflective if you included the reflective
@@ -74,5 +74,5 @@
 #define NHR_MEASURE_POINT(mpn)          /* :) */
 #endif
 
-#endif // __N_16009239742501814934_182762242_HYDRA_REFLECTIVE_HPP__
+
 

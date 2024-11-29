@@ -30,8 +30,11 @@
 #pragma once
 
 
+#include <unordered_map>
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+#include <ntools/mt_check/mt_check_base.hpp>
+
 
 #include "../hydra_debug.hpp"
 
@@ -58,38 +61,88 @@ namespace neam
     namespace vk
     {
       /// \brief Wraps a VkPipeline object
-      class pipeline
+      class pipeline : public cr::mt_checked<pipeline>
       {
         public: // advanced
           /// \brief Construct the pipeline from a vulkan object
-          pipeline(device &_dev, VkPipeline _pipeline) : dev(_dev), vk_pipeline(_pipeline) {}
+          pipeline(device &_dev, VkPipeline _pipeline, VkPipelineBindPoint _bind_point) : dev(_dev), vk_pipeline(_pipeline), bind_point(_bind_point) {}
         public:
-          pipeline(pipeline &&o) : dev(o.dev), vk_pipeline(o.vk_pipeline) { o.vk_pipeline = nullptr; }
-          pipeline &operator = (pipeline &&o)
+          pipeline(pipeline &&o)
+            : dev(o.dev), vk_pipeline(o.vk_pipeline), bind_point(o.bind_point), pipeline_id(o.pipeline_id)
+            , cpp_struct_to_set(std::move(o.cpp_struct_to_set))
           {
+            o.vk_pipeline = nullptr;
+          }
+          pipeline& operator = (pipeline&& o)
+          {
+            N_MTC_WRITER_SCOPE;
+            N_MTC_WRITER_SCOPE_OBJ(o);
             check::on_vulkan_error::n_assert(&o.dev == &dev, "can't assign pipelines with different vulkan devices");
             if (vk_pipeline)
               dev._vkDestroyPipeline(vk_pipeline, nullptr);
 
             vk_pipeline = o.vk_pipeline;
             o.vk_pipeline = nullptr;
+            bind_point = o.bind_point;
+            pipeline_id = o.pipeline_id;
+            cpp_struct_to_set = std::move(o.cpp_struct_to_set);
             return *this;
           }
 
           ~pipeline()
           {
+            N_MTC_WRITER_SCOPE;
             if (vk_pipeline)
               dev._vkDestroyPipeline(vk_pipeline, nullptr);
           }
 
-          bool is_valid() const { return vk_pipeline != nullptr; }
+          bool is_valid() const { N_MTC_READER_SCOPE; return vk_pipeline != nullptr; }
+
+          void _set_debug_name(const std::string& name)
+          {
+            N_MTC_WRITER_SCOPE;
+            dev._set_object_debug_name((uint64_t)vk_pipeline, VK_OBJECT_TYPE_PIPELINE, name);
+          }
+
+        public:
+          uint32_t get_set_for_struct(id_t struct_id) const
+          {
+            N_MTC_READER_SCOPE;
+            if (auto it = cpp_struct_to_set.find(struct_id); it != cpp_struct_to_set.end())
+              return it->second;
+            return ~0u;
+          }
+          string_id get_pipeline_id() const { N_MTC_READER_SCOPE; return pipeline_id; }
 
         public: // advanced
           /// \brief Return the VkPipeline
-          VkPipeline get_vk_pipeline() const { return vk_pipeline; }
+          VkPipeline get_vk_pipeline() const
+          {
+            N_MTC_READER_SCOPE;
+            return vk_pipeline;
+          }
+          VkPipelineBindPoint get_pipeline_bind_point() const
+          {
+            N_MTC_READER_SCOPE;
+            return bind_point;
+          }
+
+          void _set_cpp_struct_to_set(std::unordered_map<id_t, uint32_t> map)
+          {
+            N_MTC_WRITER_SCOPE;
+            cpp_struct_to_set = std::move(map);
+          }
+          void _set_pipeline_id(string_id pid)
+          {
+            N_MTC_WRITER_SCOPE;
+            pipeline_id = pid;
+          }
         private:
           device &dev;
           VkPipeline vk_pipeline;
+          VkPipelineBindPoint bind_point;
+          string_id pipeline_id;
+          std::unordered_map<id_t, uint32_t> cpp_struct_to_set;
       };
 
       /// \brief A pipeline creator object. It creates pipelines.
@@ -213,10 +266,10 @@ namespace neam
             if (!pss.is_valid())
             {
               if (!pss.has_async_operations_in_process())
-                neam::cr::out().error("hydra::graphics_pipeline_creator: Trying to create a pipeline with invalid shader stages");
+                neam::cr::out().error("hydra::graphics_pipeline_creator: Trying to create a graphic pipeline with invalid shader stages");
               else
                 neam::cr::out().debug("hydra::graphics_pipeline_creator: Waiting for async operation to finish (yielding empty pipeline)");
-              return pipeline(dev, nullptr);
+              return pipeline(dev, nullptr, VK_PIPELINE_BIND_POINT_GRAPHICS);
             }
 
             // update the create_info
@@ -247,6 +300,8 @@ namespace neam
             check::on_vulkan_error::n_assert(layout != nullptr, "could not create a pipeline without a valid layout");
 
             create_info.layout = layout->_get_vk_pipeline_layout();
+            check::on_vulkan_error::n_assert(create_info.layout != nullptr, "could not create a pipeline without a valid layout");
+
             if (rp != nullptr)
             {
               create_info.pNext = nullptr;
@@ -269,15 +324,20 @@ namespace neam
               pcache = cache->get_vk_pipeline_cache();
             check::on_vulkan_error::n_assert_success(dev._vkCreateGraphicsPipelines(pcache, 1, &create_info, nullptr, &p));
 
-            return pipeline(dev, p);
+            return pipeline(dev, p, VK_PIPELINE_BIND_POINT_GRAPHICS);
           }
 
           bool is_dirty() const { return dirty; }
           void set_dirty(bool _is_dirty = true) { dirty = _is_dirty; }
 
+          bool is_pss_valid() const { return pss.is_valid(); }
+          bool has_async_operations_in_process() const
+          {
+            return pss.is_valid() && pss.has_async_operations_in_process();
+          }
 
         private:
-          device &dev;
+          device& dev;
           VkGraphicsPipelineCreateInfo create_info = VkGraphicsPipelineCreateInfo
           {
             VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, nullptr, 0,
@@ -293,17 +353,17 @@ namespace neam
           pipeline_viewport_state pvs;
           rasterizer prs;
           pipeline_multisample_state pms;
-          pipeline_multisample_state *ref_pms = nullptr;
+          pipeline_multisample_state* ref_pms = nullptr;
           // TODO: depth & stencil
           pipeline_color_blending pcb;
           pipeline_dynamic_state pds;
 
           pipeline_rendering_create_info prci;
 
-          pipeline_layout *layout = nullptr;
-          const render_pass *rp = nullptr;
+          pipeline_layout* layout = nullptr;
+          const render_pass* rp = nullptr;
 
-          pipeline *base_pipeline = nullptr;
+          pipeline* base_pipeline = nullptr;
           bool dirty = true;
       };
 
@@ -368,10 +428,10 @@ namespace neam
             if (!pss.is_valid())
             {
               if (!pss.has_async_operations_in_process())
-                neam::cr::out().error("hydra::graphics_pipeline_creator: Trying to create a pipeline with invalid shader stages");
+                neam::cr::out().error("hydra::compute_pipeline_creator: Trying to create a compute pipeline with invalid shader stages");
               else
-                neam::cr::out().debug("hydra::graphics_pipeline_creator: Waiting for async operation to finish (yielding empty pipeline)");
-              return pipeline(dev, nullptr);
+                neam::cr::out().debug("hydra::compute_pipeline_creator: Waiting for async operation to finish (yielding empty pipeline)");
+              return pipeline(dev, nullptr, VK_PIPELINE_BIND_POINT_COMPUTE);
             }
 
             // update the create_info
@@ -394,12 +454,17 @@ namespace neam
               pcache = cache->get_vk_pipeline_cache();
             check::on_vulkan_error::n_assert_success(dev._vkCreateComputePipelines(pcache, 1, &create_info, nullptr, &p));
 
-            return pipeline(dev, p);
+            return pipeline(dev, p, VK_PIPELINE_BIND_POINT_COMPUTE);
           }
 
           bool is_dirty() const { return dirty; }
           void set_dirty(bool _is_dirty = true) { dirty = _is_dirty; }
 
+          bool is_pss_valid() const { return pss.is_valid(); }
+          bool has_async_operations_in_process() const
+          {
+            return pss.is_valid() && pss.has_async_operations_in_process();
+          }
 
         private:
           device &dev;
@@ -410,9 +475,9 @@ namespace neam
 
           pipeline_shader_stage pss;
 
-          pipeline_layout *layout = nullptr;
+          pipeline_layout* layout = nullptr;
 
-          pipeline *base_pipeline = nullptr;
+          pipeline* base_pipeline = nullptr;
           bool dirty = true;
       };
 

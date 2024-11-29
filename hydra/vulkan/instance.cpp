@@ -140,10 +140,20 @@ namespace neam::hydra::vk
     }
 
 
-    if (validation_state == internal::validation_state_t::verbose)
+    if (validation_state == internal::validation_state_t::verbose && (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT))
     {
       neam::cr::print_callstack();
     }
+
+    // FIXME: kill the process in case of error, to avoid stacking errors and damaging the driver
+    const std::string_view validation_bug = "validation bug";
+
+    if ((flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) == VK_DEBUG_REPORT_ERROR_BIT_EXT && !std::string_view(msg).contains(validation_bug))
+    {
+      neam::cr::out().critical("Validation errors are fatal. Exiting now.");
+      exit(2);
+    }
+
     return VK_FALSE;
   }
 }

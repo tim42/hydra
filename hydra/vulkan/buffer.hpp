@@ -31,7 +31,8 @@
 
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 #include "../hydra_debug.hpp"
 
@@ -80,7 +81,7 @@ namespace neam
           {
             if (&o == this)
               return *this;
-            check::on_vulkan_error::n_assert(&dev != &o.dev, "could not move-assign a buffer from a different vulkan device");
+            check::on_vulkan_error::n_assert(&dev == &o.dev, "could not move-assign a buffer from a different vulkan device");
 
             if (vk_buffer)
               dev._vkDestroyBuffer(vk_buffer, nullptr);
@@ -117,6 +118,12 @@ namespace neam
         public: // advanced
           /// \brief Return the underlying VkBuffer
           VkBuffer _get_vk_buffer() const { return vk_buffer; }
+
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_buffer, VK_OBJECT_TYPE_BUFFER, name);
+          }
+
         private:
           device &dev;
           VkBuffer vk_buffer;

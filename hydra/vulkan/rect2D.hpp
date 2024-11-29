@@ -31,7 +31,8 @@
 
 
 #include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 namespace neam
 {

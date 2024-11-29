@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <fmt/format.h>
 #include <string>
 #include <imgui.h>
 
@@ -116,5 +117,16 @@ namespace neam::hydra::imgui
       ImGui::EndPopup();
     }
   }
+}
+namespace ImGui
+{
+  /// \brief Same as text, but use fmt::format
+  template<typename... Args>
+  void TextFmt(fmt::format_string<Args...> fmt, Args&&... args)
+  {
+    auto ret = fmt::format(fmt, std::forward<Args>(args)...);
+    ImGui::TextUnformatted(&ret.front(), &ret.back() + 1u);
+  }
+
 }
 

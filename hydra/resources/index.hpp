@@ -28,7 +28,7 @@
 
 #include <cstdint>
 #include <utility>
-#include <unordered_map>
+#include <ntools/mt_check/unordered_map.hpp>
 #include <random>
 
 #include <ntools/logger/logger.hpp>
@@ -247,6 +247,8 @@ namespace neam::resources
 
       static bool check_entry_consistency(const id_t id, const entry& e);
 
+      shared_spinlock& _get_lock() const { return lock; }
+
     public: // de/serialization:
 
       /// \brief Create and populate an index from a set of data
@@ -287,8 +289,8 @@ namespace neam::resources
 
     private:
       id_t index_id = id_t::invalid;
-      std::unordered_map<id_t, entry> db;
-      std::unordered_map<id_t, raw_data> embedded_data;
+      std::mtc_unordered_map<id_t, entry> db;
+      std::mtc_unordered_map<id_t, raw_data> embedded_data;
 
       mutable shared_spinlock lock;
   };

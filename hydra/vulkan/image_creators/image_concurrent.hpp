@@ -1,9 +1,9 @@
 //
-// file : spirv_loader.hpp
-// in : file:///home/tim/projects/hydra/hydra/vulkan/shader_loaders/spirv_loader.hpp
+// file : image_2d.hpp
+// in : file:///home/tim/projects/hydra/hydra/vulkan/image_creators/image_2d.hpp
 //
 // created by : Timothée Feuillet
-// date: Wed Aug 10 2016 14:01:10 GMT+0200 (CEST)
+// date: Sun May 01 2016 11:55:44 GMT+0200 (CEST)
 //
 //
 // Copyright (c) 2016 Timothée Feuillet
@@ -30,11 +30,13 @@
 #pragma once
 
 
-#include <string>
-#include <fstream>
+#include <initializer_list>
+#include <functional>
 
-#include "../shader_module.hpp"
-#include "../../hydra_debug.hpp"
+#include <vulkan/vulkan.h>
+#include <hydra_glm.hpp>
+#include "../queue.hpp"
+
 
 namespace neam
 {
@@ -42,34 +44,29 @@ namespace neam
   {
     namespace vk
     {
-      /// \brief create a shader module from a spirv assembly
-      class spirv_shader
+      /// \brief Image creator for concurrent images
+      class image_concurrent
       {
         public:
-          /// \brief Create a shader module from a SIPRV file
-          static shader_module load_from_file(device &dev, const std::string &filename)
+          image_concurrent(std::initializer_list<std::reference_wrapper<const vk::queue>> queues)
           {
-#ifndef HYDRA_NO_MESSAGES
-            neam::cr::out().log("loading SPIRV shader '{}'...", filename);
-#endif
-            std::ifstream file(filename, std::ios::binary | std::ios::ate);
-
-            if (!check::on_vulkan_error::n_check(file.is_open() && file, "can't load spirv file '{}'", filename))
+            for (const auto& q : queues)
             {
-              return shader_module(dev, nullptr, "main");
+              if (std::find(family_indices.begin(), family_indices.end(), q.get().get_queue_familly_index()) == family_indices.end())
+                family_indices.emplace_back(q.get().get_queue_familly_index());
             }
+          }
+          image_concurrent(const image_concurrent& o) = default;
 
-
-            size_t sz = file.tellg();
-            file.seekg(0);
-
-            std::vector<uint32_t> buffer(sz / sizeof(uint32_t) + 1);
-            file.read((char *)buffer.data(), sz);
-
-            return shader_module(dev, buffer.data(), sz, "main");
+          void update_image_create_info(VkImageCreateInfo &create_info) const
+          {
+            create_info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+            create_info.queueFamilyIndexCount = family_indices.size();
+            create_info.pQueueFamilyIndices = family_indices.data();
           }
 
         private:
+          std::vector<uint32_t> family_indices;
       };
     } // namespace vk
   } // namespace hydra

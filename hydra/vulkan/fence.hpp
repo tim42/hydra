@@ -32,6 +32,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <ntools/mt_check/mt_check_base.hpp>
+
 #include "device.hpp"
 
 namespace neam
@@ -48,7 +50,7 @@ namespace neam
       /// operation to be completed before doing something else)
       ///
       /// There's also some static methods to wait for multiple fences
-      class fence
+      class fence : public cr::mt_checked<fence>
       {
         public: // advanced
           /// \brief Construct a fence from a vulkan fence object
@@ -60,7 +62,12 @@ namespace neam
         public:
           /// \brief Create a new fence
           /// \param create_signaled If true, the fence will be created in the signaled state
-          fence(device &_dev, bool create_signaled = false)
+          fence(device &_dev, bool create_signaled = false, const std::source_location& sloc = std::source_location::current())
+           : fence(_dev, create_signaled, fmt::format("fence: {} : {} [{}]", sloc.file_name(), sloc.line(), sloc.function_name()))
+          {}
+          /// \brief Create a new fence
+          /// \param create_signaled If true, the fence will be created in the signaled state
+          fence(device &_dev, bool create_signaled, const std::string& name)
             : dev(_dev)
           {
             VkFenceCreateInfo fenceInfo;
@@ -68,6 +75,7 @@ namespace neam
             fenceInfo.pNext = NULL;
             fenceInfo.flags = create_signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0;
             check::on_vulkan_error::n_assert_success(dev._vkCreateFence(&fenceInfo, nullptr, &vk_fence));
+            _set_debug_name(name);
           }
 
           /// \brief Move constructor
@@ -77,8 +85,10 @@ namespace neam
             o.vk_fence = nullptr;
           }
 
-          fence& operator = (fence &&o)
+          fence& operator = (fence&& o)
           {
+            N_MTC_WRITER_SCOPE;
+            N_MTC_WRITER_SCOPE_OBJ(o);
             if (&o == this) return *this;
             check::on_vulkan_error::n_assert(&dev == &o.dev, "Invalid move operation");
             if (vk_fence)
@@ -90,6 +100,7 @@ namespace neam
 
           ~fence()
           {
+            N_MTC_WRITER_SCOPE;
             if (vk_fence)
               dev._vkDestroyFence(vk_fence, nullptr);
           }
@@ -98,6 +109,7 @@ namespace neam
           /// \note after the fence has been set in signaled state, you have to reset it
           void wait() const
           {
+            N_MTC_READER_SCOPE;
             VkResult res;
             do
               res = dev._vkWaitForFences(1, &vk_fence, VK_TRUE, 100000000);
@@ -115,6 +127,7 @@ namespace neam
           /// \note after the fence has been set in signaled state, you have to reset it
           bool wait_for(uint64_t nanosecond_timeout) const
           {
+            N_MTC_READER_SCOPE;
             VkResult res;
             res = dev._vkWaitForFences(1, &vk_fence, VK_TRUE, nanosecond_timeout);
             if (res == VK_TIMEOUT)
@@ -128,6 +141,7 @@ namespace neam
           /// \brief Reset the fence to a non-signaled state
           void reset()
           {
+            N_MTC_WRITER_SCOPE;
             VkResult res;
             res = dev._vkResetFences(1, &vk_fence);
 #ifndef HYDRA_DISABLE_OPTIONAL_CHECKS
@@ -139,6 +153,7 @@ namespace neam
           /// \note after the fence has been set in signaled state, you have to reset it
           bool is_signaled() const
           {
+            N_MTC_READER_SCOPE;
             VkResult res;
             res = dev._vkGetFenceStatus(vk_fence);
             if (res == VK_NOT_READY)
@@ -209,6 +224,13 @@ namespace neam
 
         private:
           inline static VkResult forward_result(VkResult res) {return res; }
+
+          void _set_debug_name(const std::string& name)
+          {
+            N_MTC_WRITER_SCOPE;
+            dev._set_object_debug_name((uint64_t)vk_fence, VK_OBJECT_TYPE_FENCE, name);
+          }
+
         private:
           device &dev;
           VkFence vk_fence;

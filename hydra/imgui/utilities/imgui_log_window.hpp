@@ -27,6 +27,7 @@
 #pragma once
 
 #include <imgui.h>
+#include <ntools/mt_check/deque.hpp>
 #include <ntools/logger/logger.hpp>
 
 namespace neam
@@ -36,21 +37,23 @@ namespace neam
   public:
     imgui_log_window()
     {
-      cr::out.register_callback(_stream_callback, this);
+      cr::get_global_logger().register_callback(_stream_callback, this);
     }
 
     ~imgui_log_window()
     {
-      cr::out.unregister_callback(_stream_callback, this);
+      cr::get_global_logger().unregister_callback(_stream_callback, this);
     }
 
     void clear()
     {
+      std::lock_guard _lg { lock };
       entries.clear();
     }
 
     void show_log_window()
     {
+        std::lock_guard _lg { lock };
         const ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar;
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -63,7 +66,7 @@ namespace neam
         window_pos_pivot.x = 0.0f;
         window_pos_pivot.y = 1.0f;
 
-        const float font_size = ImGui::GetFontSize();
+//         const float font_size = ImGui::GetFontSize();
 //         ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
 //         ImGui::SetNextWindowSize(ImVec2(work_size.x, 16 * font_size), ImGuiCond_Always);
         if (ImGui::Begin("Log", nullptr, window_flags))
@@ -112,6 +115,7 @@ namespace neam
     private:
       void on_new_entry(neam::cr::logger::severity s, const std::string& msg, std::source_location loc)
       {
+        std::lock_guard _lg { lock };
         const std::string new_entry = neam::cr::format_log_to_string(s, msg, loc);
 
         if (entries.size() >= max_count)
@@ -147,7 +151,8 @@ namespace neam
         ImVec4 color;
         std::string msg;
       };
-      std::deque<entry_t> entries;
+      spinlock lock;
+      std::mtc_deque<entry_t> entries;
 
       bool auto_scroll = true;
 

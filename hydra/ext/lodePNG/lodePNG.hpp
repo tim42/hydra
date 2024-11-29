@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_23694226432166622597_379525003_LODEPNG_HPP__
-#define __N_23694226432166622597_379525003_LODEPNG_HPP__
+#pragma once
+
 
 #define LODEPNG_NO_COMPILE_CPP
 #include <lodepng.h>
@@ -81,5 +81,5 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_23694226432166622597_379525003_LODEPNG_HPP__
+
 

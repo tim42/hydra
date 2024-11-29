@@ -53,11 +53,13 @@ namespace neam::hydra
         return *static_cast<T*>(passes.back().get());
       }
 
+      size_t get_pass_count() const { return passes.size(); }
+
       void setup(render_pass_context& rpctx, bool force);
       void setup(render_pass_context& rpctx) override;
       void prepare(render_pass_context& rpctx) override;
       render_pass_output submit(render_pass_context& rpctx) override;
-      void cleanup() override;
+      void cleanup(render_pass_context& rpctx) override;
 
 
       /// \brief render the whole stack of render-passes
@@ -67,14 +69,14 @@ namespace neam::hydra
       /// \note cleanup is to be called after the submit info is transmit (just before the vrd perform its job)
       ///       this is done so that the render-pass-manager doesn't have to handle what kind of framebuffer it renders to
       ///       (is it a swapchain? a texture?)
-      void render(neam::hydra::vk::submit_info& gsi, neam::hydra::vk::submit_info& csi, render_pass_context& rpctx, bool& has_any_compute);
+      void render(neam::hydra::vk::submit_info& si, render_pass_context& rpctx);
 
 
     private:
       std::vector<std::unique_ptr<render_pass>> passes;
-      neam::hydra::vk::semaphore gfx_transfer_finished;
-      neam::hydra::vk::semaphore cmp_transfer_finished;
-      size_t to_transfer = 0;
+      // neam::hydra::vk::semaphore gfx_transfer_finished;
+      // neam::hydra::vk::semaphore cmp_transfer_finished;
+      // size_t to_transfer = 0;
   };
 }
 

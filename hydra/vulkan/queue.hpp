@@ -37,8 +37,12 @@
 #include "command_pool.hpp"
 #include "fence.hpp"
 #include "semaphore.hpp"
-#include "submit_info.hpp"
 #include "swapchain.hpp"
+
+#include <utilities/deferred_queue_execution.hpp>
+
+#include <ntools/tracy.hpp>
+#include <ntools/threading/threading.hpp>
 
 namespace neam
 {
@@ -51,7 +55,7 @@ namespace neam
       class queue
       {
         public: // advanced
-          queue(device &_dev, size_t _queue_familly_index, size_t _queue_index)
+          queue(device &_dev, uint32_t _queue_familly_index, uint32_t _queue_index)
             : dev(_dev), queue_familly_index(_queue_familly_index), queue_index(_queue_index)
           {
             dev._vkGetDeviceQueue(queue_familly_index, queue_index, &vk_queue);
@@ -59,10 +63,10 @@ namespace neam
 
         public:
           /// \brief Create the queue from a temporary queue_id
-          queue(device &_dev, temp_queue_familly_id_t queue_id)
+          queue(device &_dev, temp_queue_familly_id_t _queue_id)
             : dev(_dev)
           {
-            std::pair<size_t, size_t> nfo = dev._get_queue_info(queue_id);
+            std::pair<uint32_t, uint32_t> nfo = dev._get_queue_info(_queue_id);
             queue_familly_index = nfo.first;
             queue_index = nfo.second;
 
@@ -70,19 +74,20 @@ namespace neam
           }
 
           /// \brief Return the familly index of the queue
-          size_t get_queue_familly_index() const
+          [[nodiscard]] uint32_t get_queue_familly_index() const
           {
             return queue_familly_index;
           }
 
           /// \brief Return the index of the queue inside the queue familly
-          size_t get_queue_index() const
+          [[nodiscard]] uint32_t get_queue_index() const
           {
             return queue_index;
           }
 
           /// \brief Create a new command pool
-          command_pool create_command_pool(VkCommandPoolCreateFlags flags = 0)
+          /// \note Please use command_pool_manager instead for transient pools as it assign a pool for a given frame / thread and reset it when they are done
+          [[nodiscard]] command_pool _create_command_pool(VkCommandPoolCreateFlags flags = 0)
           {
             VkCommandPoolCreateInfo cmd_pool_info = {};
             cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -93,40 +98,38 @@ namespace neam
             VkCommandPool cmd_pool;
             check::on_vulkan_error::n_assert_success(dev._vkCreateCommandPool(&cmd_pool_info, nullptr, &cmd_pool));
 
-            return command_pool(dev, cmd_pool);
-          }
-
-          /// \brief Submit some work to the queue
-          /// The submit info object is the best way to submit some work through
-          /// the queue as it is a re-usable object and can wrap more than one
-          /// vkQueueSubmit() call.
-          /// If you always submit the same command buffers with the same
-          /// semaphores/fences to wait for/signal, then this is the ideal
-          /// solution as you initialize one time a submit_info object, then
-          /// everything you have to do is to call submit() with that object.
-          void submit(submit_info &si)
-          {
-            std::lock_guard _l(queue_lock);
-            si._submit(dev, vk_queue);
+            command_pool ret(dev, cmd_pool);
+#if !N_DISABLE_CHECKS
+            ret.queue = vk_queue;
+#endif
+            return ret;
           }
 
           /// \brief Submit a fence to the queue. That fence will be signaled
           /// when all the work previously submitted will be done.
-          void submit(const fence &fence_to_sig)
+          void submit(deferred_queue_execution& dqe, const fence& fence_to_sig)
           {
-            std::lock_guard _l(queue_lock);
-            check::on_vulkan_error::n_assert_success(dev._vkQueueSubmit(vk_queue, 0, nullptr, fence_to_sig._get_vk_fence()));
+            std::lock_guard _lg(dqe.lock);
+            dqe.defer_sync_unlocked(); // FIXME: remove?
+            dqe.defer_execution_unlocked(queue_id, [this, fence = fence_to_sig._get_vk_fence()]
+            {
+              TRACY_SCOPED_ZONE;
+              // std::lock_guard _l(queue_lock);
+              check::on_vulkan_error::n_assert_success(dev._vkQueueSubmit(vk_queue, 0, nullptr, fence));
+            });
           }
 
           /// \brief Wait the queue to be idle
           void wait_idle() const
           {
+            TRACY_SCOPED_ZONE;
             dev._vkQueueWaitIdle(vk_queue);
           }
 
           /// \brief Submit a request to present the image
-          void present(const swapchain &sw, uint32_t image_index, const std::vector<const semaphore *> &wait_semaphore, bool *out_of_date = nullptr)
+          void present(deferred_queue_execution& dqe, const swapchain& sw, uint32_t image_index, const std::vector<const semaphore*>& wait_semaphore, bool* out_of_date = nullptr)
           {
+            TRACY_SCOPED_ZONE;
             std::vector<VkSemaphore> vk_wait_sema;
             vk_wait_sema.reserve(wait_semaphore.size());
             for (const semaphore *it : wait_semaphore)
@@ -134,21 +137,27 @@ namespace neam
 
             VkSwapchainKHR vk_sw = sw._get_vk_swapchain();
 
-            VkPresentInfoKHR present_info
+            std::lock_guard _lg(dqe.lock);
+            dqe.defer_sync_unlocked();
+            dqe.defer_execution_unlocked(queue_id, [this, vk_sw, &lock = sw.lock, image_index, vk_wait_sema = std::move(vk_wait_sema)]
             {
-              VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr,
-              (uint32_t)vk_wait_sema.size(), vk_wait_sema.data(),
+              TRACY_SCOPED_ZONE;
+              VkResult res = VK_SUCCESS;
+              VkPresentInfoKHR present_info
+              {
+                VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr,
+                (uint32_t)vk_wait_sema.size(), vk_wait_sema.data(),
 
-              1, &vk_sw, &image_index,
-              nullptr
-            };
-
-            std::lock_guard _l(queue_lock);
-            auto result = vkQueuePresentKHR(vk_queue, &present_info);
-            if (result == VK_ERROR_OUT_OF_DATE_KHR && out_of_date)
-              *out_of_date = true;
-            else
-              check::on_vulkan_error::n_assert_success(result);
+                1, &vk_sw, &image_index, &res,
+              };
+              // std::lock_guard _l(queue_lock);
+              std::lock_guard _l(const_cast<spinlock&>(lock));
+              /*auto result = */vkQueuePresentKHR(vk_queue, &present_info);
+              // if (result == VK_ERROR_OUT_OF_DATE_KHR && out_of_date)
+              //   *out_of_date = true;
+              // else
+                // check::on_vulkan_error::n_assert_success(result);
+            });
           }
 
         public: // advanced
@@ -158,12 +167,20 @@ namespace neam
             return vk_queue;
           }
 
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_queue, VK_OBJECT_TYPE_QUEUE, name);
+          }
+
+          id_t queue_id = id_t::invalid;
         private:
           device &dev;
-          size_t queue_familly_index;
-          size_t queue_index;
+          uint32_t queue_familly_index;
+          uint32_t queue_index;
           VkQueue vk_queue;
-          static inline spinlock queue_lock;
+        public:
+          spinlock queue_lock;
+          friend class submit_info;
       };
     } // namespace vk
   } // namespace hydra

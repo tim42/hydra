@@ -244,6 +244,11 @@ namespace neam
           /// \brief Return the underlying render pass
           VkRenderPass get_vk_render_pass() const { return vk_render_pass; }
 
+          void _set_debug_name(const std::string& name)
+          {
+            dev._set_object_debug_name((uint64_t)vk_render_pass, VK_OBJECT_TYPE_RENDER_PASS, name);
+          }
+
           id_t compute_subpass_hash(uint32_t subpass) const
           {
             if (subpass >= subpasses.size())

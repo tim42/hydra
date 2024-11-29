@@ -1,0 +1,431 @@
+//
+// created by : Timothée Feuillet
+// date: 2024-3-8
+//
+//
+// Copyright (c) 2024 Timothée Feuillet
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//
+
+#include "texture_manager_222.hpp2"
+
+#include <hydra/engine/hydra_context.hpp>
+
+namespace neam::hydra
+{
+  texture_manager::texture_manager(hydra_context& _hctx)
+    : hctx(_hctx)
+    , default_sampler { hctx.device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0, -1, 1 }
+    , default_texture { hctx.allocator, hctx.device, vk::image::create_image_arg
+      (
+        hctx.device,
+        vk::image_2d
+        (
+          {1, 1}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+        )
+      )}
+  {
+    on_index_loaded_tk = hctx.res.on_index_loaded.add(*this, &texture_manager::force_full_reload);
+
+    default_sampler._set_debug_name("texture_manager::default-sampler");
+    default_texture.image._set_debug_name("texture_manager::default-texture::image");
+    default_texture.view._set_debug_name("texture_manager::default-texture::view");
+  }
+
+  texture_index_t texture_manager::request_texture_index(string_id texture_rid)
+  {
+    {
+      std::lock_guard _l {spinlock_shared_adapter::adapt(texture_id_map_lock)};
+      if (auto it = texture_id_map.find(texture_rid); it != texture_id_map.end())
+        return it->second;
+    }
+
+    const auto evict = [this](texture_index_t index)
+    {
+      if (index >= (uint32_t)gpu_state.images.size())
+        return;
+      std::lock_guard _lg {spinlock_exclusive_adapter::adapt(gpu_state.images[index].lock)};
+      vrd.postpone_destruction_to_next_fence(hctx.gqueue, std::move(gpu_state.images[index].image), std::move(gpu_state.images[index].sampler));
+    };
+    // not found, create an entry
+    texture_index_t index = k_invalid_texture_index;
+    do
+    {
+      std::lock_guard _l {spinlock_exclusive_adapter::adapt(texture_id_map_lock)};
+      // first, check that someone didn't add it from under us:
+      if (auto it = texture_id_map.find(texture_rid); it != texture_id_map.end())
+        return it->second;
+
+      cr::out().debug("texture-manager: loading `{}`...", texture_rid);
+
+      // free-list:
+      if (first_free_entry != k_invalid_index)
+      {
+        index = first_free_entry;
+        first_free_entry = entries[index].next;
+
+        // reset the entry:
+        entries[index] = texture_entry {.last_frame_with_usage = frame_counter};
+
+        // register the entry:
+        texture_id_map.emplace(texture_rid, index);
+        break;
+      }
+      // unused list:
+      if (first_unused_entry != k_invalid_index)
+      {
+        // above the threshold for preferring eviction to array resize:
+        const uint64_t unused_frame_count = frame_counter - entries[first_unused_entry].last_frame_with_usage;
+        if ((unused_frame_count > k_evict_no_question_asked) || (entries.size() >= k_max_entries && unused_frame_count > k_min_frame_for_eviction))
+        {
+          index = first_unused_entry;
+          // relink the unused entries:
+          first_unused_entry = entries[index].next;
+          if (first_unused_entry != k_invalid_index)
+            entries[first_unused_entry].prev = k_invalid_index;
+          else
+            last_unused_entry = k_invalid_index;
+
+          // reset the entry:
+          entries[index] = texture_entry {.last_frame_with_usage = frame_counter, .asset_rid = texture_rid};
+          evict(index);
+
+          // register the entry:
+          texture_id_map.emplace(texture_rid, index);
+          break;
+        }
+      }
+      if (entries.size() < k_max_entries)
+      {
+        // resize the arrays:
+        index = (texture_index_t)entries.size();
+        entries.resize(entries.size() + k_entries_to_allocate_at_once);
+        // NOTE: This expect that all texture are valid, which _should_ be the normal state, but might not always be the current state.
+        //       We are loosing on efficiency when some textures are not proper resources, but the resulting code is simpler
+        while (gpu_state.images.size() != entries.size())
+          gpu_state.images.emplace_back(hctx.device);
+
+        // add the new entries to the unused list:
+        for (texture_index_t i = index + 1; i < (texture_index_t)entries.size(); ++i)
+        {
+          entries[i].next = first_free_entry;
+          first_free_entry = i;
+        }
+        // reset the entry:
+        entries[index] = texture_entry {.last_frame_with_usage = frame_counter, .asset_rid = texture_rid};
+
+        // register the entry:
+        texture_id_map.emplace(texture_rid, index);
+        break;
+      }
+
+      // Failed to find any space for the texture
+      cr::out().warn("texture-manager: failed to allocate space for `{}`: reached max number of in-use texture ({})", texture_rid, k_max_entries);
+      return k_invalid_texture_index;
+    }
+    while (false);
+
+    // load the texture data
+    load_texture_data_unlocked(index, texture_rid);
+
+    return index;
+  }
+
+  void texture_manager::indicate_texture_usage(texture_index_t tid, uint32_t targetted_mip_level)
+  {
+    std::lock_guard _l {spinlock_shared_adapter::adapt(texture_id_map_lock)};
+    if (tid == k_invalid_texture_index || tid >= (uint32_t)entries.size())
+      return;
+    entries[tid].last_frame_with_usage = frame_counter;
+    entries[tid].requested_mip_level = targetted_mip_level;
+  }
+
+  void texture_manager::clear()
+  {
+    {
+      std::lock_guard _l {spinlock_exclusive_adapter::adapt(texture_id_map_lock)};
+
+      texture_id_map.clear();
+      entries.clear();
+
+      first_free_entry = k_invalid_index;
+      first_unused_entry = k_invalid_index;
+
+      vrd.postpone_destruction_to_next_fence(hctx.gqueue, std::move(gpu_state));
+    }
+
+    // end by triggering the event (with no lock held)
+    on_texture_pool_cleared.call();
+  }
+
+  void texture_manager::load_texture_data_unlocked(texture_index_t tid, string_id rid)
+  {
+    hctx.res.read_resource<assets::image>(rid).then(&hctx.tm, hctx.tm.get_current_group(), [this, tid, rid](assets::image&& res, resources::status st)
+    {
+      if (st == resources::status::failure) [[unlikely]]
+      {
+        cr::out().error("texture_manager: failed to load texture `{}` (invalid resource or resource type).\n"
+                        "                 This will consume a texture slot until the texture is evicted.", rid);
+        return;
+      }
+
+      {
+        // we need the shared lock to prevent anyone from resizing the array from under us
+        std::lock_guard _l {spinlock_shared_adapter::adapt(texture_id_map_lock)};
+
+        auto& entry = entries[tid];
+        if (entry.asset_rid != rid)
+        {
+          // sanity check, prevent writing over data from a different texture
+          // Might happen when loading the texture took too much time (which outside using a super slow network connection should not happen...)
+          cr::out().warn("texture_manager: loaded texture data for `{}`, but slot was assigned to `{}` in between. Skipping texture.", rid, entry.asset_rid);
+          return;
+        }
+        if (res.mips.size() == 0)
+        {
+          cr::out().warn("texture_manager: loaded texture data for `{}`, but texture has no mip level.", rid);
+          return;
+        }
+
+        entry.image_information = std::move(res);
+        entry.invalid_resource = false; // we are now a valid resource, just with no data
+
+        // create the sampler:
+        {
+          std::lock_guard _gl { spinlock_exclusive_adapter::adapt(gpu_state.images[tid].lock) };
+
+          // FIXME: This should be driven by the texture resource
+          gpu_state.images[tid].sampler = vk::sampler{hctx.device, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0, -1000, 1000};
+          gpu_state.images[tid].sampler._set_debug_name(fmt::format("texture-asset:sampler[{}]", rid));
+        }
+
+        if (entry.requested_mip_level != k_invalid_mip)
+        {
+          // if there is a requested mip, load it (so as to save a bit of time)
+          load_mip_data_unlocked(entry, tid);
+        }
+      }
+    });
+  }
+
+  void texture_manager::load_mip_data_unlocked(texture_entry& entry, texture_index_t tid)
+  {
+    if (entry.invalid_resource)
+      return;
+    // skip the resource if no mip level have been requested or the requested mip is already loaded
+    if (entry.requested_mip_level == k_invalid_mip || entry.requested_mip_level >= entry.streamed_mip_level)
+      return;
+
+    const uint8_t max_mip_level = (uint8_t)entry.image_information.mips.size() - 1;
+    const uint8_t mip_to_stream = std::min(max_mip_level, entry.requested_mip_level);
+
+    const uint8_t previous_streamed_mip_level = entry.streamed_mip_level;
+    entry.streamed_mip_level = mip_to_stream; // assign now to prevent streaming data in-loop
+
+    const string_id rid = entry.asset_rid;
+
+    hctx.res.read_resource<assets::image_mip>(entry.image_information.mips[mip_to_stream])
+    .then(&hctx.tm, hctx.tm.get_current_group(), [this, tid, rid, mip_to_stream, previous_streamed_mip_level](assets::image_mip&& mip, resources::status st)
+    {
+      std::lock_guard _l {spinlock_shared_adapter::adapt(texture_id_map_lock)};
+      auto& entry = entries[tid];
+
+      // check if we're operating on the right data:
+      if (entry.asset_rid != rid)
+        return;
+      // check if we still need the mip data:
+      if (entry.streamed_mip_level != mip_to_stream)
+        return;
+      // FIXME: We should probably cancel io queries in addition to checking those
+      if (st != resources::status::success)
+      {
+        entry.streamed_mip_level = previous_streamed_mip_level;
+        entry.invalid_resource = true;
+        cr::out().error("texture_manager: failed to load mip level {} for texture `{}`. Marking the texture as invalid.", mip_to_stream, rid);
+        return;
+      }
+
+      auto& gpu_entry = gpu_state.images[tid];
+      {
+        // we need to recreate the image/image view:
+        std::lock_guard _gl { spinlock_exclusive_adapter::adapt(gpu_entry.lock) };
+
+        vrd.postpone_destruction_to_next_fence(hctx.gqueue, std::move(gpu_entry.image));
+
+        // default allocation type is persistent, which is perfect for us
+        gpu_entry.image.emplace(hctx.allocator, hctx.device, vk::image::create_image_arg
+        (
+          hctx.device,
+          vk::image_2d
+          (
+            {mip.size.x, mip.size.y}, entry.image_information.format, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+          )
+        ));
+        gpu_entry.image->image._set_debug_name(fmt::format("texture-asset[{}]", rid));
+        gpu_entry.image->view._set_debug_name(fmt::format("texture-asset:view[{}]", rid));
+      }
+      {
+        // upload the data: (we only need a shared lock for this)
+        std::lock_guard _gl { spinlock_shared_adapter::adapt(gpu_entry.lock) };
+        txctx.acquire(gpu_entry.image->image, VK_IMAGE_LAYOUT_UNDEFINED);
+        txctx.transfer(gpu_entry.image->image, std::move(mip.texels));
+        txctx.release(gpu_entry.image->image, hctx.gqueue, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT);
+      }
+      cr::out().debug("texture-manager: loaded mip level {} of `{}`", mip_to_stream, rid);
+    });
+  }
+
+  void texture_manager::force_full_reload()
+  {
+    cr::out().warn("texture-manager: reloading all textures from disk");
+    {
+      std::lock_guard _l {spinlock_shared_adapter::adapt(texture_id_map_lock)};
+
+      for (uint32_t i = 0; i < (uint32_t)entries.size(); ++i)
+      {
+        auto& it = entries[i];
+        if (it.asset_rid != id_t::none)
+        {
+          it.streamed_mip_level = k_invalid_mip;
+          load_texture_data_unlocked(i, it.asset_rid);
+        }
+      }
+    }
+  }
+
+  void texture_manager::process_start_of_frame(vk::submit_info& si, vk_resource_destructor& in_vrd)
+  {
+    if (first_init)
+    {
+      first_init = false;
+      txctx.acquire(default_texture.image, VK_IMAGE_LAYOUT_UNDEFINED);
+      txctx.transfer(default_texture.image, raw_data::duplicate(uint32_t(0)));
+      txctx.release(default_texture.image, hctx.gqueue, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT);
+    }
+    {
+      std::lock_guard _l {spinlock_exclusive_adapter::adapt(texture_id_map_lock)};
+
+      // go over all the entries to check if they were in use last frame or if the need to be added to the unused list
+      for (uint32_t i = 0; i < (uint32_t)entries.size(); ++i)
+      {
+        auto& it = entries[i];
+        if (it.last_frame_with_usage >= frame_counter) [[likely]] // was used recently
+        {
+          // check if we need to stream mips
+          load_mip_data_unlocked(it, i);
+
+          if (it.prev != it.next) [[unlikely]] // remove from the unused list
+          {
+            if (it.prev != k_invalid_index)
+              entries[it.prev].next = it.next;
+            else
+              first_unused_entry = it.next;
+
+            if (it.next != k_invalid_index)
+              entries[it.next].prev = it.prev;
+            else
+              last_unused_entry = it.prev;
+
+            it.prev = k_invalid_index;
+            it.next = k_invalid_index;
+          }
+          continue;
+        }
+        if (it.prev != it.next) [[likely]] // already in a list (either free or unused), skip it
+          continue;
+
+        // add it to the end of the unused list (to keep it sorted)
+        it.prev = last_unused_entry;
+        if (last_unused_entry == k_invalid_index)
+          first_free_entry = i;
+        else
+          entries[last_unused_entry].next = i;
+        last_unused_entry = i;
+      }
+      frame_counter += 1;
+    }
+
+    {
+      std::lock_guard _l {spinlock_shared_adapter::adapt(texture_id_map_lock)};
+
+      // resize the indirection buffer if necessary:
+      if (!gpu_state.indirection_buffer || gpu_state.indirection_buffer->buffer.size() / sizeof(uint32_t) - 1 < entries.size())
+      {
+        vrd.postpone_destruction_to_next_fence(hctx.gqueue, std::move(gpu_state.indirection_buffer));
+
+        gpu_state.indirection_buffer.emplace
+        (
+          hctx.allocator,
+          vk::buffer
+          (
+            hctx.device,
+            (entries.size() + 1) * sizeof(uint32_t),
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+          ),
+          hydra::allocation_type::persistent
+        );
+      }
+
+      // upload the new data to the indirection buffer if necessary:
+      // FIXME: If necessary!
+      // FIXME: Move this first in the function to avoid waiting on the transfer?
+      {
+        raw_data rd = raw_data::allocate(sizeof(uint32_t) * (entries.size() + 1));
+        auto* data = rd.get_as<shader_structs::texture_indirection_t>();
+        data->texture_count = (uint32_t)entries.size();
+        for (uint32_t i = 0; i < (uint32_t)entries.size(); ++i)
+        {
+          data->indirection[i] = entries[i].invalid_resource ? 0 : (i + 1);
+        }
+        txctx.acquire(gpu_state.indirection_buffer->buffer, hctx.gqueue, VK_ACCESS_MEMORY_READ_BIT);
+        txctx.transfer(gpu_state.indirection_buffer->buffer, std::move(rd));
+        txctx.release(gpu_state.indirection_buffer->buffer, hctx.gqueue, VK_ACCESS_MEMORY_READ_BIT);
+      }
+
+      // build the descriptor set if necessary:
+      // FIXME: If necessary!
+      vrd.postpone_destruction_to_next_fence(hctx.gqueue, gpu_state.descriptor_set.reset());
+
+      gpu_state.descriptor_set.texture_manager_indirection = gpu_state.indirection_buffer->buffer;
+
+      gpu_state.descriptor_set.texture_manager_texture_float_1d.resize(gpu_state.images.size() + 1);
+      for (uint32_t i = 0; i < (uint32_t)gpu_state.images.size(); ++i)
+      {
+        auto& it = gpu_state.images[i];
+        if (it.image)
+          gpu_state.descriptor_set.texture_manager_texture_float_1d[i] = {it.image->view, it.sampler};
+        else
+          gpu_state.descriptor_set.texture_manager_texture_float_1d[i] = {default_texture.view, default_sampler};
+      }
+      gpu_state.descriptor_set.texture_manager_texture_float_1d.back() = {default_texture.view, default_sampler};
+
+      // update the descriptor-set:
+      gpu_state.descriptor_set.update_descriptor_set(hctx, vrd);
+    }
+
+    // upload data to textures:
+    txctx.build(si, vrd);
+
+    in_vrd.append_incomplete(vrd);
+  }
+}
+

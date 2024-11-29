@@ -27,8 +27,8 @@
 // SOFTWARE.
 //
 
-#ifndef __N_396519513304418946_3159317424_HYDRA_HPP__
-#define __N_396519513304418946_3159317424_HYDRA_HPP__
+#pragma once
+
 
 // NOTE: There's *_ext.hpp file in the current folder. Those files aren't included
 // by this header as they are the main header of some extensions. If you plan using
@@ -59,7 +59,8 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
-#include <glm/glm.hpp> // glm is a core dependency of hydra
+#include <hydra_glm.hpp>
+ // glm is a core dependency of hydra
 
 // include the vulkan wrapper
 #include "vulkan/vulkan.hpp"
@@ -85,4 +86,4 @@ namespace neam
   } // namespace hydra
 } // namespace neam
 
-#endif // __N_396519513304418946_3159317424_HYDRA_HPP__
+
