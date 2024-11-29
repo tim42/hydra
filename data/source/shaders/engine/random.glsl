@@ -40,12 +40,18 @@
 //             NOTE: the components are independent, normalizing the result will not give correct results
 //  to_snorm : convert a uint[m] to a float[m] with each components in the range of ]-1, 1[
 //             NOTE: the components are independent, normalizing the result will not give correct results
-//  to_hnorm : (m > 1) convert a uint[m] to a float[m], the return is normalized
-//             the distribution is uniform along the surface (unit circle, sphere, hypersphere)
+//  to_hnorm : convert a uint[m] to a float[m+1], the return is normalized
+//             the distribution is uniform along the surface (unit circle, unit sphere)
 
 // n -> n, inout
 
 uint invwk_rnd(inout uint x)
+{
+  x += ((x * x) | 5);
+  return x;
+}
+
+uint64_t invwk_rnd(inout uint64_t x)
 {
   x += ((x * x) | 5);
   return x;
@@ -70,6 +76,11 @@ uint4 invwk_rnd(inout uint4 x)
 }
 
 // n -> 1, no inout
+
+uint64_t rnd_seed(uint64_t x)
+{
+  return invwk_rnd(x.x);
+}
 
 uint rnd_seed(uint x)
 {
@@ -209,11 +220,11 @@ uint3 rnd_split3(uint4 x)
 }
 
 
-// full precision float conversions:
-//   unorm : [0, 1[
-//   snorm: ]-1, 1[
+// full precision float conversions: (all of them are uniform in their respective spaces)
+//   unorm : [0, 1[  (usage: 23bit)
+//   snorm: ]-1, 1[  (usage: 24bit)
 //
-//   hsnorm: [-1, 1], but length is 1
+//   hnorm: [-1, 1], but length is 1. (usage: 24bit on x, 23bit on y (for 3d only))
 
 float to_unorm(uint x)
 {
@@ -237,58 +248,43 @@ float4 to_unorm(uint4 x)
 
 
 // snorm conversion with 24bit randomness (unrom * 2 - 1 has 23bit randomness)
+// cost little a bit more than unorm * 2 - 1
 
 float to_snorm(uint x)
 {
-  uint sgn = (x & 0x80000000);
-  return asfloat(((x & 0x7FFFFFFF) >> 8) | 0x3f800000 | sgn) - asfloat(0x3f800000 | sgn);
+  uint base = 0x3f800000 | (x & 0x80000000);
+  return asfloat(((x & 0x7FFFFFFF) >> 8) | base) - asfloat(base);
 }
 
 float2 to_snorm(uint2 x)
 {
-  uint2 sgn = (x & 0x80000000);
-  return asfloat(((x & 0x7FFFFFFF) >> 8) | 0x3f800000 | sgn) - asfloat(0x3f800000 | sgn);
+  uint2 base = 0x3f800000 | (x & 0x80000000);
+  return asfloat(((x & 0x7FFFFFFF) >> 8) | base) - asfloat(base);
 }
 
 float3 to_snorm(uint3 x)
 {
-  uint3 sgn = (x & 0x80000000);
-  return asfloat(((x & 0x7FFFFFFF) >> 8) | 0x3f800000 | sgn) - asfloat(0x3f800000 | sgn);
+  uint3 base = 0x3f800000 | (x & 0x80000000);
+  return asfloat(((x & 0x7FFFFFFF) >> 8) | base) - asfloat(base);
 }
 
 float4 to_snorm(uint4 x)
 {
-  uint4 sgn = (x & 0x80000000);
-  return asfloat(((x & 0x7FFFFFFF) >> 8) | 0x3f800000 | sgn) - asfloat(0x3f800000 | sgn);
+  uint4 base = 0x3f800000 | (x & 0x80000000);
+  return asfloat(((x & 0x7FFFFFFF) >> 8) | base) - asfloat(base);
 }
 
 
+// random point on the 2D unit circle (hnorm2) / surface of the 3D unit sphere (hnorm3).
+// the random is uniform, and the return is a normalized vector
 
-
-float2 to_hnorm(uint2 x)
+float2 to_hnorm2(uint x)
 {
-  // select x, use a single bit of y to determine the sign of the second component
-  float rx = to_snorm(x.x);
-  float ry = (x.y & 0x80000000) == 0 ? 1.0 : -1.0;
-  return float2(rx, ry * sqrt(1 - rx * rx));
+  return sin(vec2(k_pi2, 0) + to_unorm(x.x) * k_2pi);
 }
 
-float3 to_hnorm(uint3 x)
+float3 to_hnorm3(uint2 x)
 {
-  // select x, take yz as a normalized 2D vector
   float rx = to_snorm(x.x);
-  float2 ryz = to_hnorm(x.yz);
-  // compute the leftover magnitude, multiple yz by it (yz is normalized)
-  float lx = sqrt(1 - rx * rx);
-  return float3(rx, ryz * lx);
-}
-
-float4 to_hnorm(uint4 x)
-{
-  // select x, take yz as a normalized 2D vector
-  float rx = to_snorm(x.x);
-  float3 ryzw = to_hnorm(x.yzw);
-  // compute the leftover magnitude, multiple yz by it (yz is normalized)
-  float lx = sqrt(1 - rx * rx);
-  return float4(rx, ryzw * lx);
+  return float3(rx, sqrt(1.0 - rx * rx) * sin(vec2(k_pi2, 0) + to_unorm(x.y) * k_2pi));
 }

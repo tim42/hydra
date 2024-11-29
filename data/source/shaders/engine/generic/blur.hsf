@@ -1,0 +1,48 @@
+
+#include <shaders/engine/std.glsl>
+#include <shaders/engine/random.glsl>
+
+layout(constant_id = hydra::id(blur_tap_count)) const int k_blur_tap_count = 8;
+
+hydra::descriptor_set(_, neam::hydra::shaders::blur_descriptor_set);
+hydra::push_constant(neam::hydra::shaders::blur_push_constants, comp) pc;
+
+hydra::entry_point(main, comp)
+
+
+
+hydra::layout(main(in), local_size_x = 64);
+void main()
+{
+  const ivec2 center_coords = pc.is_horizontal != 0 ? ivec2(gl_GlobalInvocationID.xy) : ivec2(gl_GlobalInvocationID.yx);
+  if (center_coords.x >= pc.image_size.x || center_coords.y >= pc.image_size.y)
+    return;
+
+
+  vec4 texel = vec4(pc.strength > 0 ? 0 : 1, 0, 0, 0);
+  float weight = 0;
+
+  const float strength = pc.strength;
+  const float sigma = float(k_blur_tap_count) *2/3;//strength /*- max(1, strength * 0.75)*/;
+  const float base_weight = (1.0 / sqrt(k_2pi)) / (sigma);
+
+  // incorrect divisor (should be 2 if using true gaussian blur).
+  const float base_divisor = 1.0 / (3 * sigma * sigma);
+
+  // crude, unoptimal, blur
+  uint seed = rnd_seed(asuint(center_coords) + 8080 * (1 + pc.is_horizontal * 4));
+  for (int i = -int(k_blur_tap_count); i <= int(k_blur_tap_count); ++i)
+  {
+    // correct gaussian blur:
+//     const float sample_weight = base_weight * exp(-(i*i) * base_divisor);
+
+    // slightly incorrect but faster blur
+    const float sample_weight = base_weight * (1 - float(i * i) * base_divisor);
+
+    const ivec2 coords = center_coords.xy + (pc.is_horizontal != 0 ? ivec2(i, 0) : ivec2(0, i));//  + ((int(invwk_rnd(seed) >> 30)).xx - 1);
+    // mirror when out of bounds:
+    texel += texelFetch(u_input, abs(coords) - max(ivec2(0, 0), coords - ivec2(pc.image_size)), 0 /*mip*/) * sample_weight;
+    weight += sample_weight;
+  }
+  imageStore(u_output, center_coords.xy, texel / weight);
+}

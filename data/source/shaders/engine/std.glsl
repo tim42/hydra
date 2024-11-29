@@ -29,6 +29,7 @@
 
 const float k_pi = 3.14159265358979323846;
 const float k_2pi = k_pi * 2.0;
+const float k_pi2 = k_pi * 0.5;
 
 
 
@@ -97,17 +98,58 @@ float2 pow3(float2 x) { return x * x * x; }
 float3 pow3(float3 x) { return x * x * x; }
 float4 pow3(float4 x) { return x * x * x; }
 
-float pow4(float x) { return pow2(pow2(x)); }
-float2 pow4(float2 x) { return pow2(pow2(x)); }
-float3 pow4(float3 x) { return pow2(pow2(x)); }
-float4 pow4(float4 x) { return pow2(pow2(x)); }
+float pow4(float x) { return pow2(x) * pow2(x); }
+float2 pow4(float2 x) { return pow2(x) * pow2(x); }
+float3 pow4(float3 x) { return pow2(x) * pow2(x); }
+float4 pow4(float4 x) { return pow2(x) * pow2(x); }
 
 float pow5(float x) { return pow4(x) * x; }
 float2 pow5(float2 x) { return pow4(x) * x; }
 float3 pow5(float3 x) { return pow4(x) * x; }
 float4 pow5(float4 x) { return pow4(x) * x; }
 
-float pow6(float x) { return pow3(pow2(x)); }
-float2 pow6(float2 x) { return pow3(pow2(x)); }
-float3 pow6(float3 x) { return pow3(pow2(x)); }
-float4 pow6(float4 x) { return pow3(pow2(x)); }
+float pow6(float x) { return pow3(x) * pow2(x); }
+float2 pow6(float2 x) { return pow3(x) * pow2(x); }
+float3 pow6(float3 x) { return pow3(x) * pow2(x); }
+float4 pow6(float4 x) { return pow3(x) * pow2(x); }
+
+// MATH
+
+// quaternion
+
+hydra::require_cpp_struct(neam::hydra::shader_structs::quaternion)
+
+quaternion unpack_quaternion(i8vec4 pckq)
+{
+  return quaternion(normalize(float4(pckq) / float(0x7F)));
+}
+
+float3 rotate_vector(float3 v, quaternion q)
+{
+  const float3 quat_vector = q.data.xyz;
+  const float3 uv = cross(quat_vector, v);
+  const float3 uuv = cross(quat_vector, uv);
+  return v + ((uv * q.data.w) + uuv) * 2;
+}
+
+// packed transforms / transforms
+
+hydra::require_cpp_struct(neam::hydra::shader_structs::packed_translation_t)
+hydra::require_cpp_struct(neam::hydra::shader_structs::packed_transform_t)
+
+/// \brief transform a point without ever going into world-space (only view-relative-space)
+float3 transform_point(packed_transform_t pt, float3 point, packed_translation_t rel_to)
+{
+  // scale:
+  float3 ret = point * pt.scale;
+
+  // rotation:
+  ret = rotate_vector(ret, unpack_quaternion(pt.packed_quaternion));
+
+  // translation:
+  const int3 grid_translation = (pt.translation.grid - rel_to.grid) * 2;
+  const float3 fine_translation = (pt.translation.fine - rel_to.fine) * (2.0f / float(0xFFFF));
+
+  ret += grid_translation + fine_translation;
+  return ret;
+}

@@ -1,4 +1,5 @@
 
+#include <shaders/engine/texture_manager.glsl>
 
 hydra::layout(vert(in), location = 0) vec2 attrib_pos;
 hydra::layout(vert(in), location = 1) vec2 attrib_uv;
@@ -9,16 +10,16 @@ hydra::layout(frag(in), location = 0) struct { vec4 color; vec2 uv; vec2 coord; 
 hydra::layout(frag(out), location = 0) vec4 frag_out_color;
 
 
-layout(set=0, binding=0) uniform sampler2D s_texture;
-layout(set=0, binding=1) uniform sampler2D s_backbuffer;
 
-layout(push_constant) uniform push_constant { vec2 scale; vec2 translate; } pc;
+hydra::descriptor_set(_, neam::hydra::imgui::imgui_shader_params);
+hydra::push_constant(neam::hydra::imgui::imgui_push_constants, vert, frag) pc;
 
-layout(constant_id = hydra::id(sample_backbuffer)) const bool k_sample_bacbuffer = true;
+layout(constant_id = hydra::id(sample_backbuffer)) const bool k_sample_backbuffer = true;
 
 hydra::entry_point(main_vs, vert)
 hydra::entry_point(main_fs, frag)
 
+//#error o
 //#warning o
 
 void main_vs()
@@ -31,12 +32,18 @@ void main_vs()
 
 void main_fs()
 {
-  const vec4 out_color = texture(s_texture, fragment_in.uv);
+  const uint k_tm_flag = 0x80000000;
+  vec4 out_color;
+  if ((pc.font_texture_index & k_tm_flag) == 0)
+    out_color = texture(sampler2D(s_textures[pc.font_texture_index], s_sampler), fragment_in.uv);
+  else
+    out_color = htm_texture_flt_2d(pc.font_texture_index & ~k_tm_flag, fragment_in.uv);
 
-  if (k_sample_bacbuffer)
+
+  if (k_sample_backbuffer)
   {
     float fct = fragment_in.color.a;
-    const vec3 back_color = texture(s_backbuffer, clamp(fragment_in.coord * 0.5 + 0.5, 0, 1)).rgb;
+    const vec3 back_color = texture(sampler2D(s_textures[pc.backbuffer_texture_index], s_sampler), clamp(fragment_in.coord * 0.5 + 0.5, 0, 1)).rgb;
     frag_out_color = vec4(mix(back_color.rgb, out_color.rgb * fragment_in.color.rgb, fct), out_color.a);
   }
   else
