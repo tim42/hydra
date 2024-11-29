@@ -76,6 +76,7 @@ namespace neam::hydra::processor
           .data = rle::serialize(packer::image_packer_input
           {
             .size = size,
+            .texel_format = VK_FORMAT_R8G8B8A8_UNORM,
             .texels = std::move(rd),
           }),
           .metadata = std::move(input.metadata),

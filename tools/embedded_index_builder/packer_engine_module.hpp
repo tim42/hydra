@@ -176,7 +176,7 @@ namespace {}
         const uint32_t index_binary_size = index.size;
 
         const id_t hfid = cctx->io.map_unprefixed_file(packer_options.output.replace_extension("hpp"));
-        auto hchn = cctx->io.queue_read(hfid, 0, io::context::whole_file).then([this, index_header, hfid](raw_data&& dt, bool success)
+        auto hchn = cctx->io.queue_read(hfid, 0, io::context::whole_file).then([this, index_header, hfid](raw_data&& dt, bool success, uint32_t)
         {
           raw_data header_data = raw_data::allocate_from(index_header);
           bool is_same = raw_data::is_same(header_data, dt);
@@ -186,13 +186,13 @@ namespace {}
           return async::continuation_chain::create_and_complete();
         });
         const id_t sfid = cctx->io.map_unprefixed_file(packer_options.output.replace_extension("cpp"));
-        auto schn = cctx->io.queue_read(sfid, 0, io::context::whole_file).then([this, index_source, index_binary_size, index_source_size, sfid](raw_data&& dt, bool success)
+        auto schn = cctx->io.queue_read(sfid, 0, io::context::whole_file).then([this, index_source, index_binary_size, index_source_size, sfid](raw_data&& dt, bool success, size_t)
         {
           raw_data source_data = raw_data::allocate_from(index_source);
           bool is_same = raw_data::is_same(source_data, dt);
           if (!success || !is_same)
           {
-            return cctx->io.queue_write(sfid, io::context::truncate, std::move(source_data)).then([this, index_binary_size, index_source_size](bool success)
+            return cctx->io.queue_write(sfid, io::context::truncate, std::move(source_data)).then([this, index_binary_size, index_source_size](raw_data&& /*data*/, bool success, size_t /*write_size*/)
             {
               if (success)
                 cr::out().log("Saved index in {} (source size: {} bytes, binary size: {})", packer_options.output, index_source_size, index_binary_size);

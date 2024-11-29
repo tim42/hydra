@@ -30,21 +30,25 @@
 #include <ntools/struct_metadata/struct_metadata.hpp>
 #include <hydra/assets/image.hpp>
 
-#include <glm/glm.hpp>
+#include <hydra_glm.hpp>
+
 
 namespace neam::hydra::packer
 {
   struct image_packer_input
   {
     glm::uvec2 size;
-    // TODO: add format, currently expecting rgba 8
+    VkFormat texel_format;
     raw_data texels;
   };
 
-  struct image_metadata
+  struct image_metadata : public resources::base_metadata_entry<image_metadata>
   {
-    VkFormat target_format;
-    uint32_t mip_count;
+    static constexpr ct::string k_metadata_entry_description = "specific metadata used by image resources";
+    static constexpr ct::string k_metadata_entry_name = "image_metadata";
+
+    VkFormat target_format = VK_FORMAT_R8G8B8A8_UNORM;
+    uint32_t mip_count = 0;
   };
 }
 
@@ -61,7 +65,11 @@ N_METADATA_STRUCT(neam::hydra::packer::image_metadata)
 {
   using member_list = neam::ct::type_list
   <
-    N_MEMBER_DEF(target_format),
-    N_MEMBER_DEF(mip_count)
+    N_MEMBER_DEF(target_format, N_CUSTOM_HELPER(neam::hydra::packer::image_metadata::target_format)),
+    // N_MEMBER_DEF(target_format, neam::metadata::custom_helper { .helper = "neam::hydra::packer::image_metadata::target_format"_rid}),
+    N_MEMBER_DEF(mip_count, neam::metadata::range<uint32_t>{.min = 0, .max = 127, .step = 1})
   >;
 };
+
+
+

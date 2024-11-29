@@ -40,13 +40,14 @@ namespace neam
     // options
     bool verbose = false;
     bool silent = false;
+    bool debug = false;
     bool force = false;
     bool watch = true;
     bool help = false;
     bool ui = true;
     bool print_source_name = false;
     uint32_t watch_delay = 2;
-    uint32_t thread_count = std::thread::hardware_concurrency() - 4;
+    uint32_t thread_count = std::thread::hardware_concurrency() + 4;
 
     std::vector<std::string_view> parameters;
 
@@ -66,6 +67,7 @@ N_METADATA_STRUCT(neam::global_options)
   <
     N_MEMBER_DEF(help, neam::metadata::info{.description = c_string_t<"Print this message and exit.">}),
     N_MEMBER_DEF(verbose, neam::metadata::info{.description = c_string_t<"Show debug messages. May be extremly verbose.">}),
+    N_MEMBER_DEF(debug, neam::metadata::info{.description = c_string_t<"Enable hydra debug (vulkan validation layers, ...).">}),
     N_MEMBER_DEF(silent, neam::metadata::info{.description = c_string_t<"Only show warning (and above) messages.">}),
     N_MEMBER_DEF(force, neam::metadata::info{.description = c_string_t<"Force rebuild the index and repack all the resources.">}),
     N_MEMBER_DEF(watch, neam::metadata::info{.description = c_string_t<"Watch for filesystem changes and repack those resources.\nIf false, will exit as soon as there's no more operations left to do.">}),

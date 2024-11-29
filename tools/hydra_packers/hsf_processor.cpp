@@ -169,10 +169,12 @@ namespace neam::hydra::processor
     using pipe_chain = async::chain<pipe_operation_t&&>;
 
     // write into the stdin pipe:
+    // FIXME: Handle partial writes
     pipe_chain write_chain = ctx.io.queue_write(file_pipe[write], 0, raw_data::allocate_from(input))
-    .then([&ctx, file_pipe = file_pipe[write]](bool)
+    .then([&ctx, file_pipe = file_pipe[write]](raw_data&& /*data*/, bool /*success*/, size_t /*write_size*/)
     {
       ctx.io.close(file_pipe);
+
       return pipe_chain::create_and_complete({});
     });
 

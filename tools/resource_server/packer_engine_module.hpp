@@ -47,7 +47,7 @@ namespace neam::hydra
 
       global_options packer_options;
       // number of resources that will be queued at the same time
-      uint32_t resources_to_queue = 512;
+      uint32_t resources_to_queue = 64;
 
       // entries that are necessary for the UI.
       // Will be packed first, if they are dirty
@@ -85,7 +85,7 @@ namespace neam::hydra
 
       void add_task_groups(threading::task_group_dependency_tree& tgd) override
       {
-        tgd.add_task_group("pack"_rid, "pack");
+        tgd.add_task_group("pack"_rid);
       }
 
       void add_task_groups_dependencies(threading::task_group_dependency_tree& tgd) override
@@ -293,12 +293,12 @@ namespace neam::hydra
             state.gbl_chains.push_back(state.import_end_state.create_chain());
 
           state.gbl_chains.push_back(cctx->io.queue_write(ts_file_id, io::context::truncate, raw_data::allocate_from(std::string("[timestamp file, do not touch]\n")))
-                                     .then([this](bool)
+                                     .then([this](raw_data&& /*data*/, bool /*success*/, size_t /*write_size*/)
           {
             // do the resource import
             // (we increment to_import_index right away so that we do queue resources_to_queue
             // ((otherwise, if a resource is completed while we loop and it queues another one, we won't queue resources_to_queue resources)
-            constexpr uint32_t initial_resource_count = 64 + k_priority_list.size();
+            constexpr uint32_t initial_resource_count = 8 + k_priority_list.size();
             state.to_import_index += initial_resource_count;
             for (uint32_t i = 0; i < initial_resource_count && i < state.to_import.size(); ++i)
               queue_import_resource(i);
@@ -354,14 +354,9 @@ namespace neam::hydra
           {
             engine->sync_teardown();
           }
-          else //if (!packer_options.ui)
+          else
           {
             cctx->stall_all_threads_except(2);
-//             cctx->tm.request_stop([this]()
-//             {
-//               std::this_thread::sleep_for(std::chrono::seconds{packer_options.watch_delay});
-//               cctx->tm.get_frame_lock().unlock();
-//             });
           }
         }
       }

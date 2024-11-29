@@ -40,8 +40,8 @@ void make_index(const global_options& gbl_opt)
 
 int main(int argc, char **argv)
 {
-  cr::out.min_severity = cr::logger::severity::message;
-  cr::out.register_callback(cr::print_log_to_console, nullptr);
+  cr:: get_global_logger().min_severity = cr::logger::severity::message;
+  cr:: get_global_logger().register_callback(cr::print_log_to_console, nullptr);
 
   // parse the commandline options:
   cmdline::parse cmd(argc, argv);
@@ -74,9 +74,9 @@ int main(int argc, char **argv)
 
   // handle some of the options
   if (gbl_opt.verbose)
-    cr::out.min_severity = cr::logger::severity::debug;
+    cr:: get_global_logger().min_severity = cr::logger::severity::debug;
   if (gbl_opt.silent)
-    cr::out.min_severity = cr::logger::severity::warning;
+    cr:: get_global_logger().min_severity = cr::logger::severity::warning;
 
   // parse/setup parameters:
   if (gbl_opt.parameters.size() > 0)
@@ -127,9 +127,6 @@ int main(int argc, char **argv)
 
   make_index(gbl_opt);
 
-  if (gbl_opt.ui)
-      glfwInit();
-
   {
     neam::hydra::engine_t engine;
 
@@ -141,10 +138,12 @@ int main(int argc, char **argv)
     neam::hydra::runtime_mode engine_mode = neam::hydra::runtime_mode::core;
     if (gbl_opt.ui)
       engine_mode = neam::hydra::runtime_mode::hydra_context;
+    if (!gbl_opt.debug)
+      engine_mode |= neam::hydra::runtime_mode::release;
 
     engine.init(engine_mode);
+    hydra::core_context& cctx = engine.get_core_context();
     {
-      hydra::core_context& cctx = engine.get_core_context();
       cctx.res.source_folder = gbl_opt.source_folder;
 
       cctx.hconf.register_watch_for_changes();
@@ -153,14 +152,11 @@ int main(int argc, char **argv)
       pck->packer_options = gbl_opt;
     }
 
-    engine.boot({.index_key = gbl_opt.index_key, .index_file = gbl_opt.index});
+    engine.boot({.index_key = gbl_opt.index_key, .index_file = gbl_opt.index, .argv0 = argv[0]});
 
     // make the main thread participate in the task manager
-    neam::hydra::core_context::thread_main(engine.get_core_context());
+    cctx.enroll_main_thread();
   }
-
-  if (gbl_opt.ui)
-    glfwTerminate();
 
   return 0;
 }

@@ -35,25 +35,7 @@
 namespace neam
 {
   // read + close the pipe
-  inline async::chain<std::string&&> read_pipe(hydra::core_context& ctx, id_t pipe_id, std::string&& content = {})
-  {
-    constexpr uint32_t k_read_size = 1024;
-    return ctx.io.queue_read(pipe_id, 0, k_read_size)
-    .then([&ctx, pipe_id, content = std::move(content)] (raw_data&& rd, bool st) mutable
-    {
-      if (rd.size == 0 || !st)
-      {
-        ctx.io.close(pipe_id);
-        return async::chain<std::string&&>::create_and_complete(std::move(content));
-      }
-
-      const std::string_view view((const char*)rd.data.get(), rd.size);
-      content.append(view);
-
-      // there might still be some data in the pipe, continue to read
-      return read_pipe(ctx, pipe_id, std::move(content));
-    });
-  }
+  async::chain<std::string&&> read_pipe(hydra::core_context& ctx, id_t pipe_id, std::string&& content = {});
 
   using spawn_function_t = fu2::unique_function<pid_t()>;
 

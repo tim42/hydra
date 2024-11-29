@@ -15,6 +15,8 @@ add_custom_command( OUTPUT  ${CMAKE_BINARY_DIR}/hydra/embedded_index_generated.t
                         fonts/Hack/Hack-Bold.ttf
                         fonts/Hack/Hack-Italic.ttf
                         fonts/Hack/Hack-BoldItalic.ttf
+
+                        images/hydra-logo.png.xz
                     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/hydra/embedded_index_generated.timestamp
                     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/data/source/
                     MAIN_DEPENDENCY ${CMAKE_SOURCE_DIR}/data/source/shaders/engine/imgui/imgui.hsf

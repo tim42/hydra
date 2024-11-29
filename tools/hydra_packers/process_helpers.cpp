@@ -28,6 +28,27 @@
 
 namespace neam
 {
+  async::chain < std::string&& > read_pipe(hydra::core_context& ctx, id_t pipe_id, std::string&& content)
+  {
+    constexpr uint32_t k_read_size = 1024;
+    return ctx.io.queue_read(pipe_id, 0, k_read_size)
+    .then([&ctx, pipe_id, content = std::move(content)] (raw_data&& rd, bool st, uint32_t) mutable
+    {
+      TRACY_SCOPED_ZONE;
+      if (rd.size == 0 || !st)
+      {
+        ctx.io.close(pipe_id);
+        return async::chain<std::string&&>::create_and_complete(std::move(content));
+      }
+
+      const std::string_view view((const char*)rd.data.get(), rd.size);
+      content.append(view);
+
+      // there might still be some data in the pipe, continue to read
+      return read_pipe(ctx, pipe_id, std::move(content));
+    });
+  }
+
   struct process_t
   {
     async::chain<int>::state state;
@@ -50,6 +71,7 @@ namespace neam
 
   static void spawn_and_wait_for_process(process_t& process)
   {
+    TRACY_SCOPED_ZONE;
     const pid_t pid = process.spawn_fnc();
     int ret = -1;
     int status;
@@ -63,6 +85,7 @@ namespace neam
 
   static void process_task(hydra::core_context& ctx, process_t process)
   {
+    TRACY_SCOPED_ZONE;
     spawn_and_wait_for_process(process);
 
     process_queue_t& pq = get_process_queue();
@@ -90,8 +113,8 @@ namespace neam
 
   async::chain<int> queue_process(hydra::core_context& ctx, spawn_function_t&& spawn_fnc)
   {
+    TRACY_SCOPED_ZONE;
     process_queue_t& pq = get_process_queue();
-
 
     std::lock_guard _l(pq.lock);
     async::chain<int> ret;
@@ -102,7 +125,7 @@ namespace neam
     };
 
     // we leave 2 thread for the other tasks
-    if (pq.running_process_count < ctx.get_thread_count() - 2)
+    if (pq.running_process_count < ctx.get_thread_count() / 2)
     {
       ++pq.running_process_count;
       ctx.tm.get_long_duration_task([&ctx, process = std::move(process)] mutable

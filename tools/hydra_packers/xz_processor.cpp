@@ -42,21 +42,18 @@ namespace neam::hydra::processor
       const string_id res_id = get_resource_id(input.file);
       input.db.resource_name(res_id, input.file);
 
-      return resources::uncompress_raw_xz(std::move(input.file_data)).then([input = std::move(input)](raw_data&& data) mutable
+      std::vector<resources::processor::input_data> ret;
+      ret.emplace_back(resources::processor::input_data
       {
-        TRACY_SCOPED_ZONE;
-        std::vector<resources::processor::input_data> ret;
-        ret.emplace_back(resources::processor::input_data
-        {
-          .file = input.file / input.file.filename().replace_extension(),
-          .file_data = std::move(data),
-          .metadata = std::move(input.metadata),
-          .db = input.db,
-        });
-
-        // forward the content of the .xz file to the next processor
-        return resources::processor::chain::create_and_complete({.to_process = std::move(ret)}, resources::status::success);
+        .file = input.file / input.file.filename().replace_extension(),
+                     // most of the cost of the function is here:
+        .file_data = resources::uncompress_raw_xz(std::move(input.file_data)),
+        .metadata = std::move(input.metadata),
+        .db = input.db,
       });
+
+      // forward the content of the .xz file to the next processor
+      return resources::processor::chain::create_and_complete({.to_process = std::move(ret)}, resources::status::success);
     }
   };
 }

@@ -17,9 +17,9 @@ using namespace neam;
 
 int main(int argc, char **argv)
 {
-  cr::out.min_severity = cr::logger::severity::message;
-  cr::out.register_callback(cr::print_log_to_console, nullptr);
-
+  cr:: get_global_logger().min_severity = cr::logger::severity::message;
+  cr:: get_global_logger().register_callback(cr::print_log_to_console, nullptr);
+return 0; // FIXME: oom
   // parse the commandline options:
   cmdline::parse cmd(argc, argv);
   bool success;
@@ -51,9 +51,9 @@ int main(int argc, char **argv)
 
   // handle some of the options
   if (gbl_opt.verbose)
-    cr::out.min_severity = cr::logger::severity::debug;
+    cr:: get_global_logger().min_severity = cr::logger::severity::debug;
   if (gbl_opt.silent)
-    cr::out.min_severity = cr::logger::severity::warning;
+    cr:: get_global_logger().min_severity = cr::logger::severity::warning;
 
   // setup parameters:
   gbl_opt.index_key = string_id::_runtime_build_from_string(gbl_opt.key.data(), gbl_opt.key.size());
@@ -78,18 +78,18 @@ int main(int argc, char **argv)
     neam::hydra::runtime_mode engine_mode = neam::hydra::runtime_mode::core;
 
     engine.init(engine_mode);
+    hydra::core_context& cctx = engine.get_core_context();
     {
-      hydra::core_context& cctx = engine.get_core_context();
       cctx.res.source_folder = gbl_opt.source_folder;
 
       auto* pck = engine.get_module<neam::hydra::packer_engine_module>("packer"_rid);
       pck->files_to_pack = gbl_opt.parameters;
       pck->packer_options = gbl_opt;
     }
-    engine.boot({.mode = neam::hydra::index_boot_parameters_t::init_empty_index, .index_key = gbl_opt.index_key});
+    engine.boot({.mode = neam::hydra::index_boot_parameters_t::init_empty_index, .index_key = gbl_opt.index_key, .argv0 = argv[0]});
 
     // make the main thread participate in the task manager
-    neam::hydra::core_context::thread_main(engine.get_core_context());
+    cctx.enroll_main_thread();
   }
 
   return 0;

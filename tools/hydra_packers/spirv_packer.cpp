@@ -27,6 +27,8 @@
 #include "spirv_packer.hpp"
 
 #include <hydra/engine/core_context.hpp>
+#include <hydra/utilities/shader_gen/block.hpp>
+#include <hydra/utilities/shader_gen/descriptor_sets.hpp>
 
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/SPIRV/SPVRemapper.h>
@@ -90,16 +92,16 @@ namespace neam::hydra::packer
     }
   }
 
-  static void resolve_hydra_layout(std::string& source, const std::string& stage)
+  static void resolve_hydra_layout(std::string& source, const std::string& stage, const std::string& entry_point)
   {
     // find and handle all hydra::layout(stage(mode), args...)
     //                                   ----- ----   -------
     //                                    CP1  CP2    CP3
-    thread_local const std::regex layout_regex { "hydra::layout *\\( *([a-z]+)\\(([a-z]+)\\) *, *([^)]+)\\)" };
+    thread_local const std::regex layout_regex { "hydra::layout *\\( *([a-z_A-Z0-9]+)\\(([a-z]+)\\) *, *([^)]+)\\)" };
     std::smatch result;
     while (std::regex_search(source, result, layout_regex))
     {
-      const bool match = result[1] == stage;
+      const bool match = result[1] == stage || result[1] == entry_point;
       const std::string sem = result[2];
       const std::string args = result[3];
 
@@ -110,6 +112,159 @@ namespace neam::hydra::packer
         source.erase(result.position(), result.length());
     }
   }
+
+  static bool resolve_hydra_gen_interface_block(std::string& source, resources::rel_db& db, id_t id, std::vector<id_t>& dependencies)
+  {
+    // find and handle all hydra::gen_interface_block(struct)
+    //                                                ------
+    //                                                  CP1
+    thread_local const std::regex layout_regex { "hydra::gen_interface_block *\\( *([a-zA-Z0-9:_]+) *\\)" };
+    bool success = true;
+    std::smatch result;
+    while (std::regex_search(source, result, layout_regex))
+    {
+      const std::string cpp_struct = result[1];
+
+      id_t cpp_id = string_id::_runtime_build_from_string(cpp_struct);
+      const std::string res = shaders::internal::generate_struct_body(cpp_id);
+      shaders::internal::get_all_dependencies(cpp_id, dependencies);
+      if (res.empty())
+      {
+        success = false;
+        db.error<spirv_packer>(id, "hydra::gen_interface_block: could not find struct `{}`", cpp_struct);
+      }
+      source.replace(result.position(), result.length(), shaders::internal::generate_struct_body(string_id::_runtime_build_from_string(cpp_struct)));
+    }
+    return success;
+  }
+
+  static bool resolve_hydra_require_cpp_struct(std::string& source, resources::rel_db& db, id_t id, std::vector<id_t>& dependencies)
+  {
+    // find and handle all hydra::require_cpp_struct(struct)
+    //                                                ------
+    //                                                  CP1
+    thread_local const std::regex layout_regex { "hydra::require_cpp_struct *\\( *([a-zA-Z0-9:_]+) *\\)" };
+    bool success = true;
+    std::smatch result;
+    while (std::regex_search(source, result, layout_regex))
+    {
+      const std::string cpp_struct = result[1];
+
+      id_t cpp_id = string_id::_runtime_build_from_string(cpp_struct);
+      const bool struct_is_valid = shaders::internal::is_struct_registered(cpp_id);
+      shaders::internal::get_all_dependencies(cpp_id, dependencies, /* insert self */ true);
+      if (!struct_is_valid)
+      {
+        success = false;
+        db.error<spirv_packer>(id, "hydra::gen_interface_block: could not find struct `{}`", cpp_struct);
+      }
+      source.erase(result.position(), result.length());
+    }
+    return success;
+  }
+  static bool resolve_hydra_push_constant(std::string& source, resources::rel_db& db, id_t id, std::vector<id_t>& dependencies, const spirv_shader_code& code)
+  {
+    // find and handle all hydra::push_constant(struct, opt-stages, ...)
+    //                                          ------  -----------------
+    //                                            CP1    CP2
+    thread_local const std::regex layout_regex { "hydra::push_constant *\\( *([a-zA-Z0-9:_]+) *((, *[a-zA-Z0-9_]+ *)*)? *\\)" };
+    thread_local const std::regex arg_regex("[a-zA-Z0-9_]+");
+    bool success = true;
+    std::smatch result;
+    while (std::regex_search(source, result, layout_regex))
+    {
+      const std::string cpp_struct = result[1];
+
+      bool found = false;
+      std::smatch arg_result;
+      auto it = result[2].first;
+      while (std::regex_search(it, result[2].second, arg_result, arg_regex))
+      {
+        it += arg_result.position() + arg_result.length();
+        if (arg_result[0].compare(code.mode) == 0 || arg_result[0].compare(code.entry_point) == 0)
+          found = true;
+      }
+
+      id_t cpp_id = string_id::_runtime_build_from_string(cpp_struct);
+      const std::string res = shaders::internal::generate_struct_body(cpp_id);
+      shaders::internal::get_all_dependencies(cpp_id, dependencies);
+      if (res.empty())
+      {
+        success = false;
+        db.error<spirv_packer>(id, "hydra::push_constant: could not find struct `{}`", cpp_struct);
+      }
+      if (found)
+      {
+        const std::string replace_str = fmt::format("layout(push_constant, scalar) uniform restrict readonly _push_constant_0 {{ {} }}",
+                                                    shaders::internal::generate_struct_body(string_id::_runtime_build_from_string(cpp_struct)));
+        source.replace(result.position(), result.length(), replace_str);
+        cr::out().log("  push-constant struct: {}", cpp_struct);
+      }
+      else
+      {
+        source.erase(result.position(), result.length());
+      }
+
+    }
+    return success;
+  }
+
+  static bool resolve_hydra_descriptor_set(std::string& source, resources::rel_db& db, id_t id, std::vector<id_t>& dependencies, std::vector<assets::descriptor_set_entry>& ds)
+  {
+    // find and handle all hydra::descriptor_set(set, struct)
+    //                                           ---  ------
+    //                                           CP1   CP2
+    thread_local const std::regex layout_regex { "hydra::descriptor_set *\\( *([0-9]+|_) *, *([a-zA-Z0-9:_]+) *\\)" };
+    thread_local const std::regex arg_regex("[a-zA-Z0-9_]+");
+    bool success = true;
+    std::smatch result;
+    std::vector<bool> used_sets;
+    while (std::regex_search(source, result, layout_regex))
+    {
+      const std::string set_str = (std::string)result[1];
+      uint32_t set;
+      if (set_str == "_")
+      {
+        uint32_t i = 0;
+        for (; i < used_sets.size() && used_sets[i] != false; ++i) {}
+        set = i;
+      }
+      else
+      {
+        set = (uint32_t)std::stoi(set_str);
+      }
+      const std::string cpp_struct = result[2];
+
+      used_sets.resize(set + 1, false);
+      if (used_sets[set] == true)
+      {
+        success = false;
+        db.error<spirv_packer>(id, "hydra::descriptor_set: duplicate descriptor_set {}: (error for struct `{}`)", set, cpp_struct);
+      }
+      used_sets[set] = true;
+      std::smatch arg_result;
+      id_t cpp_id = string_id::_runtime_build_from_string(cpp_struct);
+      const std::string res = shaders::internal::generate_descriptor_set(cpp_id, set);
+      shaders::internal::get_descriptor_set_dependencies(cpp_id, dependencies);
+      if (res.empty())
+      {
+        success = false;
+        db.error<spirv_packer>(id, "hydra::descriptor_set: could not find struct `{}` for set {}", cpp_struct, set);
+      }
+      ds.push_back({cpp_id, set});
+      source.replace(result.position(), result.length(), res);
+      cr::out().log("  descriptor_set struct: (set: {}) {} ", set, cpp_struct);
+      cr::out().log("  descriptor_set struct: {} ", res);
+    }
+    return success;
+  }
+
+  static void resolve_hydra_gen_dependencies(std::string& source, const std::vector<id_t>& dependencies)
+  {
+    const std::string deps = shaders::internal::generate_structs(dependencies);
+    replace_all(source, "hydra::generate_dependent_structs", deps);
+  }
+
   static void resolve_hydra_source_replace(std::string& source, const std::string& stage)
   {
     // source replace has the following signature:
@@ -120,7 +275,7 @@ namespace neam::hydra::packer
     while (std::regex_search(source, result, source_replace_regex))
     {
       // copy the params:
-      const bool match = result[1] == stage || result[1] == "*";
+      const bool match = result[1] == stage || result[1] == "*" || result[1] == "1" || result[1] == "true";
       const std::regex re { (std::string)result[2] };
       const std::string token = result[match ? 3 : 4];
       // remove the source_replace from the code:
@@ -133,9 +288,13 @@ namespace neam::hydra::packer
 
   struct spirv_compiled_shader_t
   {
+    std::vector<assets::push_constant_range> push_constant_ranges;
+    std::vector<assets::descriptor_set_entry> descriptor_set;
+
     std::vector<unsigned int> bytecode;
     std::string entry_point;
     id_t res_index;
+    uint32_t stage;
   };
 
   static async::chain<spirv_compiled_shader_t&&, resources::status> compile_glsl_to_spirv(core_context& ctx, resources::rel_db& db,
@@ -151,6 +310,7 @@ namespace neam::hydra::packer
       db.resource_name(id, fmt::format("{}({})", db.resource_name(root_id), code.entry_point));
 
       std::string source = in_source;
+      std::vector<assets::descriptor_set_entry> descriptor_set;
 
       // do source code replacement:
       replace_all(source, "${hydra::stage}", code.mode);
@@ -161,31 +321,45 @@ namespace neam::hydra::packer
 
       resolve_hydra_source_replace(source, code.mode);
 
-      resolve_hydra_layout(source, code.mode);
+      resolve_hydra_layout(source, code.mode, code.entry_point);
+
+      bool gen_success;
+      {
+        std::vector<id_t> dependencies;
+        gen_success = resolve_hydra_gen_interface_block(source, db, id, dependencies);
+        gen_success = gen_success && resolve_hydra_descriptor_set(source, db, id, dependencies, descriptor_set);
+        gen_success = gen_success && resolve_hydra_push_constant(source, db, id, dependencies, code);
+        gen_success = gen_success && resolve_hydra_require_cpp_struct(source, db, id, dependencies);
+
+        resolve_hydra_gen_dependencies(source, dependencies);
+      }
 
       // compile the shader:
       EShLanguage lang = EShLangCount; // invalid
       const id_t mode_id = string_id::_runtime_build_from_string(code.mode.c_str(), code.mode.size());
+      uint32_t stage = 0;
       switch (mode_id)
       {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wswitch"
-        case (id_t)"comp"_rid: lang = EShLangCompute; break;
+        case (id_t)"comp"_rid: lang = EShLangCompute; stage = VK_SHADER_STAGE_COMPUTE_BIT; break;
 
-        case (id_t)"vert"_rid: lang = EShLangVertex; break;
-        case (id_t)"geom"_rid: lang = EShLangGeometry; break;
-        case (id_t)"tesc"_rid: lang = EShLangTessControl; break;
-        case (id_t)"tese"_rid: lang = EShLangTessEvaluation; break;
-        case (id_t)"mesh"_rid: lang = EShLangMeshNV; break;
-        case (id_t)"task"_rid: lang = EShLangTaskNV; break;
-        case (id_t)"frag"_rid: lang = EShLangFragment; break;
+        case (id_t)"vert"_rid: lang = EShLangVertex; stage = VK_SHADER_STAGE_VERTEX_BIT; break;
+        case (id_t)"geom"_rid: lang = EShLangGeometry; stage = VK_SHADER_STAGE_GEOMETRY_BIT; break;
+        case (id_t)"tesc"_rid: lang = EShLangTessControl; stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT; break;
+        case (id_t)"tese"_rid: lang = EShLangTessEvaluation; stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT; break;
 
-        case (id_t)"rgen"_rid: lang = EShLangRayGen; break;
-        case (id_t)"rint"_rid: lang = EShLangIntersect; break;
-        case (id_t)"rahit"_rid: lang = EShLangAnyHit; break;
-        case (id_t)"rchit"_rid: lang = EShLangClosestHit; break;
-        case (id_t)"rmiss"_rid: lang = EShLangMiss; break;
-        case (id_t)"rcall"_rid: lang = EShLangCallable; break;
+        case (id_t)"mesh"_rid: lang = EShLangMesh; stage = VK_SHADER_STAGE_MESH_BIT_EXT; break;
+        case (id_t)"task"_rid: lang = EShLangTask; stage = VK_SHADER_STAGE_TASK_BIT_EXT; break;
+
+        case (id_t)"frag"_rid: lang = EShLangFragment; stage = VK_SHADER_STAGE_FRAGMENT_BIT; break;
+
+        case (id_t)"rgen"_rid: lang = EShLangRayGen; stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR; break;
+        case (id_t)"rint"_rid: lang = EShLangIntersect; stage = VK_SHADER_STAGE_INTERSECTION_BIT_KHR; break;
+        case (id_t)"rahit"_rid: lang = EShLangAnyHit; stage = VK_SHADER_STAGE_ANY_HIT_BIT_KHR; break;
+        case (id_t)"rchit"_rid: lang = EShLangClosestHit; stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR; break;
+        case (id_t)"rmiss"_rid: lang = EShLangMiss; stage = VK_SHADER_STAGE_MISS_BIT_KHR; break;
+        case (id_t)"rcall"_rid: lang = EShLangCallable; stage = VK_SHADER_STAGE_CALLABLE_BIT_KHR; break;
 #pragma GCC diagnostic pop
         case id_t::none:
         case id_t::invalid:
@@ -224,20 +398,57 @@ namespace neam::hydra::packer
       glslang::SpvOptions spvOptions;
       // FIXME: Add options:
       spvOptions.generateDebugInfo = true;
-//             spvOptions.stripDebugInfo = true;
+      //             spvOptions.stripDebugInfo = true;
       spvOptions.disableOptimizer = false;
+
+      std::vector<assets::push_constant_range> push_constant_ranges;
+
       if (parse_success && link_success)
       {
         glslang::GlslangToSpv(*program.getIntermediate(lang), spirv, &logger, &spvOptions);
         glslang_print_log(db, id, logger.getAllMessages(), &has_warnings);
 
+
+        // build vk reflection data:
+
+        // FIXME: Should not be necessary, we already have the structs being used
+        const bool has_reflection = program.buildReflection();
+        if (has_reflection)
+        {
+          // Generate push-constant data
+          const uint32_t num_ub = program.getNumUniformBlocks();
+          std::set<uint32_t> push_constant_blocks;
+          for (uint32_t i = 0; i < num_ub; ++i)
+          {
+            const glslang::TObjectReflection& tor = program.getUniformBlock(i);
+            if (tor.getBinding() < 0)
+            {
+              push_constant_blocks.emplace(tor.index);
+              push_constant_ranges.push_back(
+              {
+                .id = string_id::_runtime_build_from_string(tor.name),
+                .size = (uint16_t)tor.size,
+              });
+            }
+          }
+        }
+
         db.debug<spirv_packer>(id, "stage: {}, entry-point: {}: spirv binary size: {}", code.mode, code.entry_point, spirv.size() * sizeof(unsigned int));
+        db.debug<spirv_packer>(id, "successfully compiled shader module (stage: {}, entry-point: {})", db.resource_name(id), code.mode, code.entry_point);
       }
-      db.debug<spirv_packer>(id, "successfully compiled shader module (stage: {}, entry-point: {})", db.resource_name(id), code.mode, code.entry_point);
-      state.complete({std::move(spirv), std::move(code.entry_point), id},
-                     link_success && parse_success
-                     ? (has_warnings ? resources::status::partial_success : resources::status::success)
-                     : resources::status::failure);
+      state.complete
+      (
+        {
+          std::move(push_constant_ranges),
+          std::move(descriptor_set),
+          std::move(spirv),
+          std::move(code.entry_point),
+          id, stage
+        },
+        link_success&& parse_success&&gen_success
+          ? (has_warnings ? resources::status::partial_success : resources::status::success)
+          : resources::status::failure
+      );
     });
     return ret;
   }
@@ -247,7 +458,7 @@ namespace neam::hydra::packer
     static inline int init = ShInitialize();
     static_assert(&init == &init);
 
-    static constexpr id_t packer_hash = "neam/spirv-packer:0.0.1"_rid;
+    static constexpr id_t packer_hash = "neam/spirv-packer:0.0.1##[WIP: " __DATE__ ":" __TIME__ "]"_rid;
 
     static resources::packer::chain pack_resource(hydra::core_context& ctx, resources::processor::data&& data)
     {
@@ -281,24 +492,26 @@ namespace neam::hydra::packer
       struct state_t
       {
         std::vector<resources::packer::data> res;
+        assets::spirv_shader root;
         resources::status status;
       };
       state_t state;
+      state.root = assets::spirv_shader{.constant_id = std::move(in.constant_id)};
       state.status = (in.variations.size() == 0 ? resources::status::partial_success : resources::status::success);
 
       // insert the main resource:
       state.res.push_back(
       {
         .id = root_id,
-        .data = rle::serialize(assets::spirv_shader{.constant_id = std::move(in.constant_id)}),
         .metadata = std::move(data.metadata),
       });
 
-      return async::multi_chain<state_t&&>(std::move(state), std::move(compilation_chains), [root_id](state_t& state, spirv_compiled_shader_t&& r, resources::status st)
+      return async::multi_chain<state_t&&>(std::move(state), std::move(compilation_chains), [root_id, &db](state_t& state, spirv_compiled_shader_t&& r, resources::status st)
       {
         static spinlock lock;
         std::lock_guard _l(lock);
         state.status = resources::worst(state.status, st);
+
         state.res.push_back(
         {
           .id = r.res_index,
@@ -306,13 +519,20 @@ namespace neam::hydra::packer
           {
             .entry_point = std::move(r.entry_point),
             .module = raw_data::allocate_from(r.bytecode),
-            .root = root_id
+            .root = root_id,
+            .stage = r.stage,
+            .push_constant_ranges = std::move(r.push_constant_ranges),
+            .descriptor_set = std::move(r.descriptor_set),
           }),
         });
+
+        // merge push-constant ranges:
+
       })
       // keep the source alive until there:
       .then([root_id, source = std::move(source)](state_t&& state)
       {
+        state.res.front().data = rle::serialize(state.root);
         return resources::packer::chain::create_and_complete(std::move(state.res), root_id, state.status);
       });
     }
