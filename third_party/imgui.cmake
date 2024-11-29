@@ -15,9 +15,17 @@ add_library(imgui STATIC
     imgui/imgui_internal.h
     imgui/imconfig.h
 
+    implot/implot.cpp
+    implot/implot_demo.cpp
+    implot/implot_items.cpp
+
+    implot/implot.h
+    implot/implot_internal.h
+
     ${IMGUI_ADD_SOURCES}
 )
-target_include_directories(imgui PUBLIC imgui_wrapper/ imgui/)
+target_include_directories(imgui PUBLIC imgui_wrapper/ imgui/ implot/)
+target_compile_options(imgui PRIVATE ${PROJECT_CXX_FLAGS})
 if (${FREETYPE_FOUND})
     target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_FREETYPE=1)
     target_include_directories(imgui PUBLIC imgui/misc/freetype/)

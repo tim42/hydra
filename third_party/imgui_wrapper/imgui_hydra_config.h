@@ -26,9 +26,55 @@
 
 #pragma once
 
+#include <cstdint>
+#include <variant>
+
 // forward decls for imgui (type-safe images)
+namespace neam
+{
+  enum class id_t : uint64_t;
+}
 namespace neam::hydra::vk
 {
   class image_view;
 }
-#define ImTextureID const ::neam::hydra::vk::image_view *
+namespace neam::hydra::imgui
+{
+  struct texture_id_t
+  {
+    texture_id_t() = default;
+    texture_id_t(const texture_id_t&) = default;
+    texture_id_t(texture_id_t&&) = default;
+    texture_id_t& operator = (const texture_id_t&) = default;
+    texture_id_t& operator = (texture_id_t&&) = default;
+
+    texture_id_t(long int) : variant { (const ::neam::hydra::vk::image_view*)nullptr } {} // for NULL that imgui sometimes uses
+    texture_id_t(void*) : variant { (const ::neam::hydra::vk::image_view*)nullptr } {} // for NULL that imgui sometimes uses
+    texture_id_t(int) : variant { (const ::neam::hydra::vk::image_view*)nullptr } {} // for NULL that imgui sometimes uses
+    texture_id_t(std::nullptr_t) : variant { (const ::neam::hydra::vk::image_view*)nullptr } {}
+
+    template<typename T> texture_id_t(T&& t) requires(!std::is_same_v<std::decay_t<T>, texture_id_t>) : variant{std::forward<T>(t)} {}
+    template<typename T> texture_id_t& operator = (T&& t) requires(!std::is_same_v<std::decay_t<T>, texture_id_t>) { variant = std::forward<T>(t); return *this; }
+
+    // some imgui performs a = 0...
+    texture_id_t& operator = (int) { variant = {(const ::neam::hydra::vk::image_view*)nullptr}; return *this; }
+
+
+    std::variant<const ::neam::hydra::vk::image_view*, unsigned, id_t> variant { (const ::neam::hydra::vk::image_view*)nullptr };
+
+
+    bool operator == (const texture_id_t& o) const { return variant == o.variant; }
+    bool operator != (const texture_id_t& o) const { return variant != o.variant; }
+
+    // used by imgui
+    operator long int () const
+    {
+      return std::visit([](auto& a)
+      {
+        return (long int)a;
+      }, variant);
+    }
+  };
+}
+
+#define ImTextureID ::neam::hydra::imgui::texture_id_t
