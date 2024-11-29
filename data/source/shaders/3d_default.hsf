@@ -1,0 +1,56 @@
+
+
+#include "engine/std.glsl"
+#include "engine/random.glsl"
+
+// raymarcher defines
+layout(constant_id = hydra::id(loop_count_factor)) const float k_loop_count_factor = 1;
+
+// in/out:
+// vert:
+hydra::layout(vert(in), location = 0) vec3 vertex_in_position;
+hydra::layout(vert(in), location = 2) vec2 vertex_in_uv;
+
+hydra::layout(vert(out), location = 0) vec3 out_vertex_pos;
+hydra::layout(vert(out), location = 1) vec2 out_vertex_uv;
+hydra::layout(vert(out), location = 2) vec3 out_vertex_color;
+
+// frag:
+hydra::layout(frag(in), location = 0) vec3 in_vertex_pos;
+hydra::layout(frag(in), location = 1) vec2 in_vertex_uv;
+hydra::layout(frag(in), location = 2) vec3 in_vertex_color;
+
+hydra::layout(frag(out), location = 0) vec4 frag_out_color;
+
+hydra::push_constant(neam::cube_push_constants, vert, frag) pc;
+
+layout(scalar, binding = 0) readonly buffer _transform_layout
+{
+  hydra::gen_interface_block(neam::cube_buffer_pos)
+};
+
+
+#glsl:if hydra::is_stage(vert, frag)
+#glsl:endif
+
+hydra::entry_point(main_vs, vert)
+hydra::entry_point(main_fs, frag)
+
+
+void main_vs()
+{
+  const packed_transform_t pt = packed_transforms[gl_InstanceIndex];
+
+  const float3 view_vertex_position = transform_point(pt, vertex_in_position, pc.view_translation);
+
+  gl_Position = vec4(pc.view_projection * vec4(view_vertex_position, 1));
+
+  out_vertex_pos = vertex_in_position;
+  out_vertex_uv = vertex_in_uv;
+  out_vertex_color = to_unorm(rnd_split3(rnd_seed(uint2(gl_InstanceIndex % 5, 1/*+gl_VertexIndex / 8*/) * 4444)));
+}
+
+void main_fs()
+{
+  frag_out_color = float4(in_vertex_color, 1.0);
+}
