@@ -28,6 +28,9 @@
 
 #include <ntools/container_utils.hpp>
 #include <hydra/hydra.hpp>          // the main header of hydra
+
+#include <hydra/renderer/ecs/gpu_task_producer.hpp>
+
 #include "shader_struct.hpp"
 // #include "app.hpp"
 
@@ -60,171 +63,189 @@ const std::vector<uint16_t> indices =
     0, 1, 2, 2, 3, 0
 };
 
-namespace neam
+namespace neam::components
 {
-  inline void make_fs_quad_pipeline(hydra::hydra_context& context, hydra::pipeline_render_state& prs)
+  inline void make_fs_quad_pipeline(hydra::hydra_context& hctx, hydra::pipeline_render_state& prs)
   {
     hydra::vk::graphics_pipeline_creator& pcr = prs.get_graphics_pipeline_creator();
     pcr.get_pipeline_shader_stage()
-      .add_shader(context.shmgr.load_shader("shaders/2d_plane.hsf:spirv(main_vs)"_rid))
-      .add_shader(context.shmgr.load_shader("shaders/2d_plane.hsf:spirv(main_fs)"_rid));
+      .add_shader(hctx.shmgr.load_shader("shaders/2d_plane.hsf:spirv(main_vs)"_rid))
+      .add_shader(hctx.shmgr.load_shader("shaders/2d_plane.hsf:spirv(main_fs)"_rid));
 
     pcr.get_viewport_state()
       .set_dynamic_viewports_count(1)
       .set_dynamic_scissors_count(1);
 
-    pcr.get_pipeline_color_blending_state().add_attachment_color_blending(neam::hydra::vk::attachment_color_blending::create_alpha_blending());
+    pcr.get_pipeline_color_blending_state().add_attachment_color_blending(neam::hydra::vk::attachment_color_blending{});
+    // pcr.get_pipeline_color_blending_state().add_attachment_color_blending(neam::hydra::vk::attachment_color_blending::create_alpha_blending());
   }
 
-  class fs_quad_pass : public hydra::render_pass
+  class fs_quad_pass : public hydra::ecs::internal_component<fs_quad_pass>, hydra::renderer::concepts::gpu_task_producer::concept_provider<fs_quad_pass>
   {
     public:
       static constexpr unsigned int logo_size = 1024;
-      fs_quad_pass(hydra::hydra_context& _context)
-        : hydra::render_pass(_context),
-          mesh(context.device),
-
-          hydra_logo_img
-          (
-            neam::hydra::vk::image::create_image_arg
-            (
-              context.device,
-              neam::hydra::vk::image_2d
-              (
-                {logo_size, logo_size}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
-                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
-              )
-            )
-          ),
-          sampler(context.device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f),
-          uniform_buffer(context.device, sizeof(fs_quad_ubo), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+      fs_quad_pass(param_t p, hydra::hydra_context& _hctx)
+        : internal_component_t(p)
+        , gpu_task_producer_provider_t(*this, _hctx)
       {
       }
 
-      void setup(hydra::render_pass_context& rpctx) override
+    protected:
+      struct setup_state_t
+      {
+        hydra::mesh mesh;
+
+        hydra::vk::image hydra_logo_img;
+        hydra::memory_allocation hydra_logo_img_allocation;
+        hydra::vk::image_view hydra_logo_img_view;
+        hydra::vk::sampler sampler;
+
+        hydra::vk::buffer uniform_buffer;
+        hydra::memory_allocation uniform_buffer_allocation;
+
+        fs_quad_shader_params descriptor_set;
+
+        hydra::texture_index_t logo_index;
+      };
+
+      struct prepare_state_t
+      {
+        hydra::renderer::exported_image backbuffer;
+      };
+
+    protected:
+      setup_state_t setup(hydra::renderer::gpu_task_context& gtctx)
       {
         //////////////////////////////////////////////////////////////////////////////
         // setup the mesh
+        hydra::mesh mesh(hctx.device);
         mesh.add_buffer(sizeof(indices[0]) * indices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
         mesh.add_buffer(sizeof(vertices[0]) * vertices.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
         mesh.vertex_input_state() = dummy_vertex::get_vertex_input_state();
-        mesh.allocate_memory(context.allocator);
+        mesh.allocate_memory(hctx.allocator);
 
-        mesh.transfer_data(rpctx.transfers, 0, raw_data::allocate_from(indices), context.gqueue);
-        mesh.transfer_data(rpctx.transfers, 1, raw_data::allocate_from(vertices), context.gqueue);
+        mesh.transfer_data(gtctx.transfers, 0, raw_data::allocate_from(indices), hctx.gqueue);
+        mesh.transfer_data(gtctx.transfers, 1, raw_data::allocate_from(vertices), hctx.gqueue);
 
         //////////////////////////////////////////////////////////////////////////////
         // allocate memory for the image (+ transfer data to it)
+        hydra::vk::image hydra_logo_img
+        (
+          neam::hydra::vk::image::create_image_arg
+          (
+            hctx.device,
+            neam::hydra::vk::image_2d
+            (
+              {logo_size, logo_size}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+            )
+          )
+        );
+        hydra::memory_allocation hydra_logo_img_allocation;
         {
-          hydra_logo_img_allocation = context.allocator.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::persistent_optimal_image);
+          hydra_logo_img_allocation = hctx.allocator.allocate_memory(hydra_logo_img.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::persistent_optimal_image);
           hydra_logo_img.bind_memory(*hydra_logo_img_allocation.mem(), hydra_logo_img_allocation.offset());
-          hydra_logo_img._set_debug_name("fs-quad/hydra_logo_img");
 
           raw_data pixels = raw_data::allocate(logo_size * logo_size * 4);
           neam::hydra::generate_rgba_logo((uint8_t*)pixels.get(), logo_size, 5, 0xFFFFFF);
-          rpctx.transfers.acquire(hydra_logo_img);
-          rpctx.transfers.transfer(hydra_logo_img, std::move(pixels));
-          rpctx.transfers.release(hydra_logo_img, context.gqueue, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+          gtctx.transfers.acquire(hydra_logo_img);
+          gtctx.transfers.transfer(hydra_logo_img, std::move(pixels));
+          gtctx.transfers.release(hydra_logo_img, hctx.gqueue, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         }
+        hydra::vk::image_view hydra_logo_img_view(hctx.device, hydra_logo_img, VK_IMAGE_VIEW_TYPE_2D);
+        hydra::vk::sampler sampler(hctx.device, VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 0.f, 0.f, 0.f);
+
         //////////////////////////////////////////////////////////////////////////////
         // allocate memory for the uniform buffer (+ transfer data to it)
+        //////////////////////////////////////////////////////////////////////////////
+        // allocate memory for the uniform buffer (+ transfer data to it)
+        neam::hydra::memory_allocation uniform_buffer_allocation;
+        neam::hydra::vk::buffer uniform_buffer(hctx.device, sizeof(fs_quad_ubo), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
         {
-          uniform_buffer_allocation = context.allocator.allocate_memory(uniform_buffer.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::persistent);
+          uniform_buffer_allocation = hctx.allocator.allocate_memory(uniform_buffer.get_memory_requirements(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, neam::hydra::allocation_type::persistent);
 
           uniform_buffer.bind_memory(*uniform_buffer_allocation.mem(), uniform_buffer_allocation.offset());
           uniform_buffer._set_debug_name("fs-quad/uniform_buffer");
         }
 
-        hydra_logo_img_view = decltype(hydra_logo_img_view)(new neam::hydra::vk::image_view(context.device, hydra_logo_img, VK_IMAGE_VIEW_TYPE_2D));
-
-
         // create the pipeline
-        context.ppmgr.add_pipeline("hydra-logo"_rid, [this](auto& p) { make_fs_quad_pipeline(context, p); });
+        hctx.ppmgr.add_pipeline("hydra-logo"_rid, [this](auto& p) { make_fs_quad_pipeline(hctx, p); });
+        hydra::texture_index_t logo_index = hctx.textures.request_texture_index("images/hydra-logo-square.png:image"_rid);
 
-        // logo_index = context.textures.request_texture_index("images/hydra-logo.png.xz/hydra-logo.png:image"_rid);
-        logo_index = context.textures.request_texture_index("images/hydra-logo-square.png:image"_rid);
+        return
+        {
+          .mesh = std::move(mesh),
+          .hydra_logo_img = std::move(hydra_logo_img),
+          .hydra_logo_img_allocation = std::move(hydra_logo_img_allocation),
+          .hydra_logo_img_view = std::move(hydra_logo_img_view),
+          .sampler = std::move(sampler),
+          .uniform_buffer = std::move(uniform_buffer),
+          .uniform_buffer_allocation = std::move(uniform_buffer_allocation),
+          .logo_index = logo_index,
+        };
       }
 
-      void prepare(hydra::render_pass_context& rpctx) override
+      prepare_state_t prepare(hydra::renderer::gpu_task_context& gtctx, setup_state_t& st)
       {
-        // prevent the logo from being streamed-out
-        context.textures.indicate_texture_usage(logo_index, 0);
+        hctx.textures.indicate_texture_usage(st.logo_index, 0);
 
-        rpctx.transfers.acquire(uniform_buffer, context.gqueue);
-        rpctx.transfers.transfer(uniform_buffer, raw_data::duplicate(
-        fs_quad_ubo
+        const hydra::renderer::viewport_context& vc = get_viewport_context();
+
+        gtctx.transfers.acquire(st.uniform_buffer, hctx.gqueue);
+        gtctx.transfers.transfer(st.uniform_buffer, raw_data::duplicate(fs_quad_ubo
         {
           .time = (float)cr::chrono::now_relative(),
-          .screen_resolution = (glm::vec2)rpctx.output_size,
-          .logo_index = context.textures.texture_index_to_gpu_index(logo_index),
+          .screen_resolution = (glm::vec2)vc.size,
+          //.screen_resolution = (glm::vec2{10, 10}),
+          .logo_index = hctx.textures.texture_index_to_gpu_index(st.logo_index),
         }));
-        rpctx.transfers.release(uniform_buffer, context.gqueue);
+        gtctx.transfers.release(st.uniform_buffer, hctx.gqueue);
 
         {
-          descriptor_set.tex_sampler = {*hydra_logo_img_view, sampler};
-          descriptor_set.ubo = uniform_buffer;
-          descriptor_set.update_descriptor_set(context);
+          st.descriptor_set.tex_sampler = {st.hydra_logo_img_view, st.sampler};
+          st.descriptor_set.ubo = st.uniform_buffer;
+          st.descriptor_set.update_descriptor_set(hctx);
         }
+
+        return
+        {
+          .backbuffer = import_image(hydra::renderer::k_context_final_output, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
+        };
       }
 
-      hydra::render_pass_output submit(hydra::render_pass_context& rpctx) override
+      void submit(hydra::renderer::gpu_task_context& gtctx, hydra::vk::submit_info& si, setup_state_t& st, prepare_state_t& pt)
       {
-        hydra::vk::command_buffer cmd_buf = context.gcpm.get_pool().create_command_buffer();
-        cmd_buf._set_debug_name("fs-quad::command_buffer");
-        hydra::vk::command_buffer_recorder cbr = cmd_buf.begin_recording(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-        // if (0)
+        hydra::vk::command_buffer cmd_buf = hctx.gcpm.get_pool().create_command_buffer();
         {
-          neam::hydra::vk::cbr_debug_marker _dm(cbr, "fsquad");
+          const hydra::renderer::viewport_context& vc = get_viewport_context();
+          hydra::vk::command_buffer_recorder cbr = cmd_buf.begin_recording(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
-  //         cbr.pipeline_barrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0,
-  //         {
-  //           neam::hydra::vk::buffer_memory_barrier::queue_transfer(uniform_buffer.get_buffer(), rpctx.transfers.get_queue_familly_index(), context.gqueue.get_queue_familly_index()),
-  //         });
+          pipeline_barrier(cbr, pt.backbuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+          begin_rendering(cbr, pt.backbuffer, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE);
 
-          rpctx.begin_rendering(cbr, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE);
+          cbr.bind_graphics_pipeline(hctx.ppmgr, "hydra-logo"_rid, st.mesh, hydra::vk::specialization
+          {{
+            { "loop_count_factor"_rid, float(2) },
+          }});
+          cbr.set_viewport({vc.viewport}, 0, 1);
+          cbr.set_scissor(vc.viewport_rect);
 
-          cbr.bind_graphics_pipeline(context.ppmgr, "hydra-logo"_rid, mesh,
-                                                      hydra::vk::specialization
-                                                      {{
-                                                        { "loop_count_factor"_rid, float(2) },
-                                                      }});
-          cbr.set_viewport({rpctx.viewport}, 0, 1);
-          cbr.set_scissor(rpctx.viewport_rect);
+//          cbr.push_descriptor_set(hctx, st.descriptor_set);
+          cbr.bind_descriptor_set(hctx, st.descriptor_set);
+          cbr.bind_descriptor_set(hctx, hctx.textures.get_descriptor_set());
 
-          // cbr.bind_descriptor_set(VK_PIPELINE_BIND_POINT_GRAPHICS, context.ppmgr.get_pipeline_layout("hydra-logo"_rid), 0, { &descriptor_set });
-          cbr.bind_descriptor_set(context, descriptor_set);
-          cbr.bind_descriptor_set(context, context.textures.get_descriptor_set());
-          mesh.bind(cbr);
+          st.mesh.bind(cbr);
           cbr.draw_indexed(indices.size(), 1, 0, 0, 0);
           cbr.end_rendering();
         }
         cmd_buf.end_recording();
 
-        return { .graphic = cr::construct<std::vector>(std::move(cmd_buf)) };
+        si.on(hctx.gqueue).execute(cmd_buf);
+        hctx.dfe.defer_destruction(hctx.dfe.queue_mask(hctx.gqueue), std::move(cmd_buf));
       }
 
-      void cleanup(hydra::render_pass_context& rpctx) override
-      {
-        TRACY_SCOPED_ZONE;
-
-        context.dfe.defer_destruction(context.dfe.queue_mask(context.gqueue), descriptor_set.reset());
-      }
-
-      neam::hydra::vk::image_view* get_hydra_logo_img_view() { return hydra_logo_img_view.get(); }
     private:
-      neam::hydra::mesh mesh;
-
-      fs_quad_shader_params descriptor_set;
-      // neam::hydra::vk::descriptor_set descriptor_set { context.device, VkDescriptorSet(nullptr) };
-
-      neam::hydra::vk::image hydra_logo_img;
-      neam::hydra::memory_allocation hydra_logo_img_allocation;
-      neam::hydra::vk::sampler sampler;
-
-      std::unique_ptr<neam::hydra::vk::image_view> hydra_logo_img_view;
-
-      neam::hydra::vk::buffer uniform_buffer;
-      neam::hydra::memory_allocation uniform_buffer_allocation;
-      neam::hydra::texture_index_t logo_index;
+      friend gpu_task_producer_provider_t;
   };
 }

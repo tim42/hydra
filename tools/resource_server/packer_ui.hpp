@@ -71,7 +71,7 @@ namespace neam::hydra
       conf::gen_conf resource_ctx_conf;
 
     private:
-      static constexpr const char* module_name = "packer-ui";
+      static constexpr neam::string_t module_name = "packer-ui";
 
       static bool is_compatible_with(runtime_mode m)
       {
@@ -100,9 +100,8 @@ namespace neam::hydra
 
         auto* glfw_mod = engine->get_module<glfw::glfw_module>("glfw"_rid);
         window_state = glfw_mod->create_window(glm::uvec2{1200, 600}, "HYDRA RESOURCE SERVER");
-        imgui->create_context(*window_state.get());
+        imgui->create_context(window_state);
         // window_state->window.iconify();
-        window_state->_ctx_ref.clear_framebuffer = true;
         //window_state->only_render_on_event = true;
         set_window_icon();
 
@@ -178,6 +177,7 @@ namespace neam::hydra
               }
             }
           }
+          ImGui::End();
           if (ImGui::Begin("Conf", nullptr, 0))
           {
             if (resource_ctx_conf.is_loaded())
@@ -327,7 +327,7 @@ namespace neam::hydra
           }
           ImGui::End();
 
-          if (window_state->window.should_close())
+          if (window_state.win->should_close())
             ImGui::OpenPopup("Confirm Exit");
 
           if (ImGui::BeginPopupModal("Confirm Exit", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
@@ -349,7 +349,7 @@ namespace neam::hydra
             ImGui::Separator();
             if (ImGui::Button("Cancel", ImVec2(100, 0)))
             {
-              window_state->window.should_close(false);
+              window_state.win->should_close(false);
               ImGui::CloseCurrentPopup();
             }
             ImGui::SetItemDefaultFocus();
@@ -414,8 +414,8 @@ namespace neam::hydra
               }
             }
 
-            if (!is_setup && window_state)
-              window_state->window.iconify();
+            if (!is_setup && window_state.win)
+              window_state.win->iconify();
           });
         });
       }
@@ -440,7 +440,7 @@ namespace neam::hydra
         on_render_start_tk.release();
 
         resource_ctx_conf.remove_watch();
-        window_state.reset();
+        window_state = {};
       }
 
     private:
@@ -465,7 +465,7 @@ namespace neam::hydra
 
       void set_window_icon()
       {
-        if (!window_state)
+        if (!window_state.win)
           return;
 
         if (icon_state == current_state)
@@ -483,7 +483,7 @@ namespace neam::hydra
         if ((icon_state & packer_state_t::idle) != packer_state_t::none)
           color /= 2;
 
-        window_state->window._set_hydra_icon(*reinterpret_cast<uint32_t*>(&color));
+        window_state.win->_set_hydra_icon(*reinterpret_cast<uint32_t*>(&color));
       }
 
       void setup_window()
@@ -491,7 +491,7 @@ namespace neam::hydra
         cr::out().debug("found imgui shaders, creating application main window/render-context...");
         auto* imgui = engine->get_module<imgui::imgui_module>("imgui"_rid);
         is_setup = true;
-        window_state->window.show();
+        window_state.win->show();
         hctx->shmgr.refresh();
       }
 
@@ -594,7 +594,7 @@ namespace neam::hydra
 
       rle::serialization_metadata rel_db_metadata = rle::generate_metadata<resources::rel_db>();
 
-      std::unique_ptr<glfw::glfw_module::state_ref_t> window_state;
+      glfw::window_state_t window_state;
 
       cr::event_token_t on_packing_started_tk;
       cr::event_token_t on_resource_queued_tk;

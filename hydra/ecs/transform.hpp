@@ -70,6 +70,16 @@ namespace neam::hydra
   };
 }
 
+N_METADATA_STRUCT(neam::hydra::transform)
+{
+  using member_list = neam::ct::type_list
+  <
+    N_MEMBER_DEF(translation),
+    N_MEMBER_DEF(rotation),
+    N_MEMBER_DEF(scale)
+  >;
+};
+
 namespace neam::hydra::ecs::components
 {
   /// \brief Transform for entities.
@@ -80,7 +90,7 @@ namespace neam::hydra::ecs::components
   ///       Entitites without transforms simply use the transform of their parent
   ///       Do not require<> this component, rather, require< hierarchy > and call
   ///       hierarchy.get< transform > when needed. It will return the closest transform component / nullptr if none are present.
-  class transform : public component<transform>,
+  class transform : public internal_component<transform>,
     public serializable::concept_provider<transform>,
     public concepts::hierarchical::concept_provider<transform>
   {
@@ -104,8 +114,13 @@ namespace neam::hydra::ecs::components
       void update_from_hierarchy();
 
     private: // serialization
-      void refresh_from_deserialization() {}
-      float /* fixme */ get_data_to_serialize() const { return 0; }
+      void refresh_from_deserialization()
+      {
+        update_local_transform() = get_persistent_data();
+      }
+
+      // we only serialize the local data, as everything else can be easily reconstructed from it
+      hydra::transform get_data_to_serialize() const { return local_state; }
 
     private: // data
       hydra::transform local_state;

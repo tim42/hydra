@@ -69,7 +69,7 @@ namespace neam::hydra
       size_t get_packed_entries() const { return state.counter; }
 
     private:
-      static constexpr const char* module_name = "packer";
+      static constexpr neam::string_t module_name = "packer";
 
       static bool is_compatible_with(runtime_mode m)
       {

@@ -41,8 +41,8 @@ namespace neam::hydra
     std::lock_guard _lg(lock);
     acquisitions.try_emplace(&src_queue).first->second.buffers.push_back
     ({
-      .buffer = &buf,
-      .semaphore = wait_semaphore,
+      .buffer = buf._get_vk_buffer(),
+      .semaphore = wait_semaphore ? wait_semaphore->_get_vk_semaphore() : VK_NULL_HANDLE,
     });
   }
 
@@ -57,8 +57,8 @@ namespace neam::hydra
     std::lock_guard _lg(lock);
     acquisitions.try_emplace(&src_queue).first->second.images.push_back
     ({
-      .image = &img,
-      .semaphore = wait_semaphore,
+      .image = img.get_vk_image(),
+      .semaphore = wait_semaphore ? wait_semaphore->_get_vk_semaphore() : VK_NULL_HANDLE,
       .layout = source_layout,
       .layout_for_copy = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
     });
@@ -73,8 +73,8 @@ namespace neam::hydra
     std::lock_guard _lg(lock);
     acquisitions.try_emplace(&tqueue).first->second.images.push_back
     ({
-      .image = &img,
-      .semaphore = wait_semaphore,
+      .image = img.get_vk_image(),
+      .semaphore = wait_semaphore ? wait_semaphore->_get_vk_semaphore() : VK_NULL_HANDLE,
       .layout = source_layout,
       .layout_for_copy = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
     });
@@ -85,8 +85,8 @@ namespace neam::hydra
     std::lock_guard _lg(lock);
     acquisitions.try_emplace(&tqueue).first->second.images.push_back
     ({
-      .image = &img,
-      .semaphore = wait_semaphore,
+      .image = img.get_vk_image(),
+      .semaphore = wait_semaphore ? wait_semaphore->_get_vk_semaphore() : VK_NULL_HANDLE,
       .layout = source_layout,
       .layout_for_copy = copy_layout,
     });
@@ -100,8 +100,8 @@ namespace neam::hydra
     std::lock_guard _lg(lock);
     releases.try_emplace(&dst_queue).first->second.buffers.push_back
     ({
-      .buffer = &buf,
-      .semaphore = signal_semaphore,
+      .buffer = buf._get_vk_buffer(),
+      .semaphore = signal_semaphore ? signal_semaphore->_get_vk_semaphore() : VK_NULL_HANDLE,
     });
   }
 
@@ -116,8 +116,8 @@ namespace neam::hydra
     std::lock_guard _lg(lock);
     releases.try_emplace(&dst_queue).first->second.images.push_back
     ({
-      .image = &img,
-      .semaphore = signal_semaphore,
+      .image = img.get_vk_image(),
+      .semaphore = signal_semaphore ? signal_semaphore->_get_vk_semaphore() : VK_NULL_HANDLE,
       .layout = dst_layout,
       .layout_for_copy = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
     });
@@ -127,8 +127,8 @@ namespace neam::hydra
     std::lock_guard _lg(lock);
     releases.try_emplace(&tqueue).first->second.images.push_back
     ({
-      .image = &img,
-      .semaphore = signal_semaphore,
+      .image = img.get_vk_image(),
+      .semaphore = signal_semaphore ? signal_semaphore->_get_vk_semaphore() : VK_NULL_HANDLE,
       .layout = dst_layout,
       .layout_for_copy = copy_layout,
     });
@@ -140,7 +140,7 @@ namespace neam::hydra
     // Allocate the entry in the copy list:
     auto& ref = buffer_copies.emplace_back(buffer_copy_t
     {
-      .dst_buffer = &buf,
+      .dst_buffer = buf._get_vk_buffer(),
       .src_buffer = std::make_unique<std::optional<buffer_holder>>(),
       .offset = buf_offset,
       .size = data.size,
@@ -171,7 +171,7 @@ namespace neam::hydra
         std::lock_guard _lg(lock);
         buffer_copies.emplace_back(buffer_copy_t
         {
-          .dst_buffer = &buf,
+          .dst_buffer = buf._get_vk_buffer(),
           .src_buffer = std::make_unique<std::optional<buffer_holder>>(std::move(temp_holder)),
           .offset = buf_offset,
           .size = data.size,
@@ -188,7 +188,7 @@ namespace neam::hydra
     // Allocate the entry in the copy list:
     auto& ref = image_copies.emplace_back(image_copy_t
     {
-      .dst_image = &img,
+      .dst_image = img.get_vk_image(),
       .src_buffer = std::make_unique<std::optional<buffer_holder>>(),
       .offset = offset,
       .size = size,
@@ -221,7 +221,7 @@ namespace neam::hydra
         std::lock_guard _lg(lock);
         image_copies.emplace_back(image_copy_t
         {
-          .dst_image = &img,
+          .dst_image = img.get_vk_image(),
           .src_buffer = std::make_unique<std::optional<buffer_holder>>(std::move(temp_holder)),
           .offset = offset,
           .size = size,
@@ -288,7 +288,7 @@ namespace neam::hydra
     {
       for (auto it = ait.second.buffers.begin(); it != ait.second.buffers.end();)
       {
-        if (it->buffer == &buffer)
+        if (it->buffer == buffer._get_vk_buffer())
         {
           it = ait.second.buffers.erase(it);
           continue;
@@ -300,7 +300,7 @@ namespace neam::hydra
     {
       for (auto it = rit.second.buffers.begin(); it != rit.second.buffers.end();)
       {
-        if (it->buffer == &buffer)
+        if (it->buffer == buffer._get_vk_buffer())
         {
           it = rit.second.buffers.erase(it);
           continue;
@@ -311,7 +311,7 @@ namespace neam::hydra
 
     for (auto it = buffer_copies.begin(); it != buffer_copies.end();)
     {
-      if (it->dst_buffer == &buffer)
+      if (it->dst_buffer == buffer._get_vk_buffer())
       {
         for (auto& it : tasks)
         {
@@ -347,7 +347,7 @@ namespace neam::hydra
     {
       for (auto it = ait.second.images.begin(); it != ait.second.images.end();)
       {
-        if (it->image == &image)
+        if (it->image == image.get_vk_image())
         {
           it = ait.second.images.erase(it);
           continue;
@@ -359,7 +359,7 @@ namespace neam::hydra
     {
       for (auto it = rit.second.images.begin(); it != rit.second.images.end();)
       {
-        if (it->image == &image)
+        if (it->image == image.get_vk_image())
         {
           it = rit.second.images.erase(it);
           continue;
@@ -370,7 +370,7 @@ namespace neam::hydra
 
     for (auto it = image_copies.begin(); it != image_copies.end();)
     {
-      if (it->dst_image == &image)
+      if (it->dst_image == image.get_vk_image())
       {
         for (auto& it : tasks)
         {
@@ -415,7 +415,7 @@ namespace neam::hydra
           {
             bmb.push_back(vk::buffer_memory_barrier::queue_transfer
             (
-              *bit.buffer,
+              bit.buffer,
               it.first->get_queue_familly_index(),
               tqueue.get_queue_familly_index(),
               /*bit.*/access,
@@ -430,7 +430,7 @@ namespace neam::hydra
             if (it.first == &tqueue) continue;
             imb.push_back(vk::image_memory_barrier::queue_transfer
             (
-              *iit.image,
+              iit.image,
               it.first->get_queue_familly_index(),
               tqueue.get_queue_familly_index(),
               iit.layout,
@@ -485,7 +485,7 @@ namespace neam::hydra
             {
               bmb.push_back(vk::buffer_memory_barrier::queue_transfer
               (
-                *bit.buffer,
+                bit.buffer,
                 ignore_queue ? VK_QUEUE_FAMILY_IGNORED : it.first->get_queue_familly_index(),
                 ignore_queue ? VK_QUEUE_FAMILY_IGNORED : tqueue.get_queue_familly_index(),
                 /*bit.*/access,
@@ -498,7 +498,7 @@ namespace neam::hydra
             {
               imb.push_back(vk::image_memory_barrier::queue_transfer
               (
-                *iit.image,
+                iit.image,
                 ignore_queue ? VK_QUEUE_FAMILY_IGNORED : it.first->get_queue_familly_index(),
                 ignore_queue ? VK_QUEUE_FAMILY_IGNORED : tqueue.get_queue_familly_index(),
                 iit.layout,
@@ -516,6 +516,9 @@ namespace neam::hydra
           for (auto& it : tasks)
           {
             // NOTE: We cannot actively wait for a task, as we have a lock held and that lock is used in oter tasks
+            // FIXME: this may be incorrect?
+            // also FIXME: we should probably only wait for those tasks at submit (which is next frame, and thus would give more time)
+            // but this would require to think a bit more about the transfers
             // while (!it.is_completed()) {}
             hctx.tm.actively_wait_for(std::move(it), threading::task_selection_mode::only_current_task_group);
           }
@@ -529,7 +532,7 @@ namespace neam::hydra
           {
             if (!it.completion_state || !it.completion_state.is_canceled())
             {
-              cbr.copy_buffer((**it.src_buffer).buffer, *it.dst_buffer, {{ 0, it.offset, it.size }});
+              cbr.copy_buffer((**it.src_buffer).buffer._get_vk_buffer(), it.dst_buffer, {{ 0, it.offset, it.size }});
             }
 
             hctx.dfe.defer_destruction(hctx.dfe.queue_mask(tqueue), std::move(it.src_buffer));
@@ -547,7 +550,7 @@ namespace neam::hydra
           {
             if (!it.completion_state || !it.completion_state.is_canceled())
             {
-              cbr.copy_buffer_to_image((**it.src_buffer).buffer, *it.dst_image, it.layout, { 0, it.offset, it.size, it.isl });
+              cbr.copy_buffer_to_image((**it.src_buffer).buffer._get_vk_buffer(), it.dst_image, it.layout, { 0, it.offset, it.size, it.isl });
             }
 
             hctx.dfe.defer_destruction(hctx.dfe.queue_mask(tqueue), std::move(it.src_buffer));
@@ -575,7 +578,7 @@ namespace neam::hydra
             {
               bmb.push_back(vk::buffer_memory_barrier::queue_transfer
               (
-                *bit.buffer,
+                bit.buffer,
                 ignore_queue ? VK_QUEUE_FAMILY_IGNORED : tqueue.get_queue_familly_index(),
                 ignore_queue ? VK_QUEUE_FAMILY_IGNORED : it.first->get_queue_familly_index(),
                 VK_ACCESS_TRANSFER_WRITE_BIT, /*bit.*/access
@@ -587,7 +590,7 @@ namespace neam::hydra
             {
               imb.push_back(vk::image_memory_barrier::queue_transfer
               (
-                *iit.image,
+                iit.image,
                 ignore_queue ? VK_QUEUE_FAMILY_IGNORED : tqueue.get_queue_familly_index(),
                 ignore_queue ? VK_QUEUE_FAMILY_IGNORED : it.first->get_queue_familly_index(),
                 iit.layout_for_copy,
@@ -631,7 +634,7 @@ namespace neam::hydra
           {
             bmb.push_back(vk::buffer_memory_barrier::queue_transfer
             (
-              *bit.buffer,
+              bit.buffer,
               tqueue.get_queue_familly_index(),
               it.first->get_queue_familly_index(),
               VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -645,7 +648,7 @@ namespace neam::hydra
           {
             imb.push_back(vk::image_memory_barrier::queue_transfer
             (
-              *iit.image,
+              iit.image,
               tqueue.get_queue_familly_index(),
               it.first->get_queue_familly_index(),
               iit.layout_for_copy,
@@ -706,6 +709,7 @@ namespace neam::hydra
     image_copies.clear();
 
     wait_sema = nullptr;
+    sig_fence = nullptr;
   }
 
   void transfer_context::append(transfer_context& other)

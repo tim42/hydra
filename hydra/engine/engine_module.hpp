@@ -157,6 +157,10 @@ namespace neam::hydra
       /// \brief Add dependencies between the task-groups:
       virtual void add_task_groups_dependencies(threading::task_group_dependency_tree& /*tgd*/) {}
 
+      /// \brief Called after the core context has been set, but before it is booted
+      /// \warning resource access is not possible at this time and the task manager might be locked
+      /// \note this means that in the case of a vk_context the vulkan instance and device do exist
+      virtual void on_context_set() {}
 
       /// \brief Called after the core context has been set (and is fully initialized).
       /// \note This function can do any specific initialization as the module has been selected
@@ -213,17 +217,17 @@ namespace neam::hydra
     public:
       /// \brief Module name (can be changed (type and constness, but must remain static and be any type of string) in the child class
       ///        It defaults to the type name
-      static constexpr const char* module_name = ct::type_name<Mod>.str;
+      static constexpr std::string_view module_name = ct::type_name<Mod>;
 
     private:
       static void register_module()
       {
-        module_manager::register_module([]{ return std::unique_ptr<engine_module_base>(new Mod); }, &Mod::is_compatible_with, Mod::module_name);
+        module_manager::register_module([]{ return std::unique_ptr<engine_module_base>(new Mod); }, &Mod::is_compatible_with, std::string(Mod::module_name));
       }
 
       static void unregister_module()
       {
-        module_manager::unregister_module(Mod::module_name);
+        module_manager::unregister_module(std::string(Mod::module_name));
       }
 
       struct raii_register

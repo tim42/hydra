@@ -70,19 +70,20 @@ namespace neam::hydra
 
       auto& current_entry = frame_entries.back();
 
-      std::lock_guard _fal { current_entry.lock };
+      {
+        std::lock_guard _fal { current_entry.lock };
 
-      current_entry.is_submit = false;
-      current_entry.completed_queues_mask = initial_queue_mask;
-      current_entry.queue_fences = std::move(queue_fences);
-      if (frame_entries_state.size() > 0)
-        current_entry.raw_frame_entries = std::move(frame_entries_state);
-      if (single_fence_state.size() > 0)
-        current_entry.raw_single_fence_entries = std::move(single_fence_state);
+        current_entry.is_submit = false;
+        current_entry.completed_queues_mask = initial_queue_mask;
+        current_entry.queue_fences = std::move(queue_fences);
+        if (frame_entries_state.size() > 0)
+          current_entry.raw_frame_entries = std::move(frame_entries_state);
+        if (single_fence_state.size() > 0)
+          current_entry.raw_single_fence_entries = std::move(single_fence_state);
 
-      if (!current_entry.has_remaining_entries() || !current_entry.queue_fences.size())
-        return;
-
+        if (!current_entry.has_remaining_entries() || !current_entry.queue_fences.size())
+          return;
+      }
       // we are at the very end of the rendering frame, after all the rendering operations,
       // so we can insert a callback to mark the current_entry as submit using DQE:
       {

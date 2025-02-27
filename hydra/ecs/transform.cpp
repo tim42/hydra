@@ -96,7 +96,7 @@ namespace neam::hydra
   namespace ecs::components
   {
     transform::transform(param_t p)
-      : component_t(p), serializable_t(*this), hierarchical_t(*this)
+      : internal_component_t(p), serializable_t(*this), hierarchical_t(*this)
     {
     }
 

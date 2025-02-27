@@ -182,14 +182,15 @@ namespace neam::hydra
     private:
       struct buffer_acqrel_t
       {
-        vk::buffer* buffer;
-        vk::semaphore* semaphore;
+        VkBuffer buffer;
+        VkSemaphore semaphore;
         VkAccessFlags access;
       };
 
       struct buffer_copy_t
       {
-        vk::buffer* dst_buffer;
+        VkBuffer dst_buffer;
+
         // vk::buffer src_buffer;
         std::unique_ptr<std::optional<buffer_holder>> src_buffer;
         size_t offset;
@@ -200,8 +201,8 @@ namespace neam::hydra
 
       struct image_acqrel_t
       {
-        vk::image* image;
-        vk::semaphore* semaphore;
+        VkImage image;
+        VkSemaphore semaphore;
 
         VkImageLayout layout;
         VkImageLayout layout_for_copy;
@@ -210,7 +211,7 @@ namespace neam::hydra
 
       struct image_copy_t
       {
-        vk::image* dst_image;
+        VkImage dst_image;
         // vk::buffer src_buffer;
         std::unique_ptr<std::optional<buffer_holder>> src_buffer;
         glm::uvec3 offset;

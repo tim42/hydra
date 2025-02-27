@@ -101,7 +101,7 @@ namespace neam::hydra::shaders
     cbr.pipeline_barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, post_stage, 0, ppb);
   }
 
-  void blur::blur_image(hydra_context& context, render_pass_context& rpctx, vk::command_buffer_recorder& cbr,
+  void blur::blur_image(hydra_context& context, vk::command_buffer_recorder& cbr,
                         const vk::image_view& source, const vk::image_view& dest,
                         glm::uvec2 image_size,
                         uint32_t strength,

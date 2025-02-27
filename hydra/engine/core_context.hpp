@@ -69,6 +69,8 @@ namespace neam::hydra
 
       std::string program_name {};
 
+      class engine_t* engine = nullptr;
+
     public:
       ~core_context();
 

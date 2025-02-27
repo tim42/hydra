@@ -35,7 +35,6 @@
 #include <ntools/mt_check/vector.hpp>
 
 #include "imgui_context.hpp"
-#include "imgui_renderpass.hpp"
 
 namespace neam::hydra::imgui
 {
@@ -48,12 +47,12 @@ namespace neam::hydra::imgui
       void register_function(id_t fid, std::function<void()> func);
       void unregister_function(id_t fid);
 
-      void create_context(glfw::glfw_module::state_ref_t& viewport);
+      void create_context(glfw::window_state_t& ws);
 
       void reload_fonts();
 
     public: // module interface:
-      static constexpr const char* module_name = "imgui";
+      static constexpr neam::string_t module_name = "imgui";
 
       static bool is_compatible_with(runtime_mode m);
 

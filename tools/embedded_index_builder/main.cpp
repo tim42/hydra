@@ -19,7 +19,7 @@ int main(int argc, char **argv)
 {
   cr:: get_global_logger().min_severity = cr::logger::severity::message;
   cr:: get_global_logger().register_callback(cr::print_log_to_console, nullptr);
-return 0; // FIXME: oom
+
   // parse the commandline options:
   cmdline::parse cmd(argc, argv);
   bool success;

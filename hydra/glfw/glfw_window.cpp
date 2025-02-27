@@ -195,6 +195,25 @@ namespace neam::hydra::glfw
     });
   }
 
+  window::~window()
+  {
+    emgr.reset();
+    glfw_mod->hctx->dfe.defer_destruction(std::move(surface), std::move(swapchain));
+    swapchain.reset();
+    surface.reset();
+
+    if (win)
+    {
+      glfw_mod->hctx->dfe.defer([win = win.release(), glfw_mod = glfw_mod]
+      {
+        glfw_mod->execute_on_main_thread([win]
+        {
+          glfwDestroyWindow(win);
+        });
+      });
+    }
+  }
+
   void window::initialize_window_state()
   {
     assert_is_main_thread();

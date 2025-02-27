@@ -88,6 +88,7 @@ namespace neam
           watched_data.clear();
         }
 
+        auto_buffer(auto_buffer&&) = default;
         ~auto_buffer() = default;
 
         void set_buffer(vk::buffer &&_buf, size_t offset = 0, size_t size = 0)

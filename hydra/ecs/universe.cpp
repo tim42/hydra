@@ -35,8 +35,12 @@ namespace neam::hydra::ecs
   {
     // so the state is always correct
     roots.emplace_back(db.create_entity());
-    roots_hierarchy.emplace_back(&roots[0].add<components::hierarchy>());
+    {
+      std::lock_guard _el(spinlock_exclusive_adapter::adapt(roots[0].get_lock()));
+      roots_hierarchy.emplace_back(&roots[0].add<components::hierarchy>());
+    }
     roots_hierarchy[0]->self_id = entity_id_t::none; // main root id is always none
+    roots_hierarchy[0]->uni = this;
   }
 
   uint32_t universe::hierarchical_update_single_thread()
@@ -45,6 +49,8 @@ namespace neam::hydra::ecs
     // prime the queue:
     for (auto& it : roots)
     {
+      std::lock_guard _el(spinlock_shared_adapter::adapt(it.get_lock()));
+
       components::hierarchy* ptr = it.get<components::hierarchy>();
       check::debug::n_assert(ptr != nullptr, "universe::update-st: universe root doesn't have a hierarchy component");
       queue.push_back(ptr);
@@ -58,6 +64,7 @@ namespace neam::hydra::ecs
       queue.pop_front();
       ptr->update();
       ptr->update_children(queue);
+      ptr->end_update();
       ++count;
     }
     return count;
@@ -155,7 +162,7 @@ namespace neam::hydra::ecs
 //       check::debug::n_assert(uq.empty(), "not empty :(");
 //     }
 //     return ret;
-// #if 0
+#if 0
     max_helper_task_count = 12;
     std::atomic<uint32_t> task_count = 1;
     std::atomic<uint32_t> ret = 0;
@@ -217,7 +224,7 @@ namespace neam::hydra::ecs
       check::debug::n_assert(update_queue.empty(), "not empty :(");
     }
     return ret;
-// #endif
+#endif
 #if 0
     // max_helper_task_count = 16;
     std::atomic<uint32_t> task_count = 1;

@@ -25,6 +25,7 @@
 //
 
 #include "core_context.hpp"
+#include "engine.hpp"
 
 namespace neam::hydra
 {
@@ -63,6 +64,7 @@ namespace neam::hydra
     }
 
     halted = false;
+    tm.set_max_threads_that_can_wait_before_assert(named_thread_count + thread_count + 1);
     // do the resource boot process asynchronously
     tm.get_long_duration_task([this]
     {
@@ -149,6 +151,12 @@ namespace neam::hydra
   {
     const threading::named_thread_t main_thread = tm.get_named_thread("main"_rid);
     thread_main(*this, main_thread == threading::k_invalid_named_thread ? threading::k_no_named_thread : main_thread, 0);
+    engine->uninit();
+    for (auto& it : threads)
+    {
+      if (it.joinable())
+        it.join();
+    }
   }
 
   void core_context::thread_main(core_context& ctx, threading::named_thread_t thread, uint32_t index)

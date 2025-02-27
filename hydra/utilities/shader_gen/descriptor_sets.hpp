@@ -42,6 +42,7 @@
 #include "types.hpp"
 #include "block.hpp"
 #include "descriptor_sets_types.hpp"
+#include "vulkan/command_buffer_recorder.hpp"
 
 namespace neam::hydra
 {
@@ -196,14 +197,19 @@ namespace neam::hydra::shaders
           return ret;
         }
 
-        // TODO: also one for vkCmdPushDescriptorSetKHR
-        // also, check out vkCreateDescriptorUpdateTemplate
         static void update_descriptor_set(Struct& s, vk::device& dev, VkDescriptorSet vk_ds)
         {
           static_assert(k_descriptor_count > 0);
           descriptor_write_struct<k_descriptor_count> update_data;
           get_descriptor_set_update_struct(s, vk_ds, update_data);
           dev._vkUpdateDescriptorSets(update_data.descriptors.size(), update_data.descriptors.data(), 0, nullptr);
+        }
+        static void push_descriptor_set(hydra_context& hctx, vk::command_buffer_recorder& cbr, Struct& s, VkDescriptorSet vk_ds)
+        {
+          static_assert(k_descriptor_count > 0);
+          descriptor_write_struct<k_descriptor_count> update_data;
+          get_descriptor_set_update_struct(s, vk_ds, update_data);
+          cbr.push_descriptor_set<hydra_context, Struct>(hctx, update_data.descriptors.size(), update_data.descriptors.data());
         }
       private:
         static void get_descriptor_set_update_struct(Struct& s, VkDescriptorSet vk_ds, descriptor_write_struct<k_descriptor_count>& dws)
@@ -320,6 +326,23 @@ namespace neam::hydra::shaders
           return *ds;
         }
       }
+      vk::descriptor_set& get_or_create_descriptor_set_for_update(hydra_context& hctx)
+      {
+        bool reset = false;
+        {
+          N_MTC_READER_SCOPE;
+          if (ds && ds->_get_vk_descritpor_set() != nullptr)
+            reset = true;
+        }
+        if (reset)
+        {
+          N_MTC_WRITER_SCOPE;
+          deallocate_descriptor_set(hctx, std::move(*ds));
+          ds.reset();
+        }
+        return get_or_create_descriptor_set(hctx);
+
+      }
 
       void update_descriptor_set(hydra_context& hctx)
       {
@@ -327,6 +350,17 @@ namespace neam::hydra::shaders
         internal::descriptor_set_gen<Struct>::update_descriptor_set
         (
           *static_cast<Struct*>(this), get_device(hctx),
+          get_or_create_descriptor_set_for_update(hctx)._get_vk_descritpor_set()
+        );
+      }
+
+      void push_descriptor_set(hydra_context& hctx, vk::command_buffer_recorder& cbr)
+      {
+        N_MTC_WRITER_SCOPE;
+        internal::descriptor_set_gen<Struct>::push_descriptor_set
+        (
+          hctx, cbr,
+          *static_cast<Struct*>(this),
           get_or_create_descriptor_set(hctx)._get_vk_descritpor_set()
         );
       }

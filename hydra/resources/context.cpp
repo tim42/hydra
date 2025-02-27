@@ -35,7 +35,7 @@
 #include "network/connection.hpp"
 
 #include <hydra/engine/core_context.hpp>
-
+#include <ntools/struct_metadata/fmt_support.hpp>
 #include <filesystem>
 
 namespace neam::resources
@@ -1057,14 +1057,9 @@ namespace neam::resources
       {
         default_resource_metadata_t resource_metadata;
         if (v[i].metadata.empty() || !v[i].metadata.contains<default_resource_metadata_t>())
-        {
           v[0].metadata.try_get<default_resource_metadata_t>(resource_metadata);
-          v[i].metadata.set<default_resource_metadata_t>(resource_metadata);
-        }
         else
-        {
           v[i].metadata.try_get<default_resource_metadata_t>(resource_metadata);
-        }
 
 #if N_RES_LZMA_COMPRESSION
         if (!configuration.enable_background_compression && v[i].data.size >= configuration.min_size_to_compress
@@ -1254,34 +1249,45 @@ namespace neam::resources
         const id_t metadata_rid = specialize(pack_data.id, "metadata");
         db.add_resource(res_id, metadata_rid);
 
-        // NOTE: We never embed metadata in the index to avoid bloating it
-        const uint64_t sz = serialized_metadata.size;
-        const uint64_t file_offset = offset;
-        offset += sz;
-        has_any_write_to_packfile = true;
         const flags extra_flags = flags::to_strip;
+
         // write to disk:
-        chains.emplace_back(io_context.queue_write(pack_file, file_offset, std::move(serialized_metadata))
-          .then([=, this, id = metadata_rid](raw_data&& data, bool success, size_t write_size)
+        if (has_any_write_to_packfile)
         {
-          if (!success || write_size != data.size)
-          {
-            cr::out().error("pack_resource: failed to write metadata for sub-resource to pack-file: {} (sub resource: {})", filename, resource_name(id));
-            return status_chain::create_and_complete(status::failure);
-          }
+          // NOTE: We never embed metadata in the index to avoid bloating it
+          const uint64_t sz = serialized_metadata.size;
+          const uint64_t file_offset = offset;
+          offset += sz;
 
-          const bool index_success = root.add_entry(index::entry
+          chains.emplace_back(io_context.queue_write(pack_file, file_offset, std::move(serialized_metadata))
+            .then([=, this, id = metadata_rid](raw_data&& data, bool success, size_t write_size)
           {
-            .id = id,
-            .flags = flags::type_data | extra_flags,
-            .pack_file = pack_file,
-            .offset = file_offset,
-            .size = sz,
-          });
-          return status_chain::create_and_complete(index_success ? status::success : status::failure);
-        }));
+            if (!success || write_size != data.size)
+            {
+              cr::out().error("pack_resource: failed to write metadata for sub-resource to pack-file: {} (sub resource: {})", filename, resource_name(id));
+              return status_chain::create_and_complete(status::failure);
+            }
+
+            const bool index_success = root.add_entry(index::entry
+            {
+              .id = id,
+              .flags = flags::type_data | extra_flags,
+              .pack_file = pack_file,
+              .offset = file_offset,
+              .size = sz,
+            });
+            return status_chain::create_and_complete(index_success ? status::success : status::failure);
+          }));
+        }
+        else
+        {
+          root.add_entry(index::entry
+          {
+            .id = metadata_rid,
+            .flags = flags::type_data | extra_flags | flags::embedded_data,
+          }, std::move(serialized_metadata));
+        }
       }
-
 
       if (has_any_write_to_packfile)
       {

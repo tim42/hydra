@@ -1,9 +1,9 @@
 //
 // created by : Timothée Feuillet
-// date: 2022-8-27
+// date: 2/8/25
 //
 //
-// Copyright (c) 2022 Timothée Feuillet
+// Copyright (c) 2025 Timothée Feuillet
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -26,41 +26,9 @@
 
 #pragma once
 
-#include <ntools/mt_check/vector.hpp>
+#include "../../ecs/ecs.hpp"
 
-#include "scoped_pool.hpp"
-
-namespace neam::hydra
+namespace neam::hydra::renderer
 {
-  class memory_allocator;
+
 }
-
-namespace neam::hydra::allocator
-{
-  /// \brief like scoped_pool::scope but handle all the different sets at oce
-  class scope
-  {
-    public:
-      scope(scope&& o) = default;
-      ~scope();
-
-      scope push_scope()
-      {
-        return {allocator, this};
-      }
-
-    private:
-      scope(memory_allocator& _allocator, scope* _parent);
-      scope(memory_allocator& _allocator);
-
-    private:
-      memory_allocator& allocator;
-      scope* parent = nullptr;
-      scope* previous_storage = nullptr;
-
-      std::mtc_vector<scoped_pool::scope> scopes;
-
-      friend memory_allocator;
-  };
-}
-

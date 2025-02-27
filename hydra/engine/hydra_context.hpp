@@ -41,12 +41,17 @@
 #include <hydra/renderer/renderer.hpp>
 #include <hydra/renderer/resources/texture_manager.hpp>
 
+#include <hydra/ecs/ecs.hpp>
+
 namespace neam::hydra
 {
   /// \brief Global, über-struct with general purpose utilities. Can be down-casted to individual sub-contexts
-  ///        (this avoid making resource code aware of vulkan stuff)
+  ///        (this avoids making resource code aware of vulkan stuff)
   struct hydra_context : public core_context, public vk_context
   {
+    // core stuff:
+    ecs::database db;
+
     // rendering stuff:
     memory_allocator allocator = { device };
     deferred_fence_execution dfe { *this };

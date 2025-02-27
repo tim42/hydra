@@ -14,7 +14,6 @@
 #include <ntools/cmdline/cmdline.hpp>
 
 #include <hydra/engine/engine.hpp>
-#include <hydra/renderer/offscreen_context.hpp>
 #include <hydra/glfw/glfw_window.hpp>
 #include <hydra/glfw/glfw_events.hpp>
 #include <hydra/hydra_glm_udl.hpp>  // we do want the easy glm udl (optional, not used by hydra)
@@ -26,7 +25,7 @@
 #include <hydra/imgui/utilities/imgui_log_window.hpp>
 #include "fs_quad_pass.hpp"
 #include <hydra/ecs/universe.hpp>
-#include "mesh-render-pass.hpp"
+//#include "mesh-render-pass.hpp"
 
 using namespace neam;
 
@@ -116,7 +115,7 @@ namespace neam::hydra
       }
       void add_task_groups_dependencies(threading::task_group_dependency_tree& tgd) override
       {
-        tgd.add_dependency("during_render"_rid, "events"_rid);
+        tgd.add_dependency("during_render"_rid, "glfw/events"_rid);
         tgd.add_dependency("after_render"_rid, "render"_rid);
       }
 
@@ -136,15 +135,19 @@ namespace neam::hydra
         window_state = glfw_mod->create_window(800_uvec2_xy);
         cr::out().debug("created application main window and render-context");
         // FIXME: Fix fs-quad pass
-        window_state->_ctx_ref.debug_context = "window-state";
-        window_state->_ctx_ref.clear_framebuffer = true;
+        {
+          std::lock_guard _el(spinlock_exclusive_adapter::adapt(window_state.render_entity.get_lock()));
+          window_state.render_entity.add<hydra::ecs::name_component>("main-window-state");
+        }
+//        window_state->_ctx_ref.debug_context = "window-state";
+//        window_state->_ctx_ref.clear_framebuffer = true;
 
-        fb_test = renderer->create_render_context<offscreen_render_context_t>(std::vector<VkFormat>{VK_FORMAT_R8G8B8A8_UNORM}, 100_uvec2_xy);
+ //       fb_test = renderer->create_render_context<offscreen_render_context_t>(std::vector<VkFormat>{VK_FORMAT_R8G8B8A8_UNORM}, 100_uvec2_xy);
 
-        /*fs_quad_pass& pass = */(*fb_test)->pm.add_pass<fs_quad_pass>(*hctx);
-        (*fb_test)->debug_context = "fb_test";
-        // (*fb_test)->pm.add_pass<hydra::mesh_pass>(*hctx, db);
-
+      //  /*fs_quad_pass& pass = */fb_test->pm.add_pass<fs_quad_pass>(*hctx);
+ //       fb_test->debug_context = "fb_test";
+        // fb_test->pm.add_pass<hydra::mesh_pass>(*hctx, db);
+#if 0
         using transform = hydra::ecs::components::transform;
         transform* root_tr;
         {
@@ -175,14 +178,14 @@ namespace neam::hydra
           // update the hierarchy (which includes the transform components)
           universe.hierarchical_update_single_thread();
         }
-
+#endif
         auto* imgui = engine->get_module<imgui::imgui_module>("imgui"_rid);
-        imgui->create_context(*window_state.get());
+        imgui->create_context(window_state);
         imgui->register_function("dockspace"_rid, [this]()
         {
           ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
         });
-        imgui->register_function("main"_rid, [this, glfw_mod/*, &pass*/]()
+        imgui->register_function("main"_rid, [this, core, glfw_mod/*, &pass*/]()
         {
           ImGui::Begin("Conf", nullptr, 0);
           float width = ImGui::GetContentRegionAvail().x;
@@ -205,14 +208,27 @@ namespace neam::hydra
             ImGui::SameLine();
             ImGui::Text("ms");
           }
-          ImGui::Text("Only render on event:"); ImGui::SameLine(); ImGui::Checkbox("##render-on-evt", &window_state->only_render_on_event);
+         // FIXME ImGui::Text("Only render on event:"); ImGui::SameLine(); ImGui::Checkbox("##render-on-evt", &window_state->only_render_on_event);
           bool wait_for_events = glfw_mod->get_wait_for_events();
           ImGui::Text("Wait for events:"); ImGui::SameLine(); ImGui::Checkbox("##wait-for-evt", &wait_for_events);
           glfw_mod->wait_for_events(wait_for_events);
           const bool bt_reload_index = ImGui::Button("force full index reload"); ImGui::SameLine(); ImGui::Checkbox("##reload-index-ck", &force_relad_index);
           if (bt_reload_index || force_relad_index)
           {
-            [[maybe_unused]] auto c = hctx->res.reload_index();
+            core->ask_for_index_reload();
+            //[[maybe_unused]] auto c = hctx->res.reload_index();
+          }
+          ImGui::Separator();
+          {
+            if (ImGui::Button("open new window"))
+            {
+              window_states.emplace_back(glfw_mod->create_window(80_uvec2_xy, fmt::format("[HYDRA: WIN {}]", window_states.size() + 1)));
+              {
+                auto& re = window_states.back().render_entity;
+                std::lock_guard _lg{spinlock_exclusive_adapter::adapt(re.get_lock())};
+                re.add<components::fs_quad_pass>(*hctx);
+              }
+            }
           }
           ImGui::Separator();
           const uint32_t cnt = total_frame_cnt / std::max(1u, frames_between_image_changes);
@@ -220,7 +236,9 @@ namespace neam::hydra
           const uint32_t max = 10000;
           ImGui::Text("frames between image changes:"); ImGui::SameLine(); ImGui::SliderScalar("##frame-change-img", ImGuiDataType_U32, &frames_between_image_changes, &min, &max);
           uint32_t img = cnt%64 + 2;
+#if 0
           ImGui::Image(string_id::_runtime_build_from_string(fmt::format("images/_dns_images/{}/{}.png:image", (cnt/64) % 12 + 1, img == 33||img>64 ? 32 : img)), ImVec2(width, width));
+#endif
           ImGui::Separator();
           ser_data = hydra::imgui::generate_ui(ser_data, ser_metadata);
           ImGui::End();
@@ -325,13 +343,15 @@ namespace neam::hydra
                     {
                       p.y += 4;
                       const float start = task_group_rolling_averages_start[grp].get_min() * width;
-                      const float end = task_group_rolling_averages_end[grp].get_max() * width;
+                      const float end = start + task_group_rolling_averages_duration[grp].get_max() * width;
+                      //const float end = task_group_rolling_averages_end[grp].get_max() * width;
                       draw_list.AddLine(ImVec2(p.x + start, p.y), ImVec2(p.x + end, p.y), 0x33000000, 20);
                     }
                     // average
                     {
                       const float start = task_group_rolling_averages_start[grp].get_average() * width;
-                      const float end = task_group_rolling_averages_end[grp].get_average() * width;
+                      const float end = start + task_group_rolling_averages_duration[grp].get_average() * width;
+                      //const float end = task_group_rolling_averages_end[grp].get_average() * width;
                       draw_list.AddLine(ImVec2(p.x + start, p.y), ImVec2(p.x + end, p.y), 0xAA999999, 8);
                     }
                     // immediate
@@ -356,16 +376,16 @@ namespace neam::hydra
         {
           ImGui::Begin("Framebuffer", nullptr, 0);
           ImVec2 size = ImGui::GetContentRegionAvail();
-          if (!(*fb_test)->images_views.empty())
-          {
-            ImGui::Image(&((*fb_test)->images_views[0]), size);
-            const glm::uvec2 new_size { std::max(1, (int)size.x), std::max(1, (int)size.y) };
-            if ((*fb_test)->size != new_size)
-            {
-              (*fb_test)->size = new_size;
-              (*fb_test)->recreate = true;
-            }
-          }
+          // if (!fb_test->images_views.empty())
+          // {
+          //   ImGui::Image(&(fb_test->images_views[0]), size);
+          //   const glm::uvec2 new_size { std::max(1, (int)size.x), std::max(1, (int)size.y) };
+          //   if (fb_test->size != new_size)
+          //   {
+          //     fb_test->size = new_size;
+          //     fb_test->recreate = true;
+          //   }
+          // }
           ImGui::End();
         });
         // setup the debug + render task
@@ -373,8 +393,8 @@ namespace neam::hydra
         {
           cctx->tm.get_task([this, glfw_mod, core]
           {
-            if (!glfw_mod->has_any_window() || glfw_mod->need_render())
-              return;
+            // if (!glfw_mod->has_any_window() || glfw_mod->need_render())
+            //   return;
 
 /*            if (!glfw_mod->is_app_focused() && !glfw_mod->get_wait_for_events())
               core->min_frame_length = std::chrono::milliseconds(500);
@@ -398,8 +418,19 @@ namespace neam::hydra
         });
         hctx->tm.set_start_task_group_callback("after_render"_rid, [this]
         {
+          for (auto it = window_states.begin(); it < window_states.end();)
+          {
+            if (it->win->should_close())
+            {
+              it = window_states.erase(it);
+            }
+            else
+            {
+              ++it;
+            }
+          }
           // check to see if we need to close the window:
-          if (window_state->window.should_close())
+          if (window_state.win->should_close())
           {
             cr::out().debug("main window should close, requesting an engine tear-down");
             engine->sync_teardown();
@@ -407,9 +438,9 @@ namespace neam::hydra
           }
         });
 
-        on_render_start_tk = renderer->on_render_start.add([this, renderer, root_tr]
+        on_render_start_tk = renderer->on_render_start.add([this, renderer/*, root_tr*/]
         {
-          cctx->tm.get_task([this, renderer, root_tr]
+          cctx->tm.get_task([this, renderer/*, root_tr*/]
           {
             // root_tr->update_local_transform().rotation = glm::angleAxis(glm::radians(1.0f), glm::vec3(0, 0.8f, 1)) * root_tr->update_local_transform().rotation;
 
@@ -429,9 +460,9 @@ namespace neam::hydra
               // last_update_dt = (float)((double)elapsed.count() * 1e-9);
             }
 
-            (*fb_test)->debug_context = fmt::format("fb_test[{}]", total_frame_cnt);
+         //   fb_test->debug_context = fmt::format("fb_test[{}]", total_frame_cnt);
 
-            renderer->render_context(*fb_test);
+          //  renderer->do_render(fb_test);
           });
         });
 
@@ -443,20 +474,21 @@ namespace neam::hydra
         });
       }
 
-      void on_shutdown() override
+      void on_shutdown_post_idle_gpu() override
       {
-        window_state.reset();
-        fb_test.reset();
+        window_state = {};
+        window_states.clear();
+   //     fb_test.reset();
         on_render_start_tk.release();
       }
 
 
     private:
-      std::unique_ptr<glfw::glfw_module::state_ref_t> window_state;
-      std::unique_ptr<render_context_ref_t<offscreen_render_context_t>> fb_test;
+      glfw::window_state_t window_state;
+      //render_context_ptr<offscreen_render_context_t> fb_test;
 
-      hydra::ecs::database db;
-      hydra::ecs::universe universe { db };
+      //hydra::ecs::database db;
+      //hydra::ecs::universe universe { db };
 
       cr::event_token_t on_render_start_tk;
       cr::event_token_t on_index_reloaded_tk;
@@ -466,6 +498,8 @@ namespace neam::hydra
       std::vector<cr::rolling_average<float>> task_group_rolling_averages_start;
       std::vector<cr::rolling_average<float>> task_group_rolling_averages_end;
       std::vector<cr::rolling_average<float>> task_group_rolling_averages_duration;
+
+      std::vector<glfw::window_state_t> window_states;
 
       uint32_t total_frame_cnt = 0;
       uint32_t frame_cnt = 0;

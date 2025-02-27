@@ -69,6 +69,10 @@ namespace neam::hydra::ecs
       components::hierarchy& get_universe_root() { return *roots_hierarchy[0]; }
       const components::hierarchy& get_universe_root() const { return *roots_hierarchy[0]; }
 
+      /// \brief Return the hierarchy component of the (main) universe root
+      entity& get_universe_root_entity() { return roots[0]; }
+      const entity& get_universe_root_entity() const { return roots[0]; }
+
 
     private:
       /// \brief universe roots (everything is held from there)

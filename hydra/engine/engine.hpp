@@ -86,8 +86,11 @@ namespace neam::hydra
       /// Sync version, only return when everything is uninit
       void sync_teardown();
 
+      /// \brief perform the destruction of the engine modules. Should be called outside the task manager.
+      void uninit();
+
       /// \brief Fully cleanup after a teardown.
-      /// Must be called outside the task manager
+      /// Must be called outside the task manager / outside of the context
       void cleanup();
 
       /// \brief Called when recurring tasks should not be pushed.
@@ -100,6 +103,8 @@ namespace neam::hydra
 
     public: // modules
       bool has_module(id_t name) const { return modules.contains(name); }
+      template<typename Type>
+      bool has_module() const { return has_module(string_id{Type::module_name}); }
 
       template<typename FinalType = engine_module_base>
       FinalType* get_module(id_t name)
@@ -108,12 +113,25 @@ namespace neam::hydra
           return static_cast<FinalType*>(it->second.get());
         return nullptr;
       }
+
       template<typename FinalType = engine_module_base>
       const FinalType* get_module(id_t name) const
       {
         if (auto it = modules.find(name); it != modules.end())
           return static_cast<const FinalType*>(it->second.get());
         return nullptr;
+      }
+
+      template<typename FinalType>
+      FinalType* get_module()
+      {
+        return get_module<FinalType>(string_id{FinalType::module_name});
+      }
+
+      template<typename FinalType>
+      const FinalType* get_module() const
+      {
+        return get_module<FinalType>(string_id{FinalType::module_name});
       }
 
     public: // contextes

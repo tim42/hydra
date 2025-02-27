@@ -31,7 +31,7 @@ namespace neam::hydra::ecs
 {
   namespace components
   {
-    hierarchy::hierarchy(param_t p): component_t(p), serializable_t(*this)
+    hierarchy::hierarchy(param_t p): internal_component_t(p), serializable_t(*this)
     {
       if (has_persistent_data())
         refresh_from_deserialization();
@@ -52,8 +52,31 @@ namespace neam::hydra::ecs
       concepts::hierarchical* const hierarchical_con = get_unsafe<concepts::hierarchical>();
 
       // release any attached objects that are un-necessary anymore
-      // if (hierarchical_con)
-        // hierarchical_con->unrequire_components();
+      if (hierarchical_con)
+        hierarchical_con->unrequire_components();
+
+      // first, clear-up the children with only a weak-ref that are dead:
+      for (auto it = children.begin(); it < children.end(); )
+      {
+        if (!it->strong_ref.is_valid())
+        {
+          it->had_strong_ref = false;
+          it->strong_ref = it->weak_ref.generate_strong_reference();
+          if (!it->strong_ref.is_valid())
+          {
+            children_hierarchy.erase(children_hierarchy.begin() + (it - children.begin()));
+            it = children.erase(it);
+            continue;
+          }
+        }
+        else
+        {
+          it->had_strong_ref = true;
+        }
+
+        // go to next entry:
+        ++it;
+      }
 
       // update attached_objects:
       if (parent.is_valid())
@@ -88,8 +111,28 @@ namespace neam::hydra::ecs
         hierarchical_con->update();
 
       // lock any components that are remaining so that pointers are valid until next update
-      // if (hierarchical_con)
-        // hierarchical_con->require_components();
+      if (hierarchical_con)
+        hierarchical_con->require_components();
+    }
+
+    void hierarchy::end_update()
+    {
+      for (auto it = children.begin(); it < children.end(); )
+      {
+        if (!it->had_strong_ref)
+        {
+          it->strong_ref.release();
+          if (!it->weak_ref.is_valid())
+          {
+            children_hierarchy.erase(children_hierarchy.begin() + (it - children.begin()));
+            it = children.erase(it);
+            continue;
+          }
+        }
+
+        // go to next entry
+        ++it;
+      }
     }
 
     void hierarchy::update_children(universe::update_queue_t& update_queue)
@@ -138,11 +181,18 @@ namespace neam::hydra::ecs
       return wref;
     }
 
+    entity hierarchy::create_weakly_tracked_child()
+    {
+      entity child = get_database().create_entity();
+      internal_add_orphaned_child(child, true);
+      return child;
+    }
+
     void hierarchy::remove_child(const entity_weak_ref& child)
     {
       for (uint32_t i = 0; i < (uint32_t)children.size(); ++i)
       {
-        if (children[i].is_tracking_same_entity(child))
+        if (children[i].strong_ref.is_tracking_same_entity(child) || children[i].weak_ref.is_tracking_same_entity(child))
         {
           clear_child_for_removal(children[i]);
           children.erase(children.begin() + i);
@@ -156,7 +206,7 @@ namespace neam::hydra::ecs
     {
       for (uint32_t i = 0; i < (uint32_t)children.size(); ++i)
       {
-        if (children[i].is_tracking_same_entity(child))
+        if (children[i].strong_ref.is_tracking_same_entity(child) || children[i].weak_ref.is_tracking_same_entity(child))
         {
           clear_child_for_removal(children[i]);
           children.erase(children.begin() + i);
@@ -166,11 +216,26 @@ namespace neam::hydra::ecs
       }
     }
 
-    void hierarchy::add_orphaned_child(entity&& child)
+    void hierarchy::add_orphaned_child(entity&& child, bool insert_weak_reference)
     {
+      internal_add_orphaned_child(child, insert_weak_reference);
+    }
+
+    void hierarchy::add_weakly_tracked_orphaned_child(entity& child)
+    {
+      internal_add_orphaned_child(child, true);
+    }
+
+    void hierarchy::internal_add_orphaned_child(entity& child, bool insert_weak_reference)
+    {
+      std::lock_guard _el(spinlock_shared_adapter::adapt(child.get_lock()));
+
       hierarchy* ptr = child.get<hierarchy>();
       if (ptr == nullptr)
+      {
+        std::lock_guard _il(spinlock_shared_to_exclusive_adapter::adapt(child.get_lock()));
         ptr = &child.add<hierarchy>();
+      }
 
       {
         check::debug::n_assert(!ptr->parent.is_valid(), "hierarchy::update: entity to add is not orphaned");
@@ -178,8 +243,11 @@ namespace neam::hydra::ecs
         ptr->parent = create_entity_weak_reference_tracking();
         ptr->parent_id = self_id;
       }
-      children_hierarchy.push_back(child.get<hierarchy>());
-      children.push_back(std::move(child));
+      children_hierarchy.push_back(ptr);
+      if (insert_weak_reference)
+        children.emplace_back(entity{}, child.weak_reference());
+      else
+        children.emplace_back(std::move(child));
     }
 
     void hierarchy::remove_all_children()
@@ -190,9 +258,24 @@ namespace neam::hydra::ecs
       children_hierarchy.clear();
     }
 
+    void hierarchy::clear_child_for_removal(entity_storage_t& es)
+    {
+      if (es.strong_ref.is_valid())
+      {
+        clear_child_for_removal(es.strong_ref);
+      }
+      else
+      {
+        entity e = es.weak_ref.generate_strong_reference();
+        if (e.is_valid())
+          clear_child_for_removal(e);
+      }
+    }
+
     void hierarchy::clear_child_for_removal(entity& child)
     {
-      if (hierarchy* ptr = child.get<hierarchy>(); ptr != nullptr)
+      std::lock_guard _el(spinlock_shared_adapter::adapt(child.get_lock()));
+      if (auto* ptr = child.get<hierarchy>(); ptr != nullptr)
       {
         ptr->uni = nullptr;
         ptr->parent.release();
@@ -240,7 +323,7 @@ namespace neam::hydra::ecs
       return false;
     }
 
-    void hierarchical::concept_logic::do_update_dirty_flag()
+    void hierarchical::concept_logic::update_dirty_flag()
     {
       // update the parent (and overwrite the update token with the value from the parent)
       if (parent != nullptr)
@@ -279,8 +362,10 @@ namespace neam::hydra::ecs
         lg.update_logic(hierarchy_component);
         if (lg.is_dirty() || everything_is_dirty || true)
         {
-          lg.update_provider();
+          // must be first to allow the provider to set the dirty flag again in its update
           lg.update_dirty_flag();
+
+          lg.update_provider();
         }
       });
       everything_is_dirty = false;

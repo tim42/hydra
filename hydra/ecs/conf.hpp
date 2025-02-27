@@ -48,15 +48,18 @@ namespace neam::hydra::ecs::conf
       struct system_type;
 
       // mostly data structure, few functions:
-      struct component_class { static constexpr enfield::type_t id = 0; };
-      // internal component is a component that will not be externally visible (and thus cannot be part of queries / systems / for-each)
+      struct concept_class { static constexpr enfield::type_t id = 0; };
+      struct component_class { static constexpr enfield::type_t id = 1; };
+      // internal component is a component that will not be registered (and thus cannot be part of queries / systems / for-each)
+      // for everything else, they behave like components (if you do not have a system operating on those components, please use an internal component)
       // this also mean that creating / destroying internal-components is way faster.
       // they can implement concepts (their main use case).
-      struct internal_component_class { static constexpr enfield::type_t id = 1; };
-      struct concept_class { static constexpr enfield::type_t id = 2; };
+      struct internal_component_class { static constexpr enfield::type_t id = 2; };
+      struct sync_component_class { static constexpr enfield::type_t id = 3; };
+
 
       // the list of classes
-      using classes = ct::type_list<component_class, concept_class>;
+      using classes = ct::type_list<concept_class, component_class, internal_component_class, sync_component_class>;
 
       // "rights" configuration:
       template<enfield::type_t ClassId>
@@ -77,7 +80,7 @@ namespace neam::hydra::ecs::conf
 
       static constexpr uint64_t max_attached_objects_types = 6 * 64;
 
-      using attached_object_allocator = enfield::default_attached_object_allocator<eccs>;
+      using attached_object_allocator = enfield::/*default_attached_object_allocator*/system_attached_object_allocator<eccs>;
 
       static constexpr bool use_attached_object_db = true;
       static constexpr bool use_entity_db = true;
@@ -89,20 +92,25 @@ namespace neam::hydra::ecs::conf
   {
     static constexpr enfield::attached_object_access access = enfield::attached_object_access::automanaged
                                                             | enfield::attached_object_access::ao_unsafe_getable
-                                                            | enfield::attached_object_access::ext_getable;
+                                                            | enfield::attached_object_access::ext_getable
+                                                            | enfield::attached_object_access::db_queryable;
   };
   template<>
   struct eccs::class_rights<eccs::internal_component_class::id>
   {
-    static constexpr enfield::attached_object_access access = enfield::attached_object_access::ao_all_safe
-                                                            // We (may) allow the external creation of the components (is it needed?)
-                                                            /*
-                                                            | enfield::attached_object_access::ext_creatable
-                                                            | enfield::attached_object_access::ext_removable*/;
+    // internal components cannot be queried/filtered/iterated over by systems, but all other operations are possible on them
+    static constexpr enfield::attached_object_access access = enfield::attached_object_access::ao_all
+                                                            | enfield::attached_object_access::ext_all;
   };
 
   namespace internal
   {
+    template<typename AttachedObject>
+    struct ao_name_check<eccs::concept_class::id, AttachedObject>
+    {
+      static constexpr bool value = ((ct::string)ct::type_name<AttachedObject>).contains("::concepts::");
+      static_assert(value, "invalid type-name for concepts (must be in a `concepts` namespace)");
+    };
     template<typename AttachedObject>
     struct ao_name_check<eccs::component_class::id, AttachedObject>
     {
@@ -112,14 +120,15 @@ namespace neam::hydra::ecs::conf
     template<typename AttachedObject>
     struct ao_name_check<eccs::internal_component_class::id, AttachedObject>
     {
-      static constexpr bool value = ((ct::string)ct::type_name<AttachedObject>).contains("::internals::");
-      static_assert(value, "invalid type-name for internal_component (must be in a `internals` namespace)");
+      // we still allows them to be placed in the components namespace to avoid tedious refactors are both are pretty close in use-cases
+      static constexpr bool value = ((ct::string)ct::type_name<AttachedObject>).contains("::internals::") || ((ct::string)ct::type_name<AttachedObject>).contains("::components::");
+      static_assert(value, "invalid type-name for internal_component (must be in a `internals` or `components` namespace)");
     };
     template<typename AttachedObject>
-    struct ao_name_check<eccs::concept_class::id, AttachedObject>
+    struct ao_name_check<eccs::sync_component_class::id, AttachedObject>
     {
-      static constexpr bool value = ((ct::string)ct::type_name<AttachedObject>).contains("::concepts::");
-      static_assert(value, "invalid type-name for concepts (must be in a `concepts` namespace)");
+      static constexpr bool value = ((ct::string)ct::type_name<AttachedObject>).contains("::components::");
+      static_assert(value, "invalid type-name for sync_component (must be in a `components` namespace)");
     };
   }
 
@@ -128,7 +137,7 @@ namespace neam::hydra::ecs::conf
   /// \tparam DatabaseConf is the configuration object for the database
   /// \tparam ComponentType is the final component type
   template<typename DatabaseConf, typename ComponentType>
-  class internal_component : public enfield::attached_object::base_tpl<DatabaseConf, typename DatabaseConf::internal_component_class, ComponentType>
+  class internal_component : public enfield::attached_object::base_tpl<DatabaseConf, typename DatabaseConf::internal_component_class, ComponentType, enfield::attached_object::creation_flags::transient>
   {
     public:
       using param_t = typename enfield::attached_object::base<DatabaseConf>::param_t;
@@ -138,7 +147,29 @@ namespace neam::hydra::ecs::conf
 
     protected:
       internal_component(param_t _param)
-        : enfield::attached_object::base_tpl<DatabaseConf, typename DatabaseConf::internal_component_class, ComponentType>
+        : enfield::attached_object::base_tpl<DatabaseConf, typename DatabaseConf::internal_component_class, ComponentType, enfield::attached_object::creation_flags::transient>
+          (
+            _param
+          )
+      {
+      }
+  };
+
+  /// \brief This is a base component, and should be inherited by components. See comment for sync_component_class
+  /// \tparam DatabaseConf is the configuration object for the database
+  /// \tparam ComponentType is the final component type
+  template<typename DatabaseConf, typename ComponentType>
+  class sync_component : public enfield::attached_object::base_tpl<DatabaseConf, typename DatabaseConf::sync_component_class, ComponentType, enfield::attached_object::creation_flags::force_immediate_changes>
+  {
+    public:
+      using param_t = typename enfield::attached_object::base<DatabaseConf>::param_t;
+      using sync_component_t  = sync_component<DatabaseConf, ComponentType>;
+
+      virtual ~sync_component() = default;
+
+    protected:
+      sync_component(param_t _param)
+        : enfield::attached_object::base_tpl<DatabaseConf, typename DatabaseConf::sync_component_class, ComponentType, enfield::attached_object::creation_flags::force_immediate_changes>
           (
             _param
           )

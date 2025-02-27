@@ -336,7 +336,7 @@ namespace neam::hydra::processor
           .db = input.db,
         });
         return resources::processor::chain::create_and_complete({.to_pack = std::move(ret)},
-      has_warnings ? resources::status::partial_success : resources::status::success);
+                      has_warnings ? resources::status::partial_success : resources::status::success);
     });
     }
   };

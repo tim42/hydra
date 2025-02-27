@@ -73,7 +73,7 @@ namespace neam::hydra::ecs
     /// \note Any entity part of a universe must have this component.
     ///
     /// entity_id_t::none is the universe root.
-    class hierarchy : public component<hierarchy>, public serializable::concept_provider<hierarchy>
+    class hierarchy : public internal_component<hierarchy>, public serializable::concept_provider<hierarchy>
     {
       // NOTE: hierarchy update process:
       //        - update the current entity
@@ -106,7 +106,7 @@ namespace neam::hydra::ecs
           // Check if the current entity has the attached-object
           if (include_self)
           {
-            if (const AttachedObject* ptr = component_t::get_unsafe<AttachedObject>(); ptr != nullptr)
+            if (const AttachedObject* ptr = internal_component_t::get_unsafe<AttachedObject>(); ptr != nullptr)
               return ptr;
           }
           if (const base_t* ptr = get_attached_object_in_parents(type_id<AttachedObject>::id()); ptr != nullptr)
@@ -116,8 +116,14 @@ namespace neam::hydra::ecs
 
         /// \brief Create a children entity, and add the hierarchy component as externally-added
         [[nodiscard]] entity_weak_ref create_child();
+        [[nodiscard]] entity create_weakly_tracked_child();
 
-        void add_orphaned_child(entity&& child);
+        /// \brief Add an orphaned child, chosing whether we track it using a weak-ref or a strong-ref
+        void add_orphaned_child(entity&& child, bool insert_weak_reference = false);
+
+        /// \brief Add an orphaned child, chosing whether we track it using a weak-ref or a strong-ref
+        /// \warning If insert_weak_reference is false, the entity will become invalid (a move operation will be done)
+        void add_weakly_tracked_orphaned_child(entity& child);
 
         /// \brief Remove a child given a weak-ref to it
         /// \note the weak ref might become invalid afterward
@@ -133,14 +139,33 @@ namespace neam::hydra::ecs
         /// \brief Remove all children from the hierarchy
         void remove_all_children();
 
+        /// \brief Returns the universe that the entity is part of
+        /// \note nullptr for orphaned entities
+        universe* get_universe() const { return uni; }
+
+        /// \brief Return a weak ref on the parent
+        entity_weak_ref get_parent() const { return parent.duplicate_tracking_reference(); }
+
+        /// \brief Return if this component has a parent.
+        /// \note the lack of a parent might either indicate an orphaned entity or a universe root
+        bool has_parent() const { return parent.is_valid(); }
+
+        bool is_universe_root() const { return uni != nullptr && !has_parent(); }
+        bool is_orphaned() const { return uni == nullptr && !has_parent(); }
+
       private: // serialization
         void refresh_from_deserialization();
         internal::serialized_hierarchy get_data_to_serialize() const;
 
       private: // internal:
+        struct entity_storage_t;
+
+        void internal_add_orphaned_child(entity& child, bool insert_weak_reference);
+
         const base_t* get_attached_object_in_parents(enfield::type_t type) const;
 
-        void clear_child_for_removal(entity& child);
+        static void clear_child_for_removal(entity_storage_t& es);
+        static void clear_child_for_removal(entity& child);
 
         /// \brief Update the hierarchical components and perform some of the update process
         /// (does not perform any recusrion)
@@ -152,7 +177,17 @@ namespace neam::hydra::ecs
         void update_children(std::deque<components::hierarchy*>& update_queue);
         bool update_children(std::deque<components::hierarchy*>& update_queue, uint32_t start, uint32_t count);
 
+        void end_update();
+
       private: // data:
+        struct entity_storage_t
+        {
+          entity strong_ref;
+          entity_weak_ref weak_ref;
+
+          // is there during the update process. We'll release the strong refs at the end if they weren't held.
+          bool had_strong_ref = false;
+        };
         // NOTE: parent-id / self-id are only valid during the serialization / deserialization process.
         entity_id_t parent_id = entity_id_t::invalid;
         entity_id_t self_id = entity_id_t::invalid;
@@ -160,14 +195,15 @@ namespace neam::hydra::ecs
         // populated during whole scene deserialization:
         universe* uni = nullptr;
 
-        /// \brief children list. Strongly hold them so they aren't destructed for no reason
-        std::vector<entity> children;
-        std::vector<hierarchy*> children_hierarchy;
+        /// \brief children list
+        std::mtc_vector<entity_storage_t> children;
+
+        std::mtc_vector<hierarchy*> children_hierarchy;
 
         /// \brief direct reference to the parent, if any.
         entity_weak_ref parent;
 
-        std::vector<std::pair<enfield::type_t, base_t*>> attached_objects;
+        std::mtc_vector<std::pair<enfield::type_t, base_t*>> attached_objects;
 
         friend serializable_t;
         friend universe;
@@ -205,12 +241,11 @@ namespace neam::hydra::ecs
             /// \brief perform the actual update (update this class and the concept-provider)
             virtual void update_logic(components::hierarchy& hc) = 0;
             virtual void update_provider() = 0;
-            virtual void update_dirty_flag() = 0;
             virtual void concept_require() = 0;
             virtual void concept_try_unrequire() = 0;
 
           private:
-            void do_update_dirty_flag();
+            void update_dirty_flag();
 
           private:
             uint16_t last_update_token = 0; // 0 means "force-update", when wrap around, will always go to one.
@@ -241,6 +276,13 @@ namespace neam::hydra::ecs
               return static_cast<const ConceptProvider*>(parent);
             }
 
+            /// \brief Returns the universe that the entity is part of
+            /// \note nullptr for orphaned entities
+            universe* get_universe() const { return get_concept().hierarchy_component.get_universe(); }
+
+            /// \brief Returns the hierarchy component for the current entity
+            components::hierarchy& get_hierarchy() const { return get_concept().hierarchy_component; }
+
           private:
             void update_logic(components::hierarchy& hc) final
             {
@@ -252,10 +294,6 @@ namespace neam::hydra::ecs
             void update_provider() final
             {
               static_cast<ConceptProvider*>(this)->update_from_hierarchy();
-            }
-            void update_dirty_flag() final
-            {
-              concept_logic::do_update_dirty_flag();
             }
 
             static constexpr bool k_can_use_require_and_unrequire =
@@ -289,6 +327,9 @@ namespace neam::hydra::ecs
 
         void update();
         void force_everything_dirty() { everything_is_dirty = true; }
+
+        components::hierarchy& get_hierarchy_component() { return hierarchy_component; }
+        const components::hierarchy& get_hierarchy_component() const { return hierarchy_component; }
 
       private:
         void unrequire_components();

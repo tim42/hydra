@@ -30,8 +30,6 @@
 #pragma once
 
 
-#include "render_pass.hpp"
-#include "pass_manager.hpp"
 
 namespace neam
 {

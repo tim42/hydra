@@ -37,7 +37,7 @@ namespace neam
   // read + close the pipe
   async::chain<std::string&&> read_pipe(hydra::core_context& ctx, id_t pipe_id, std::string&& content = {});
 
-  using spawn_function_t = fu2::unique_function<pid_t()>;
+  using spawn_function_t = std::move_only_function<pid_t()>;
 
   /// \brief Queue a process, avoiding spinning / deadlocking on io
   /// \warning spawn_fnc must be non-blocking

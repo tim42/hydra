@@ -49,6 +49,7 @@
 #include "buffer.hpp"
 #include "memory_barrier.hpp"
 #include "buffer_image_copy.hpp"
+#include "debug_marker.hpp"
 #include "descriptor_set.hpp"
 #include "pipeline_layout.hpp"
 #include "rendering_attachment_info.hpp"
@@ -522,26 +523,53 @@ namespace neam
             dev._vkCmdCopyBuffer(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst._get_vk_buffer(), regions.size(), regions.data());
           }
 
+          /// \brief Copy data between buffer regions
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdCopyBuffer.html">vulkan khr doc</a>
+          void copy_buffer(VkBuffer src, VkBuffer dst, const std::vector<VkBufferCopy> &regions)
+          {
+            dev._vkCmdCopyBuffer(cmd_buff._get_vk_command_buffer(), src, dst, regions.size(), regions.data());
+          }
+
           /// \brief Insert a set of execution and memory barriers
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdPipelineBarrier.html">vulkan khr doc</a>
           void pipeline_barrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
-                                VkDependencyFlags dep_flags, const std::vector<buffer_memory_barrier> &bmb)
+                                VkDependencyFlags dep_flags, const std::vector<buffer_memory_barrier>& bmb)
           {
             dev._vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
                                          0, nullptr,
                                          bmb.size(), (VkBufferMemoryBarrier*)bmb.data(),
                                          0, nullptr);
           }
+          /// \brief Insert a set of execution and memory barriers
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdPipelineBarrier.html">vulkan khr doc</a>
+          void pipeline_barrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
+                                VkDependencyFlags dep_flags, const buffer_memory_barrier& bmb)
+          {
+            dev._vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
+                                         0, nullptr,
+                                         1, (VkBufferMemoryBarrier*)&bmb,
+                                         0, nullptr);
+          }
 
           /// \brief Insert a set of execution and memory barriers
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdPipelineBarrier.html">vulkan khr doc</a>
           void pipeline_barrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
-                                VkDependencyFlags dep_flags, const std::vector<image_memory_barrier> &imb)
+                                VkDependencyFlags dep_flags, const std::vector<image_memory_barrier>& imb)
           {
             dev._vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
                                          0, nullptr,
                                          0, nullptr,
                                          imb.size(), (VkImageMemoryBarrier*)imb.data());
+          }
+          /// \brief Insert a set of execution and memory barriers
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdPipelineBarrier.html">vulkan khr doc</a>
+          void pipeline_barrier(VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
+                                VkDependencyFlags dep_flags, const image_memory_barrier& imb)
+          {
+            dev._vkCmdPipelineBarrier(cmd_buff._get_vk_command_buffer(), src_stage_mask, dst_stage_mask, dep_flags,
+                                         0, nullptr,
+                                         0, nullptr,
+                                         1, (VkImageMemoryBarrier*)&imb);
           }
 
           /// \brief Insert a set of execution and memory barriers
@@ -578,9 +606,23 @@ namespace neam
 
           /// \brief Copy data from a buffer into an image
           /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdCopyBufferToImage.html">vulkan khr doc</a>
+          void copy_buffer_to_image(VkBuffer src, VkImage dst, VkImageLayout dst_layout, const std::vector<buffer_image_copy> &bic_vct)
+          {
+            dev._vkCmdCopyBufferToImage(cmd_buff._get_vk_command_buffer(), src, dst, dst_layout, bic_vct.size(), (const VkBufferImageCopy*)bic_vct.data());
+          }
+
+          /// \brief Copy data from a buffer into an image
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdCopyBufferToImage.html">vulkan khr doc</a>
           void copy_buffer_to_image(const buffer &src, const image &dst, VkImageLayout dst_layout, const buffer_image_copy &bic)
           {
             dev._vkCmdCopyBufferToImage(cmd_buff._get_vk_command_buffer(), src._get_vk_buffer(), dst.get_vk_image(), dst_layout, 1, (const VkBufferImageCopy*)&bic);
+          }
+
+          /// \brief Copy data from a buffer into an image
+          /// <a href="https://www.khronos.org/registry/vulkan/specs/1.0/man/html/vkCmdCopyBufferToImage.html">vulkan khr doc</a>
+          void copy_buffer_to_image(VkBuffer src, VkImage dst, VkImageLayout dst_layout, const buffer_image_copy &bic)
+          {
+            dev._vkCmdCopyBufferToImage(cmd_buff._get_vk_command_buffer(), src, dst, dst_layout, 1, (const VkBufferImageCopy*)&bic);
           }
 
           /// \brief Binds descriptor sets to a command buffer
@@ -614,6 +656,26 @@ namespace neam
               return;
             auto* ds = s.get_descriptor_set();
             bind_descriptor_set(last_bound_pipeline->get_pipeline_bind_point(), hctx.ppmgr.get_pipeline_layout(last_bound_pipeline->get_pipeline_id()), set, {ds});
+          }
+
+          void push_descriptor_set(VkPipelineBindPoint binding_point, VkPipelineLayout layout, uint32_t set, uint32_t count, const VkWriteDescriptorSet* writes)
+          {
+            dev._vkCmdPushDescriptorSetKHR(cmd_buff._get_vk_command_buffer(), binding_point, layout, set, count, writes);
+          }
+          template<typename HCTX, typename Struct>
+          void push_descriptor_set(HCTX& hctx, uint32_t count, const VkWriteDescriptorSet* writes)
+          {
+            if (!last_bound_pipeline)
+              return;
+            const uint32_t set = last_bound_pipeline->get_set_for_struct((id_t)ct::type_hash<Struct>);
+            if (set == ~0u)
+              return;
+            dev._vkCmdPushDescriptorSetKHR(cmd_buff._get_vk_command_buffer(), last_bound_pipeline->get_pipeline_bind_point(), hctx.ppmgr.get_pipeline_layout(last_bound_pipeline->get_pipeline_id())._get_vk_pipeline_layout(), set, count, writes);
+          }
+          template<typename HCTX, typename Struct>
+          void push_descriptor_set(HCTX& hctx, Struct& s)
+          {
+            s.push_descriptor_set(hctx, *this);
           }
 
           /// <a href="https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/vkCmdBeginRendering.html">vulkan khr doc</a>
@@ -809,19 +871,7 @@ namespace neam
         return command_buffer_recorder(dev, *this);
       }
 
-      class cbr_debug_marker
-      {
-        public:
-          template<typename... Args>
-          cbr_debug_marker(command_buffer_recorder& _cbr, Args&&... args)
-           : cbr(_cbr)
-          {
-            cbr.begin_marker(std::forward<Args>(args)...);
-          }
-          ~cbr_debug_marker() { cbr.end_marker(); }
-        private:
-          command_buffer_recorder& cbr;
-      };
+      using cbr_debug_marker = debug_marker<command_buffer_recorder>;
     } // namespace vk
   } // namespace hydra
 } // namespace neam

@@ -195,10 +195,10 @@ namespace neam::hydra::packer
       }
       if (found)
       {
-        const std::string replace_str = fmt::format("layout(push_constant, scalar) uniform restrict readonly _push_constant_0 {{ {} }}",
+        const std::string replace_str = fmt::format("layout(push_constant, scalar) uniform restrict _push_constant_0 {{ {} }}",
                                                     shaders::internal::generate_struct_body(string_id::_runtime_build_from_string(cpp_struct)));
         source.replace(result.position(), result.length(), replace_str);
-        cr::out().log("  push-constant struct: {}", cpp_struct);
+        //cr::out().log("  push-constant struct: {}", cpp_struct);
       }
       else
       {
@@ -253,8 +253,8 @@ namespace neam::hydra::packer
       }
       ds.push_back({cpp_id, set});
       source.replace(result.position(), result.length(), res);
-      cr::out().log("  descriptor_set struct: (set: {}) {} ", set, cpp_struct);
-      cr::out().log("  descriptor_set struct: {} ", res);
+      //cr::out().log("  descriptor_set struct: (set: {}) {} ", set, cpp_struct);
+      //cr::out().log("  descriptor_set struct: {} ", res);
     }
     return success;
   }

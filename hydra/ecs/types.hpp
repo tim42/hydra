@@ -50,6 +50,7 @@ namespace neam::hydra::ecs
   // Shortcuts, avoiding specifying the db-conf for the default case
   template<typename T> using component = enfield::component<db_conf, T>;
   template<typename T> using internal_component = conf::internal_component<db_conf, T>;
+  template<typename T> using sync_component = conf::sync_component<db_conf, T>;
   template<typename T> using ecs_concept = enfield::ecs_concept<db_conf, T>;
   template<typename T> using system = enfield::system<db_conf, T>;
 
@@ -60,6 +61,10 @@ namespace neam::hydra::ecs
   using data_holder = enfield::components::data_holder<db_conf, Type, ConceptProviders...>;
 
   template<template<typename X> class... ConceptProviders>
-  using name_component = data_holder<std::string, ConceptProviders...>;
+  using generic_name_component = data_holder<std::string, ConceptProviders...>;
+
+  /// \brief name component. Useful to name an entity.
+  /// \note Should probably be stripped in release builds
+  using name_component = generic_name_component<serializable::concept_provider>;
 }
 

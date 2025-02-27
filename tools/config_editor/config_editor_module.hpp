@@ -56,7 +56,7 @@ namespace neam::hydra
     public: // API
 
     private:
-      static constexpr const char* module_name = "config_editor_module";
+      static constexpr neam::string_t module_name = "config_editor_module";
 
       static bool is_compatible_with(runtime_mode m)
       {
@@ -107,7 +107,7 @@ namespace neam::hydra
             cctx->stall_all_threads_except(1);
           }
 
-          if (window_state && window_state->window.should_close())
+          if (window_state.win && window_state.win->should_close())
           {
             // save all changed files:
             std::vector<async::continuation_chain> chains;
@@ -125,9 +125,8 @@ namespace neam::hydra
         });
 
         window_state = glfw_mod->create_window(glm::uvec2{800, 800}, "HYDRA CONFIG EDITOR");
-        window_state->_ctx_ref.clear_framebuffer = true;
 
-        imgui->create_context(*window_state.get());
+        imgui->create_context(window_state);
         imgui->register_function("dockspace"_rid, []()
         {
           const ImGuiID dockspace_id = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
@@ -262,11 +261,11 @@ namespace neam::hydra
       {
         on_frame_end_tk.release();
 
-        window_state.reset();
+        window_state = {};
       }
 
     private: // state
-      std::unique_ptr<glfw::glfw_module::state_ref_t> window_state;
+      glfw::window_state_t window_state;
 
       struct res_state_t
       {

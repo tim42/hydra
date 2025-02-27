@@ -10,7 +10,7 @@ add_executable(${EXEC_NAME} main.cpp)
 
 target_compile_options(${EXEC_NAME} PRIVATE ${PROJECT_CXX_FLAGS})
 
-add_dependencies(config_editor generate_embedded_index)
+add_dependencies(config_editor embedded_index)
 
 target_include_directories(${EXEC_NAME} PRIVATE SYSTEM ${VULKAN_INCLUDE_DIR})
 target_link_libraries(${EXEC_NAME} PUBLIC ${VULKAN_LIBRARY})

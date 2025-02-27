@@ -176,6 +176,11 @@ namespace neam
           return {*this};
         }
 
+        allocator::scope push_root_scope()
+        {
+          return {*this, nullptr};
+        }
+
         allocator::pool_set* get_pool_set(VkMemoryPropertyFlags flags, allocation_type at)
         {
           const uint32_t mti = vk::device_memory::get_memory_type_index(dev, flags, ~0u);

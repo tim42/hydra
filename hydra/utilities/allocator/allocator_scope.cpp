@@ -28,10 +28,22 @@
 
 #include "../memory_allocator.hpp"
 
+static neam::hydra::allocator::scope*& get_last_scope_storage()
+{
+  thread_local neam::hydra::allocator::scope* ts = nullptr;
+  return ts;
+}
+
+neam::hydra::allocator::scope::scope(neam::hydra::memory_allocator& _allocator)
+  : scope(_allocator, get_last_scope_storage())
+{
+}
 neam::hydra::allocator::scope::scope(neam::hydra::memory_allocator& _allocator, neam::hydra::allocator::scope* _parent)
   : allocator(_allocator)
   , parent(_parent)
 {
+  previous_storage = std::exchange(get_last_scope_storage(), this);
+
   const uint32_t scope_count = allocator.heaps.size();
   scopes.reserve(scope_count);
 
@@ -40,7 +52,7 @@ neam::hydra::allocator::scope::scope(neam::hydra::memory_allocator& _allocator, 
     // allocate scopes from the allocator (those will be root scopes)
     for (auto& it : allocator.heaps)
     {
-      scopes.emplace_back(it.second.push_scope());
+       scopes.emplace_back(it.second.push_scope());
     }
   }
   else
@@ -53,3 +65,7 @@ neam::hydra::allocator::scope::scope(neam::hydra::memory_allocator& _allocator, 
   }
 }
 
+neam::hydra::allocator::scope::~scope()
+{
+  get_last_scope_storage() = previous_storage;
+}

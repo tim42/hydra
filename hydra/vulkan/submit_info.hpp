@@ -41,6 +41,7 @@
 #include "fence.hpp"
 #include "queue.hpp"
 #include "buffer.hpp"
+#include "debug_marker.hpp"
 #include "image_subresource.hpp"
 
 namespace neam
@@ -78,6 +79,12 @@ namespace neam
             cmd_buff_or_bind = 1,
             signal_sema = 2,
             signal_fence = 3,
+            end_marker = 4,
+          };
+          struct vk_si_marker
+          {
+            std::string str;
+            VkDebugUtilsLabelEXT marker;
           };
 
           struct vk_si_vectors
@@ -109,6 +116,10 @@ namespace neam
 
           struct vk_si_wrapper
           {
+            //std::mtc_vector<vk_si_marker> begin_markers;
+            //std::mtc_vector<vk_si_marker> insert_markers;
+            //uint32_t end_markers = 0;
+
             std::mtc_vector<VkSubmitInfo> vk_submit_infos;
             std::mtc_vector<vk_si_vectors> si_vectors;
 
@@ -135,6 +146,17 @@ namespace neam
 
         public:
           explicit submit_info(vk_context& _vkctx) : vkctx(_vkctx) {};
+          submit_info(submit_info&& o) = default;
+          submit_info&operator=(submit_info&& o)
+          {
+            if (&o == this) return *this;
+            current = o.current;
+            current_queue = o.current_queue;
+            queues = std::move(o.queues);
+            o.current = nullptr;
+            o.current_queue = nullptr;
+            return *this;
+          }
           ~submit_info() = default;
 
           /// \brief Clear the whole submit info
@@ -188,7 +210,19 @@ namespace neam
           /// \brief Submit everything using the deferred queue submission
           /// \note Will try to do parallel submits as much as possible
           void deferred_submit();
+          /// \brief Same as deferred_submit, but does not lock dqe
+          void deferred_submit_unlocked();
 
+          /// \brief Begin a new section on the current queue. Implies a cut.
+          /// \note If markers are skipped, the cut will still remain to avoid issues
+          void begin_marker(std::string_view name, glm::vec4 color = {1, 1, 1, 1});
+
+          /// \brief End a section that was started with begin_marker. Implies a cut.
+          /// \note the queue must be the same
+          void end_marker();
+
+          /// \brief Insert a debug marker on the current queue.
+          void insert_marker(std::string_view name, glm::vec4 color = {1, 1, 1, 1});
 
         public:
           bool has_any_entries_for(vk::queue& q) const;
@@ -207,14 +241,16 @@ namespace neam
           struct queue_operations_t
           {
             operation_t last_op = operation_t::initial;
-            std::mtc_vector<vk_si_wrapper> queue_submits;
+            std::mtc_deque<vk_si_wrapper> queue_submits;
           };
           vk_context& vkctx;
           queue_operations_t* current = nullptr;
           vk::queue* current_queue = nullptr;
 
-          std::mtc_vector<std::mtc_map<vk::queue*, std::mtc_vector<queue_operations_t>>> queues;
+          std::mtc_deque<std::mtc_map<vk::queue*, std::mtc_deque<queue_operations_t>>> queues;
       };
+
+      using si_debug_marker = debug_marker<submit_info>;
     } // namespace vk
   } // namespace hydra
 } // namespace neam

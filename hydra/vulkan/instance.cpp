@@ -151,7 +151,7 @@ namespace neam::hydra::vk
     if ((flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) == VK_DEBUG_REPORT_ERROR_BIT_EXT && !std::string_view(msg).contains(validation_bug))
     {
       neam::cr::out().critical("Validation errors are fatal. Exiting now.");
-      exit(2);
+      abort();
     }
 
     return VK_FALSE;

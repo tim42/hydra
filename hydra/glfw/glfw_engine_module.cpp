@@ -25,6 +25,8 @@
 //
 
 #include "glfw_engine_module.hpp"
+#include "ecs/glfw_prologue.hpp"
+#include "ecs/glfw_epilogue.hpp"
 
 namespace neam::hydra::glfw
 {
@@ -89,10 +91,18 @@ namespace neam::hydra::glfw
 
   void glfw_module::add_task_groups(threading::task_group_dependency_tree& tgd)
   {
-    tgd.add_task_group("events"_rid, { .restrict_to_named_thread = "main"_rid });
+    tgd.add_task_group("glfw/events"_rid, { .restrict_to_named_thread = "main"_rid });
+    tgd.add_task_group("glfw/present"_rid);
+    tgd.add_task_group("glfw/framebuffer_acquire"_rid);
+    tgd.add_task_group("glfw/update"_rid);
   }
+
   void glfw_module::add_task_groups_dependencies(threading::task_group_dependency_tree& tgd)
   {
+    tgd.add_dependency("glfw/present"_rid, "render"_rid);
+    //tgd.add_dependency("glfw/framebuffer_acquire"_rid, "render"_rid);
+    tgd.add_dependency("render"_rid, "glfw/framebuffer_acquire"_rid);
+    tgd.add_dependency("glfw/framebuffer_acquire"_rid, "glfw/update"_rid);
   }
 
   void glfw_module::on_context_initialized()
@@ -105,11 +115,11 @@ namespace neam::hydra::glfw
     });
 
     // add an event polling task
-    hctx->tm.set_start_task_group_callback("events"_rid, [this]
+    hctx->tm.set_start_task_group_callback("glfw/events"_rid, [this]
     {
       cctx->tm.get_task([this]
       {
-        if (states.empty())
+        if (hctx->db.get_attached_object_count<components::epilogue>() == 0)
           return;
         if (should_wait_for_events && frames_since_any_event > k_max_frame_to_render_after_event && frames_since_any_event < 100)
           glfwWaitEventsTimeout(10);
@@ -118,75 +128,65 @@ namespace neam::hydra::glfw
       });
     });
 
-    // setup the debug + render task
-    on_render_start_tk = engine->get_module<renderer_module>("renderer"_rid)->on_render_start.add([this]
+    hctx->tm.set_start_task_group_callback("glfw/present"_rid, [this]
     {
-      // render task
-      cctx->tm.get_task([this]
+      hctx->tm.get_task([this]
       {
-        // add / remove states:
+        TRACY_SCOPED_ZONE;
+        hctx->db.for_each([this](components::epilogue& epi)
         {
-          std::lock_guard _l(state_change_lock);
-          for (auto& state : states_to_add)
-            states.push_back(std::move(state));
-          states_to_add.clear();
-
-          for (auto* state_ref : states_to_remove)
+          hctx->tm.get_task([this, &epi]
           {
-            auto it = std::find_if(states.begin(), states.end(), [state_ref](auto& a) { return (*a)->glfw_ref == state_ref; });
-            if (it != states.end())
-            {
-              (**it)->window.hide();
-              states.erase(it);
-            }
-          }
-
-          states_to_remove.clear();
-        }
-        std::lock_guard _l(state_lock);
-        auto& renderer = *engine->get_module<renderer_module>("renderer"_rid);
-        // for non-interactive rendering, check if we received any event:
-        bool had_any_event = false;
-        for (auto& state : states)
+            TRACY_SCOPED_ZONE;
+            epi.present();
+          });
+        });
+      });
+    });
+    hctx->tm.set_start_task_group_callback("glfw/framebuffer_acquire"_rid, [this]
+    {
+      hctx->tm.get_task([this]
+      {
+        TRACY_SCOPED_ZONE;
+        hctx->db.for_each([this](components::epilogue& epi)
         {
-          if (!(*state)->window.is_window_ready())
-            continue;
-          if ((*state)->window.get_event_manager().get_event_count() == 0)
-            continue;
-          (*state)->window.get_event_manager().clear_event_count();
-          had_any_event = true;
-          break;
-        }
+          // we cannot spawn a task as it's inherently single-threaded :(
+          epi.acquire_next_image();
+        });
+      });
+    });
+    hctx->tm.set_start_task_group_callback("glfw/update"_rid, [this]
+    {
+      hctx->tm.get_task([this]
+      {
+        TRACY_SCOPED_ZONE;
+        bool had_any_events = false;
 
-        if (had_any_event)
+        bool is_focused = false;
+        bool has_any_windows = false;
+
+        hctx->db.for_each([&, this](components::epilogue& epi)
+        {
+          auto& win = epi.prologue_comp.win;
+          if (!win.is_window_ready())
+            return;
+          has_any_windows = true;
+          if (win.is_focused())
+            is_focused = true;
+          if (win.get_event_manager().get_event_count() > 0)
+          {
+            win.get_event_manager().clear_event_count();
+            had_any_events = true;
+          }
+        });
+
+        if (had_any_events)
           frames_since_any_event = 0;
         else
           ++frames_since_any_event;
 
-        // render all windows:
-        bool is_focused = false;
-        bool has_any_windows = false;
-        bool has_dirty_contexts = false;
-        for (auto& state : states)
-        {
-          if (!(*state)->window.is_window_ready())
-            continue;
-          has_any_windows = true;
-          if ((*state)->window.is_focused())
-            is_focused = true;
-          if ((*state)->need_reset)
-            has_dirty_contexts = true;
-          if (!(*state)->need_reset && (*state)->glfw_ref->only_render_on_event && frames_since_any_event > k_max_frame_to_render_after_event)
-            continue;
-
-          cctx->tm.get_task([this, &renderer, &state]
-          {
-            renderer.render_context(*state);
-          });
-        }
         was_focused = is_focused;
         has_any_window_ready = has_any_windows;
-        has_contexts_needing_render = has_dirty_contexts;
       });
     });
   }
@@ -199,15 +199,6 @@ namespace neam::hydra::glfw
       cr::out().debug("glfw: destroying cursors");
       destroy_cursors();
     });
-    {
-      std::lock_guard _l(state_lock);
-      states.clear();
-    }
-    {
-      std::lock_guard _l(state_change_lock);
-      states_to_add.clear();
-      states_to_remove.clear();
-    }
   }
 
   void glfw_module::on_shutdown()
@@ -256,6 +247,18 @@ namespace neam::hydra::glfw
   void glfw_module::assert_is_main_thread() const
   {
     check::debug::/*n_assert*/n_check((cctx->tm.get_current_thread() == cctx->tm.get_named_thread("main"_rid)), "Current thread is not the main thread (glfw functions require to be called on the main thread)");
+  }
+
+  ecs::entity glfw_module::create_render_entity(window& win)
+  {
+    auto& renderer = *engine->get_module<renderer_module>();
+
+    ecs::entity ret = renderer.create_render_entity();
+
+    std::lock_guard _el(spinlock_exclusive_adapter::adapt(ret.get_lock()));
+    ret.add<components::prologue>(*hctx, win);
+    ret.add<components::epilogue>(*hctx, win);
+    return ret;
   }
 }
 

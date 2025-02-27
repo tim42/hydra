@@ -20,10 +20,11 @@ add_library(hydra SHARED
     engine/engine_module.cpp
     engine/conf/context.cpp
 
-    renderer/pass_manager.cpp
     renderer/renderer_engine_module.cpp
     renderer/resources/texture_manager.cpp
     renderer/resources/mesh_manager.cpp
+    renderer/ecs/gpu_task_producer.cpp
+    renderer/ecs/gpu_tasks_order.cpp
 
     utilities/allocator/block_allocator.cpp
     utilities/allocator/scoped_pool.cpp

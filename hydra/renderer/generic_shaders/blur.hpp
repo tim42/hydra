@@ -83,7 +83,7 @@ namespace neam::hydra::shaders
       ///       source is the image that will be blureed,
       ///       temp is the image that will be used as a temporary
       ///       dest (if different from source) is the image that will receive the results
-      static void blur_image(hydra_context& context, render_pass_context& rpctx, vk::command_buffer_recorder& cbr,
+      static void blur_image(hydra_context& context, vk::command_buffer_recorder& cbr,
                              const vk::image_view& source, const vk::image_view& dest,
                              glm::uvec2 image_size,
                              uint32_t strength,

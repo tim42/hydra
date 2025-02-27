@@ -42,7 +42,9 @@ namespace neam::hydra::imgui
       draw_lists.resize(draw_data.CmdLists.size(), nullptr);
       for (uint32_t i = 0; i < (uint32_t)draw_data.CmdLists.size(); ++i)
       {
-        draw_lists[i] = *draw_data.CmdLists[i];
+        draw_lists[i].VtxBuffer = draw_data.CmdLists[i]->VtxBuffer;
+        draw_lists[i].IdxBuffer = draw_data.CmdLists[i]->IdxBuffer;
+        draw_lists[i].CmdBuffer = draw_data.CmdLists[i]->CmdBuffer;
         draw_data.CmdLists[i] = &draw_lists[i];
       }
     }

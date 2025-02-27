@@ -101,6 +101,12 @@ namespace neam::hydra::vk
 
   void submit_info::vk_si_wrapper::update(uint32_t index)
   {
+    // relink debug markers:
+    //for (auto&& it : begin_markers)
+    //  it.marker.pLabelName = it.str.c_str();
+    //for (auto&& it : insert_markers)
+    //  it.marker.pLabelName = it.str.c_str();
+
     if (!sparse_bind)
     {
       if (vk_submit_infos.size() > 0)
@@ -123,6 +129,12 @@ namespace neam::hydra::vk
 
   void submit_info::vk_si_wrapper::full_update()
   {
+    // relink debug markers:
+    //for (auto&& it : begin_markers)
+    //  it.marker.pLabelName = it.str.c_str();
+    //for (auto&& it : insert_markers)
+     // it.marker.pLabelName = it.str.c_str();
+
     if (!sparse_bind)
     {
       for (uint32_t i = 0; i < (uint32_t)vk_submit_infos.size(); ++i)
@@ -141,8 +153,6 @@ namespace neam::hydra::vk
 
   void submit_info::vk_si_wrapper::add()
   {
-    update();
-
     if (!sparse_bind)
     {
       vk_submit_infos.emplace_back();
@@ -168,8 +178,8 @@ namespace neam::hydra::vk
 
     check::debug::n_assert(queue != nullptr, "submit-info has commands to submit but no queue");
 
-    // update the last entry
-    update();
+    // FIXME:
+    full_update();
 
     bool fence_only = vk_sparse_bind_infos.size() <= 1 && vk_submit_infos.size() <= 1;
     if (fence_only)
@@ -189,6 +199,11 @@ namespace neam::hydra::vk
                   && vk_sparse_bind_infos.back().signalSemaphoreCount == 0;
       }
     }
+
+    //for (auto&& it : begin_markers)
+     // vkctx.device._vkQueueBeginDebugUtilsLabel(queue->_get_vk_queue(), &it.marker);
+    //for (auto&& it : insert_markers)
+     // vkctx.device._vkQueueInsertDebugUtilsLabel(queue->_get_vk_queue(), &it.marker);
 
     if (fence_only)
     {
@@ -217,6 +232,8 @@ namespace neam::hydra::vk
         check::on_vulkan_error::n_assert_success(vkctx.device._vkQueueBindSparse(queue->_get_vk_queue(), vk_sparse_bind_infos.size(), vk_sparse_bind_infos.data(), fence));
       }
     }
+   // for (uint32_t i = 0; i < end_markers; ++i)
+     // vkctx.device._vkQueueEndDebugUtilsLabel(queue->_get_vk_queue());
   }
 
 
@@ -450,14 +467,21 @@ namespace neam::hydra::vk
 
   void submit_info::deferred_submit()
   {
+    if (queues.empty()) return;
+
+    std::lock_guard _lg(vkctx.dqe.lock);
+
+    deferred_submit_unlocked();
+  }
+
+  void submit_info::deferred_submit_unlocked()
+  {
 #if N_ALLOW_DEBUG
     cr::out().debug(" - si {}: [deferred_submit]", (void*)this);
 #endif
     if (queues.empty()) return;
 
     TRACY_SCOPED_ZONE;
-    std::lock_guard _lg(vkctx.dqe.lock);
-
     for (uint32_t i = 0; i < (uint32_t)queues.size(); ++i) // syncs
     {
       // FIXME: handle the case where sync() is called first (currently, we skip this)
@@ -501,6 +525,48 @@ namespace neam::hydra::vk
       current->last_op = operation_t::initial;
     }
   }
+  void submit_info::begin_marker(std::string_view name, glm::vec4 color)
+  {
+    return;
+    // step(operation_t::_cut);
+    //
+    // if (!vkctx.device._has_vkQueueBeginDebugUtilsLabel()) return;
+    //
+    // current->queue_submits.back().begin_markers.emplace_back(std::string(name),
+    // VkDebugUtilsLabelEXT
+    // {
+    //   .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+    //   .pNext = nullptr,
+    //   .pLabelName = name.data(),
+    //   .color = {color.r, color.g, color.b, color.a},
+    // });
+  }
+  void submit_info::end_marker()
+  {
+    return;
+    // step(operation_t::end_marker);
+    //
+    // if (vkctx.device._has_vkQueueEndDebugUtilsLabel())
+    // {
+    //   current->queue_submits.back().end_markers += 1;
+    // }
+  }
+
+  void submit_info::insert_marker(std::string_view name, glm::vec4 color)
+  {
+    return;
+    // step(operation_t::_cut);
+    // if (!vkctx.device._has_vkQueueInsertDebugUtilsLabel()) return;
+    //
+    // current->queue_submits.back().insert_markers.emplace_back(std::string(name),
+    // VkDebugUtilsLabelEXT
+    // {
+    //   .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+    //   .pNext = nullptr,
+    //   .pLabelName = name.data(),
+    //   .color = {color.r, color.g, color.b, color.a},
+    // });
+  }
 
   void submit_info::step(operation_t current_op)
   {
@@ -528,7 +594,7 @@ namespace neam::hydra::vk
       current = &it->second.back();
       return;
     }
-    auto[it, ins] = queues.back().emplace(q, std::mtc_vector<queue_operations_t>{});
+    auto[it, ins] = queues.back().emplace(q, std::mtc_deque<queue_operations_t>{});
     it->second.emplace_back();
     current = &it->second.back();
     return;

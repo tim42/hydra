@@ -219,6 +219,7 @@ namespace neam::hydra
 
     // the core context is guranteed to exist:
     core_context& cctx = get_core_context();
+    cctx.engine = this;
 
     // set the contextes in modules:
     {
@@ -237,7 +238,10 @@ namespace neam::hydra
       for (auto& mod : modules)
         mod.second->set_hydra_context(&hctx);
     }
-
+    {
+      for (auto& mod : modules)
+        mod.second->on_context_set();
+    }
     cr::out().debug("engine: engine successfully initialized");
     return resources::status::success;
   }
@@ -492,21 +496,28 @@ namespace neam::hydra
         }
       }
 
+/*
       cr::out().debug("engine tear-down: destructing modules...");
       modules.clear();
+*/
 
       // NOTE: we cannot destroy the context as we are still in the task manager
 
       // cr::out().debug("engine tear-down: clearing the runtime-mode...");
 
       // very last operation
-      cctx.tm.should_ensure_on_task_insertion(false);
+      //cctx.tm.should_ensure_on_task_insertion(false);
 
       // release the lock: (it's not the same thread that locked the lock, so we use _unlock instead)
       init_lock._unlock();
       cr::out().debug("engine tear-down: lock released");
-      cctx.tm.should_threads_exit_wait(true);
     });
+  }
+
+  void engine_t::uninit()
+  {
+    cr::out().debug("engine tear-down: destructing modules...");
+    modules.clear();
   }
 
   void engine_t::cleanup()

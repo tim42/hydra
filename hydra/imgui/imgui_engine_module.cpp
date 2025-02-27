@@ -25,6 +25,7 @@
 //
 
 #include "imgui_engine_module.hpp"
+#include "imgui_renderpass.hpp"
 
 namespace neam::hydra::imgui
 {
@@ -40,14 +41,18 @@ namespace neam::hydra::imgui
     }), functions.end());
   }
 
-  void imgui_module::create_context(glfw::glfw_module::state_ref_t& viewport)
+  void imgui_module::create_context(glfw::window_state_t& ws)
   {
     check::debug::n_check(!context, "creating an imgui context over an existing imgui context");
     {
       std::lock_guard _lg(lock);
-      context.emplace(*hctx, *engine, viewport);
+      context.emplace(*hctx, *engine, ws);
     }
-    viewport.pm.add_pass<imgui::render_pass>(get_imgui_context(), *hctx, ImGui::GetMainViewport());
+    {
+      std::lock_guard _el(spinlock_exclusive_adapter::adapt(ws.render_entity.get_lock()));
+      ws.render_entity.add<internals::setup_pass>(*hctx);
+      ws.render_entity.add<components::render_pass>(*hctx, ImGui::GetMainViewport());
+    }
     if (res_have_loaded)
       on_resource_index_loaded();
   }
@@ -75,18 +80,19 @@ namespace neam::hydra::imgui
   }
   void imgui_module::add_task_groups_dependencies(threading::task_group_dependency_tree& tgd)
   {
-    tgd.add_dependency("imgui"_rid, "events"_rid);
+    tgd.add_dependency("imgui"_rid, "glfw/events"_rid);
     tgd.add_dependency("imgui_render"_rid, "imgui"_rid);
-    tgd.add_dependency("imgui_render"_rid, "render"_rid);
+    //tgd.add_dependency("imgui_render"_rid, "render"_rid);
 
     // tgd.add_dependency("imgui"_rid, "render"_rid); // TODO: remove
     // tgd.add_dependency("imgui_render"_rid, "render"_rid);
-    // tgd.add_dependency("render"_rid, "imgui_render"_rid);
+     tgd.add_dependency("render"_rid, "imgui_render"_rid);
+     tgd.add_dependency("glfw/framebuffer_acquire"_rid, "imgui"_rid);
   }
 
   void imgui_module::on_context_initialized()
   {
-    static bool has_rendered_anything = false;
+    // static bool has_rendered_anything = false;
     hctx->tm.set_start_task_group_callback("imgui_render"_rid, [this]
     {
       if (!context.has_value())
@@ -95,18 +101,18 @@ namespace neam::hydra::imgui
       hctx->tm.get_task([]
       {
         // if (!has_rendered_anything)
-          // return;
+        // return;
         TRACY_SCOPED_ZONE;
         ImGui::Render();
 
         // Duplication of the draw data
         {
           ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
-          for (int i = 1; i < platform_io.Viewports.Size; i++)
+          for (int i = 0; i < platform_io.Viewports.Size; i++)
           {
             auto* vp = platform_io.Viewports[i];
             if (vp->RendererUserData)
-              delete ((draw_data_t*)vp->RendererUserData);
+              delete ((draw_data_t*) vp->RendererUserData);
             vp->RendererUserData = nullptr;
 
             if ((vp->Flags & ImGuiViewportFlags_IsMinimized) == 0 && vp->DrawData != nullptr)
@@ -131,11 +137,11 @@ namespace neam::hydra::imgui
         TRACY_SCOPED_ZONE;
         get_imgui_context().new_frame();
 
-        for (auto& it : functions)
+        for (auto& it: functions)
           it.second();
 
         ImGui::EndFrame();
-        has_rendered_anything = true;
+        // has_rendered_anything = true;
         ImGui::UpdatePlatformWindows();
       });
     });

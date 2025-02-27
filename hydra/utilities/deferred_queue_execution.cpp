@@ -30,6 +30,8 @@
 
 namespace neam::hydra
 {
+  static constexpr bool dqe_immediate_mode = true;
+
   uint32_t deferred_queue_execution::get_index(id_t qid)
   {
     std::lock_guard _lgs {spinlock_shared_adapter::adapt(queue_id_lock) };
@@ -60,6 +62,11 @@ namespace neam::hydra
 
   void deferred_queue_execution::defer_execution_unlocked(id_t queue_id, threading::function_t&& fnc)
   {
+    if (dqe_immediate_mode)
+    {
+      fnc();
+      return;
+    }
     check::debug::n_assert(queue_id != id_t::invalid, "defer_execution: queue_id is invalid");
 
     N_MTC_WRITER_SCOPE;
@@ -74,6 +81,8 @@ namespace neam::hydra
 
   void deferred_queue_execution::defer_sync_unlocked()
   {
+    if (dqe_immediate_mode)
+      return;
     N_MTC_WRITER_SCOPE;
     if (to_submit.empty() || to_submit.back().has_any_submissions)
       to_submit.emplace_back();
@@ -81,6 +90,8 @@ namespace neam::hydra
 
   void deferred_queue_execution::_execute_deferred_tasks_synchronously_single_threaded()
   {
+    if (dqe_immediate_mode)
+      return;
     TRACY_SCOPED_ZONE;
     decltype(to_submit) submissions;
     {
@@ -108,6 +119,8 @@ namespace neam::hydra
 
   void deferred_queue_execution::execute_deferred_tasks(threading::group_t group)
   {
+    if (dqe_immediate_mode)
+      return;
     TRACY_SCOPED_ZONE;
 
     decltype(to_submit) submissions;

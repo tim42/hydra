@@ -52,8 +52,11 @@ namespace neam::hydra
       // Please don't put long operations directly, but instead use a task
       cr::event<> on_frame_end;
 
+      /// \brief Safe way to perform index reloads
+      void ask_for_index_reload();
+
     private:
-      static constexpr const char* module_name = "core";
+      static constexpr neam::string_t module_name = "core";
 
       // the core module should always be present
       static bool is_compatible_with(runtime_mode /*m*/) { return true; }
@@ -77,7 +80,7 @@ namespace neam::hydra
       void throttle_frame();
 
     private:
-
+      bool need_index_reload = false;
 
       friend class engine_t;
       friend engine_module<core_module>;

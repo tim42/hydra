@@ -41,7 +41,7 @@ namespace neam::hydra
       bool wait_for_submit_queries = false;
 
     private:
-      static constexpr const char* module_name = "io";
+      static constexpr neam::string_t module_name = "io";
 
       // the io module should always be present
       static bool is_compatible_with(runtime_mode /*m*/) { return true; }

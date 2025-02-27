@@ -58,13 +58,7 @@ namespace neam
         /// \brief Create a mesh without anything
         mesh(vk::device &_dev) : dev(_dev) {}
 
-        mesh(mesh &&o)
-          : dev(o.dev), topology(o.topology), primitive_restart(o.primitive_restart),
-            buffers(std::move(o.buffers)), first_binding(o.first_binding), index_type(o.index_type),
-            buffers_offsets(std::move(o.buffers_offsets)), dev_mem(o.dev_mem), index_buffer_present(o.index_buffer_present),
-            pvis(std::move(o.pvis))
-        {
-        }
+        mesh(mesh &&o) = default;
 
         mesh &operator = (mesh &&o)
         {

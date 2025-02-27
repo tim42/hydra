@@ -59,7 +59,7 @@ namespace neam::hydra
       size_t get_packed_entries() const { return state.counter; }
 
     private:
-      static constexpr const char* module_name = "packer";
+      static constexpr neam::string_t module_name = "packer";
 
       static bool is_compatible_with(runtime_mode m)
       {
@@ -138,7 +138,7 @@ namespace neam::hydra
 // HYDRA Serialized Index
 // File is automatically generated, please don't edit by hand
 //
-#include <cstdint>
+
 #include "{}"
 
 namespace {}
@@ -252,6 +252,17 @@ namespace {}
             }
           });
           cr::out().debug("waiting to {} entry to complete...", state.entry_count);
+        }
+        else
+        {
+          save_index().then([this]()
+          {
+            state.in_progress = false;
+            state.is_packing = false;
+
+            // Done!
+            engine->sync_teardown();
+          });
         }
       }
 

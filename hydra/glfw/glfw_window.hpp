@@ -89,24 +89,11 @@ namespace neam::hydra::glfw
       ///       \code {{HINT_NAME, HINT_VALUE}, {HINT_NAME2, HINT_VALUE2}, ...} \endcode
       window(glfw_module* _glfw_mod, const std::string &title = "HYDRA", std::initializer_list<std::pair<int, int>> w_hints = std::initializer_list<std::pair<int, int>>());
 
-      /// \brief Move constructor
-      window(window &&o) = default;
+      /// \brief Move constructor. We do not support move construction on windows. (see the delayed init part).
+      window(window &&o) = delete;
 
       /// \brief destroy the window
-      ~window()
-      {
-        emgr.reset();
-        swapchain.reset();
-        surface.reset();
-
-        if (win)
-        {
-          execute_on_main_thread([win = win.release()]
-          {
-            glfwDestroyWindow(win);
-          });
-        }
-      }
+      ~window();
 
       bool is_window_ready() const { return win != nullptr && !!swapchain; }
 

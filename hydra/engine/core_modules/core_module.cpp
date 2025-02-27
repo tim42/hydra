@@ -42,10 +42,14 @@ namespace neam::hydra
   void core_module::add_task_groups(threading::task_group_dependency_tree& tgd)
   {
     tgd.add_task_group("init"_rid);
+    tgd.add_task_group("ecs/db-update"_rid);
+    tgd.add_task_group("ecs/db-optimize"_rid);
     tgd.add_task_group("last"_rid);
   }
   void core_module::add_task_groups_dependencies(threading::task_group_dependency_tree& tgd)
   {
+    tgd.add_dependency("ecs/db-optimize"_rid, "ecs/db-update"_rid);
+
     // Make the `last` group dependent on all the other groups
     const threading::group_t last_id = tgd.get_group("last"_rid);
     const threading::group_t init_id = tgd.get_group("init"_rid);
@@ -85,7 +89,7 @@ namespace neam::hydra
 
     cctx->tm.set_start_task_group_callback("init"_rid, [this, is_release_engine]()
     {
-      if (!is_release_engine)
+      //if (/*!is_release_engine || */need_index_reload)
       {
         // spawn the index watcher task
         if (cctx->res.is_index_mapped())
@@ -111,6 +115,29 @@ namespace neam::hydra
       //   cctx->tm.get_task([this]() { throttle_frame(); });
       // }
     });
+
+    if (hctx)
+    {
+      cctx->tm.set_start_task_group_callback("ecs/db-update"_rid, [this]
+      {
+        cctx->tm.get_task([this]
+        {
+          hctx->db.apply_component_db_changes();
+        });
+      });
+      cctx->tm.set_start_task_group_callback("ecs/db-optimize"_rid, [this]
+      {
+        cctx->tm.get_task([this]
+        {
+          hctx->db.optimize(cctx->tm, cctx->tm.get_current_group());
+        });
+      });
+    }
+  }
+
+  void core_module::ask_for_index_reload()
+  {
+    need_index_reload = true;
   }
 
   void core_module::watch_for_index_change()
@@ -122,11 +149,28 @@ namespace neam::hydra
     index_watcher_chrono.reset();
 
     const std::filesystem::file_time_type index_mtime = cctx->res.get_index_modified_time();
-    if (index_mtime > last_index_timestamp)
+    if (index_mtime > last_index_timestamp || need_index_reload)
     {
+      need_index_reload = false;
       neam::cr::out().debug("core_module: index change detected, reloading index");
       last_index_timestamp = index_mtime;
       [[maybe_unused]] auto chr = cctx->res.reload_index();
+
+      // prevent the current group from ending until the index is reloaded
+      auto task_wrapper = hctx->tm.get_task([]{});
+      threading::task_completion_marker_ptr_t completion = task_wrapper.create_completion_marker();
+      hctx->tm.get_task([this, completion = std::move(completion)]
+      {
+        neam::cr::out().debug("core_module: spinning io process during index reload");
+        // spin IO while we wait for index reload
+        while (!completion.is_completed())
+          hctx->io.process();
+        neam::cr::out().debug("core_module: stopping io loop");
+      });
+      chr.then([task_wrapper = std::move(task_wrapper)] (resources::status)
+      {
+        neam::cr::out().debug("core_module: index reload done");
+      });
     }
   }
 

@@ -289,6 +289,7 @@ namespace neam
             HYDRA_LOAD_FNC(vkCmdNextSubpass);
             HYDRA_LOAD_FNC(vkCmdEndRenderPass);
             HYDRA_LOAD_FNC(vkCmdExecuteCommands);
+            HYDRA_LOAD_FNC(vkCmdPushDescriptorSetKHR);
 
             HYDRA_LOAD_FNC(vkCmdBeginRendering);
             HYDRA_LOAD_FNC(vkCmdEndRendering);
@@ -454,6 +455,7 @@ namespace neam
           HYDRA_VK_DEV_FNC_WRAPPER(vkCmdNextSubpass);
           HYDRA_VK_DEV_FNC_WRAPPER(vkCmdEndRenderPass);
           HYDRA_VK_DEV_FNC_WRAPPER(vkCmdExecuteCommands);
+          HYDRA_VK_DEV_FNC_WRAPPER(vkCmdPushDescriptorSetKHR);
 
           HYDRA_VK_DEV_FNC_WRAPPER(vkCmdBeginRendering);
           HYDRA_VK_DEV_FNC_WRAPPER(vkCmdEndRendering);
@@ -618,6 +620,7 @@ namespace neam
           HYDRA_DECLARE_VK_FNC(vkCmdNextSubpass);
           HYDRA_DECLARE_VK_FNC(vkCmdEndRenderPass);
           HYDRA_DECLARE_VK_FNC(vkCmdExecuteCommands);
+          HYDRA_DECLARE_VK_FNC(vkCmdPushDescriptorSetKHR);
 
           HYDRA_DECLARE_VK_FNC(vkCmdBeginRendering);
           HYDRA_DECLARE_VK_FNC(vkCmdEndRendering);
